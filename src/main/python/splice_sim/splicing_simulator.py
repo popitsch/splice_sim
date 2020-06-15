@@ -656,7 +656,7 @@ for cond in conditions:
                                                                   read_spliced, 
                                                                   ",".join(str(iso.rel2abs_pos(p)[0]) for p in cigar_to_rel_pos(r))  ), file=out )
         bgzip(f, override=True, delinFile=True, threads=threads)
-        #removeFile(sam_f) # delete sam file
+        removeFile(sam_f) # delete sam file
     else:
         print("Will not re-create existing file %s" % (f+".gz"))  
                

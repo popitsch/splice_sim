@@ -555,6 +555,7 @@ if 'transcripts' not in config:
 print("Loading gene GFF")
 gff = pr.read_gff3(config["gene_gff"])
 gff_df = gff.df
+gff_df.Start = gff_df.Start + 1 # correct for pyranges bug?
 df = gff_df[gff_df['transcript_id'].isin(list(config['transcripts'].keys()))] # reduce to contain only configured transcripts
 
 print("Writing filtered gene GFF")

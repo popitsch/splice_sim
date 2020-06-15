@@ -670,7 +670,7 @@ for cond in conditions:
         if success:
             bgzip(f_truth, override=True, delinFile=True, threads=threads)
             bgzip(f_fq, override=True, delinFile=True, threads=threads)
-            removeFile(f_fq_both, f_sam_both)
+            removeFile([f_fq_both, f_sam_both])
         print(read_stats)
 
     else:

@@ -473,6 +473,8 @@ def postfilter_bam( bam_in, bam_out, tag_tc=None, tag_mp=None):
                         read.set_tag(tag=tag_mp, value=",".join(mp_str), value_type="Z")
             samout.write(read)  
             n_reads=n_reads+1
+        else:
+            print("WARN: wrong strand for %s " % (read.query_name) )
     samin.close()
     samout.close()
     pysam.index(bam_out)
@@ -612,53 +614,67 @@ for cond in conditions:
 # run art simulator 
 print("Running read simulator")
 artlog=tmpdir + config['dataset_name'] + ".art.log" 
+valid_reads={}
 for cond in conditions:
     f = tmpdir + config['dataset_name'] + "." + cond.id + ".fa"
-    if args.force or not files_exist(f+".gz"):
+    # art output
+    art_out_prefix = tmpdir + config['dataset_name'] + "." + cond.id + ".bothstrands"
+    f_fq_both = art_out_prefix + ".fq"
+    f_sam_both =  art_out_prefix + ".sam"
+    # filtered final output
+    f_truth = tmpdir + config['dataset_name'] + "." + cond.id + ".truth_tsv"
+    f_fq =  tmpdir + config['dataset_name'] + "." + cond.id + ".fq"
+    if args.force or not files_exist([f_fq+".gz", f_truth+".gz" ]):
         # NOTE: use 2x coverage as ~50% of reads will be simulated for wrong strand and will be dropped in postprocessing
-        cmd=[art_cmd, "-ss", "HS25", "-i", f, "-l", str(config["readlen"]), "-f", str(cond.coverage * 2), "-na", "--samout", "-o", f]
+        cmd=[art_cmd, "-ss", "HS25", "-i", f, "-l", str(config["readlen"]), "-f", str(cond.coverage * 2), "-na", "--samout", "-o", art_out_prefix ]
         if "random_seed" in config:
             cmd+=["-rs", str(config["random_seed"])]
-        success = pipelineStep(f, f+".fq", cmd, shell=True, stdout=artlog, append=True)    
+        success = pipelineStep(f, [f_fq_both, f_sam_both], cmd, shell=True, stdout=artlog, append=True)    
         if not success:
-            print('error simulating %s' % (f))
-        bgzip(f, override=True, delinFile=True, threads=threads)
-    else:
-        print("Will not re-create existing file %s" % (f+".gz"))
+            print('error simulating %s' % (f_fq_both))
 
-# get alignment positions from art aln file. Note that seq-read errors are encoded in the 
-# CIGAR string (e.g., '16=1X4=1X78=') means that bases 17 and 22 are mismatches wrt. reference.
-# Q: why are there no D/I entries in the cigarstrings? How to find seqerr INDELs?
-print("Reconstruct alignment positions")        
-for cond in conditions:
-    sam_f = tmpdir + config['dataset_name'] + "." + cond.id + ".fa.sam"
-    f = tmpdir + config['dataset_name'] + "." + cond.id + ".truth_tsv"
-    if args.force or not files_exist(f+".gz"):
-        with open(f, 'w') as out:
-            print("read_name\tstart_rel\tend_rel\tseq_err_pos_rel\tchr_abs\tstart_abs\tend_abs\tread_spliced\tseq_err_pos_abs", file=out)
-            sam = pysam.AlignmentFile(sam_f, "rb")
-            for r in sam.fetch():
-                # e.g. 'ENSMUST00000099151.5_+_mat_0-400'. tag ('0-400') consists of running number from 'abundance' and running number form ART
-                tid,transcript_strand,iso_id,tag=r.query_name.split("_")
-                read_strand = "-" if r.is_reverse else "+"
-                if transcript_strand == read_strand: # NOTE: reads that were mapped to opposite strand will be dropped later in post_filtering step!
-                    iso = transcripts[tid].isoforms[iso_id]
-                    start_abs, bid_start = iso.rel2abs_pos(r.reference_start)
-                    end_abs, bid_end = iso.rel2abs_pos(r.reference_end)
-                    read_spliced = 1 if bid_start != bid_end else 0
-                    print("%s\t%i\t%i\t%s\t%s\t%i\t%i\t%i\t%s" % (r.query_name, 
-                                                                  r.reference_start,
-                                                                  r.reference_end, 
-                                                                  ",".join(str(p) for p in cigar_to_rel_pos(r)),
-                                                                  iso.t.transcript.Chromosome,
-                                                                  start_abs,
-                                                                  end_abs, 
-                                                                  read_spliced, 
-                                                                  ",".join(str(iso.rel2abs_pos(p)[0]) for p in cigar_to_rel_pos(r))  ), file=out )
-        bgzip(f, override=True, delinFile=True, threads=threads)
-        removeFile(sam_f) # delete sam file
+        # filter reads that map to wrong strand and write truth file
+        # get alignment positions from art aln file. Note that seq-read errors are encoded in the 
+        # CIGAR string (e.g., '16=1X4=1X78=') means that bases 17 and 22 are mismatches wrt. reference.
+        # Q: why are there no D/I entries in the cigarstrings? How to find seqerr INDELs?
+        with open(f_truth, 'w') as out_truth:
+            with open(f_fq, 'w') as out_fq:
+                print("read_name\tstart_rel\tend_rel\tseq_err_pos_rel\tchr_abs\tstart_abs\tend_abs\tread_spliced\tseq_err_pos_abs", file=out_truth)
+                sam = pysam.AlignmentFile(f_sam, "rb")
+                read_stats={}
+                for r in sam.fetch():
+                    # e.g. 'ENSMUST00000099151.5_+_mat_0-400'. tag ('0-400') consists of running number from 'abundance' and running number form ART
+                    tid,transcript_strand,iso_id,tag=r.query_name.split("_")
+                    read_strand = "-" if r.is_reverse else "+"
+                    read_stats['all_'+read_strand]=read_stats['all_'+read_strand]+1 if 'all_'+read_strand in read_stats else 1
+                    if transcript_strand == read_strand: # NOTE: reads that were mapped to opposite strand will be dropped later in post_filtering step!
+                        valid_reads[cond].add(r.query_name)
+                        iso = transcripts[tid].isoforms[iso_id]
+                        start_abs, bid_start = iso.rel2abs_pos(r.reference_start)
+                        end_abs, bid_end = iso.rel2abs_pos(r.reference_end)
+                        read_spliced = 1 if bid_start != bid_end else 0
+                        
+                        print("%s\t%i\t%i\t%s\t%s\t%i\t%i\t%i\t%s" % (r.query_name, 
+                                                                      r.reference_start,
+                                                                      r.reference_end, 
+                                                                      ",".join(str(p) for p in cigar_to_rel_pos(r)),
+                                                                      iso.t.transcript.Chromosome,
+                                                                      start_abs,
+                                                                      end_abs, 
+                                                                      read_spliced, 
+                                                                      ",".join(str(iso.rel2abs_pos(p)[0]) for p in cigar_to_rel_pos(r))  ), file=out_truth )
+                        print("@%s\n%s\n+\n%s" % ( r.query_name, r.query_sequence, r.query_qualities), file=out_fq )
+                    else:
+                        read_stats['dropped_'+read_strand]=read_stats['dropped_'+read_strand]+1 if 'dropped_'+read_strand in read_stats else 1
+        if success:
+            bgzip(f_truth, override=True, delinFile=True, threads=threads)
+            bgzip(f_fq, override=True, delinFile=True, threads=threads)
+            removeFile(f_fq_both, f_sam_both)
+        print(read_stats)
+
     else:
-        print("Will not re-create existing file %s" % (f+".gz"))  
+        print("Will not re-create existing file %s" % (f_fq+".gz"))
+
                
 # concat files per condition, introduce T/C conversions and bgzip
 for cond in conditions:

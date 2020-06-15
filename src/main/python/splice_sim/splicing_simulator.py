@@ -625,6 +625,8 @@ for cond in conditions:
         bgzip(f, override=True, delinFile=True, threads=threads)
     else:
         print("Will not re-create existing file %s" % (f+".gz"))
+
+sys.exit(1)
         
 # get alignment positions from art aln file. Note that seq-read errors are encoded in the 
 # CIGAR string (e.g., '16=1X4=1X78=') means that bases 17 and 22 are mismatches wrt. reference.

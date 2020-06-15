@@ -679,8 +679,8 @@ for cond in conditions:
                
 # concat files per condition, introduce T/C conversions and bgzip
 for cond in conditions:
-    f_all = tmpdir + config['dataset_name'] + "." + cond.id + ".fa.fq"
-    f_tc  = tmpdir + config['dataset_name'] + "." + cond.id + ".TC.fa.fq"
+    f_all = tmpdir + config['dataset_name'] + "." + cond.id + ".fq"
+    f_tc  = tmpdir + config['dataset_name'] + "." + cond.id + ".TC.fq"
     hist_tc=[]
     if args.force or not files_exist(f_tc+".gz"):
         with open(f_tc, 'w') as out:
@@ -728,9 +728,9 @@ if 'mappers' in config:
     print("Mapping reads")
     for cond in conditions:
         for mapper in config['mappers'].keys():
-            f_all = tmpdir + config['dataset_name'] + "." + cond.id + ".fa.fq.gz"
+            f_all = tmpdir + config['dataset_name'] + "." + cond.id + ".fq.gz"
             b_all = tmpdir + config['dataset_name'] + "." + cond.id + "."+mapper+".bam"
-            f_tc  = tmpdir + config['dataset_name'] + "." + cond.id + ".TC.fa.fq.gz"
+            f_tc  = tmpdir + config['dataset_name'] + "." + cond.id + ".TC.fq.gz"
             b_tc  = tmpdir + config['dataset_name'] + "." + cond.id + "."+mapper+".TC.bam"
             bamdir_all = outdir + "bam_ori/" + mapper + "/"
             bamdir_tc  = outdir + "bam_tc/" + mapper + "/"

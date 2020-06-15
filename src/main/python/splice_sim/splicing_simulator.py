@@ -616,6 +616,7 @@ print("Running read simulator")
 artlog=tmpdir + config['dataset_name'] + ".art.log" 
 valid_reads={}
 for cond in conditions:
+    valid_reads[cond]=set()
     f = tmpdir + config['dataset_name'] + "." + cond.id + ".fa"
     # art output
     art_out_prefix = tmpdir + config['dataset_name'] + "." + cond.id + ".bothstrands"

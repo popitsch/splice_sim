@@ -446,35 +446,33 @@ def postfilter_bam( bam_in, bam_out, tag_tc=None, tag_mp=None):
         #print(read.is_reverse)
         comp=read.query_name.split("_")
         is_correct_strand = ( read.is_reverse and comp[1]=='-' ) or ((not read.is_reverse) and comp[1]=='+') 
-        if is_correct_strand:
-            read.query_name = "_".join(comp[0:4]) # cut of _tc section from read name.
-            if len(comp)>4:
-                tc_pos = comp[4][3:].split(",")
-                if not tc_pos[0]: # no TC conversion
-                    read.set_tag(tag=tag_tc, value=0, value_type="i")
-                    # set read color to light grey!
-                    read.set_tag(tag='YC', value='200,200,200', value_type="Z")
-                else:
-                    slamdunk_type=2 if read.is_reverse else 16 # see paper supplement
-                    valid_tc=0
-                    mp_str=[]
-                    for x in tc_pos:
-                        rpos = int(x)
-                        gpos = readidx2genpos_rel(read, rpos)
-                        if gpos is not None:
-                            valid_tc+=1
-                            mp_str+=[str(slamdunk_type)+":"+str(rpos)+":"+str(gpos)]
-                    read.set_tag(tag=tag_tc, value=valid_tc, value_type="i")
-                    # set blue read color intensity relative to number of tc conversions!
-                    intensity = 255/min(valid_tc, 25) if valid_tc > 0 else 255
-                    read.set_tag(tag='YC', value='%i,%i,255' % (intensity,intensity), value_type="Z")
+        read.query_name = "_".join(comp[0:4]) # cut of _tc section from read name.
+        if len(comp)>4:
+            tc_pos = comp[4][3:].split(",")
+            if not tc_pos[0]: # no TC conversion
+                read.set_tag(tag=tag_tc, value=0, value_type="i")
+                # set read color to light grey!
+                read.set_tag(tag='YC', value='200,200,200' if is_correct_strand else '255,0,0', value_type="Z")
+            else:
+                slamdunk_type=2 if read.is_reverse else 16 # see paper supplement
+                valid_tc=0
+                mp_str=[]
+                for x in tc_pos:
+                    rpos = int(x)
+                    gpos = readidx2genpos_rel(read, rpos)
+                    if gpos is not None:
+                        valid_tc+=1
+                        mp_str+=[str(slamdunk_type)+":"+str(rpos)+":"+str(gpos)]
+                read.set_tag(tag=tag_tc, value=valid_tc, value_type="i")
+                # set blue read color intensity relative to number of tc conversions!
+                intensity = 255/min(valid_tc, 25) if valid_tc > 0 else 255
+                read.set_tag(tag='YC', value='%i,%i,255' % (intensity,intensity) if is_correct_strand else '255,0,0', value_type="Z")
 
-                    if valid_tc>0:
-                        read.set_tag(tag=tag_mp, value=",".join(mp_str), value_type="Z")
-            samout.write(read)  
-            n_reads=n_reads+1
-        else:
-            print("WARN: wrong strand for %s " % (read.query_name) )
+                if valid_tc>0:
+                    read.set_tag(tag=tag_mp, value=",".join(mp_str), value_type="Z")
+        samout.write(read)  
+        n_reads=n_reads+1
+
     samin.close()
     samout.close()
     pysam.index(bam_out)

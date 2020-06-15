@@ -336,7 +336,9 @@ class Transcript():
         self.df = df 
         self.transcript = self.df[self.df.Feature=='transcript'].iloc[0]
         self.region = to_region(self.transcript)
+        print(self.region)
         self.transcript_seq = genome.fetch(region=self.region)
+        print(self.transcript_seq)
         self.exons = self.df[self.df.Feature=='exon']
         self.introns = pd.DataFrame(columns=self.df.columns, index=[0])
         last_end = -1

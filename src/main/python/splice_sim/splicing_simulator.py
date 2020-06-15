@@ -679,7 +679,7 @@ for cond in conditions:
                
 # concat files per condition, introduce T/C conversions and bgzip
 for cond in conditions:
-    f_all = tmpdir + config['dataset_name'] + "." + cond.id + ".fq"
+    f_all = tmpdir + config['dataset_name'] + "." + cond.id + ".fq.gz"
     f_tc  = tmpdir + config['dataset_name'] + "." + cond.id + ".TC.fq"
     hist_tc=[]
     if args.force or not files_exist(f_tc+".gz"):
@@ -703,9 +703,7 @@ for cond in conditions:
                         lines = []
                 if len(buf)>0:
                     out.writelines(buf)
-        if write_uncoverted:
-            bgzip(f_all, override=True, delinFile=True)
-        else:
+        if not write_uncoverted:
             removeFile(f_all)
         bgzip(f_tc, override=True, delinFile=True, threads=threads)
     else:

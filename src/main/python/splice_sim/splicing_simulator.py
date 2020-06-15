@@ -669,7 +669,6 @@ for cond in conditions:
                         read_stats['dropped_'+read_strand]=read_stats['dropped_'+read_strand]+1 if 'dropped_'+read_strand in read_stats else 1
         if success:
             bgzip(f_truth, override=True, delinFile=True, threads=threads)
-            bgzip(f_fq, override=True, delinFile=True, threads=threads)
             removeFile([f_fq_both, f_sam_both])
         print(read_stats)
 
@@ -679,7 +678,7 @@ for cond in conditions:
                
 # concat files per condition, introduce T/C conversions and bgzip
 for cond in conditions:
-    f_all = tmpdir + config['dataset_name'] + "." + cond.id + ".fq.gz"
+    f_all = tmpdir + config['dataset_name'] + "." + cond.id + ".fq"
     f_tc  = tmpdir + config['dataset_name'] + "." + cond.id + ".TC.fq"
     hist_tc=[]
     if args.force or not files_exist(f_tc+".gz"):
@@ -705,6 +704,8 @@ for cond in conditions:
                     out.writelines(buf)
         if not write_uncoverted:
             removeFile(f_all)
+        else:
+            bgzip(f_all, override=True, delinFile=True, threads=threads)
         bgzip(f_tc, override=True, delinFile=True, threads=threads)
     else:
         print("Will not re-create existing file %s" % (f_tc+".gz"))

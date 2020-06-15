@@ -310,7 +310,6 @@ class Isoform():
         abs_pos=None
         off = rel_pos
         block_id=0
-        print(self.aln_blocks)
         for bstart,bend in self.aln_blocks:
             bwidth = bend-bstart+1
             abs_pos = bstart
@@ -321,6 +320,9 @@ class Isoform():
             block_id+=1
         # TODO: check WARN: WARN: Invalid relative position 3640 / 142903115 in isoform ENSMUST00000100497.10_pre, [0.5], [0,0,0,0,0]
         print("WARN: Invalid relative position %i / %i in isoform %s" % (rel_pos, abs_pos, self))
+        print(self.aln_blocks)
+        print(abs_pos+off, block_id)
+
         return (abs_pos+off, block_id)
     
     def __repr__(self):

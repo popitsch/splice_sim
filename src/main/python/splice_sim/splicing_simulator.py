@@ -318,10 +318,8 @@ class Isoform():
             # next block
             off -= bwidth
             block_id+=1
-        # TODO: check WARN: WARN: Invalid relative position 3640 / 142903115 in isoform ENSMUST00000100497.10_pre, [0.5], [0,0,0,0,0]
-        print("WARN: Invalid relative position %i / %i in isoform %s" % (rel_pos, abs_pos, self))
-        print(self.aln_blocks)
-        print(abs_pos+off, block_id)
+        if off != 0:
+            print("WARN: Invalid relative position %i / %i in isoform %s" % (rel_pos, abs_pos, self))
 
         return (abs_pos+off, block_id)
     
@@ -339,9 +337,7 @@ class Transcript():
         self.df = df 
         self.transcript = self.df[self.df.Feature=='transcript'].iloc[0]
         self.region = to_region(self.transcript)
-        print(self.region)
         self.transcript_seq = genome.fetch(region=self.region)
-        print(self.transcript_seq)
         self.exons = self.df[self.df.Feature=='exon']
         self.introns = pd.DataFrame(columns=self.df.columns, index=[0])
         last_end = -1

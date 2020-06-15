@@ -664,7 +664,7 @@ for cond in conditions:
                                                                       end_abs, 
                                                                       read_spliced, 
                                                                       ",".join(str(iso.rel2abs_pos(p)[0]) for p in cigar_to_rel_pos(r))  ), file=out_truth )
-                        print("@%s\n%s\n+\n%s" % ( r.query_name, r.query_sequence, r.query_qualities), file=out_fq )
+                        print("@%s\n%s\n+\n%s" % ( r.query_name, r.query_sequence, r.query_qualities.decode('ascii')), file=out_fq )
                     else:
                         read_stats['dropped_'+read_strand]=read_stats['dropped_'+read_strand]+1 if 'dropped_'+read_strand in read_stats else 1
         if success:

@@ -640,7 +640,7 @@ for cond in conditions:
         with open(f_truth, 'w') as out_truth:
             with open(f_fq, 'w') as out_fq:
                 print("read_name\tstart_rel\tend_rel\tseq_err_pos_rel\tchr_abs\tstart_abs\tend_abs\tread_spliced\tseq_err_pos_abs", file=out_truth)
-                sam = pysam.AlignmentFile(f_sam, "rb")
+                sam = pysam.AlignmentFile(f_sam_both, "rb")
                 read_stats={}
                 for r in sam.fetch():
                     # e.g. 'ENSMUST00000099151.5_+_mat_0-400'. tag ('0-400') consists of running number from 'abundance' and running number form ART

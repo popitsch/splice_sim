@@ -657,16 +657,16 @@ for cond in conditions:
                         start_abs, bid_start = iso.rel2abs_pos(r.reference_start)
                         end_abs, bid_end = iso.rel2abs_pos(r.reference_end)
                         read_spliced = 1 if bid_start != bid_end else 0
-                        
+                        rel_pos = cigar_to_rel_pos(r)
                         print("%s\t%i\t%i\t%s\t%s\t%i\t%i\t%i\t%s" % (r.query_name, 
                                                                       r.reference_start,
                                                                       r.reference_end, 
-                                                                      (",".join(str(p) for p in cigar_to_rel_pos(r)) ) if len(p)>0 else 'NA',
+                                                                      (",".join(str(p) for p in rel_pos) ) if len(rel_pos)>0 else 'NA',
                                                                       iso.t.transcript.Chromosome,
                                                                       start_abs,
                                                                       end_abs, 
                                                                       read_spliced, 
-                                                                      (",".join(str(iso.rel2abs_pos(p)[0]) for p in cigar_to_rel_pos(r)) )  if len(p)>0 else 'NA'  
+                                                                      (",".join(str(iso.rel2abs_pos(p)[0]) for p in rel_pos) )  if len(rel_pos)>0 else 'NA'  
                                                                       ), file=out_truth )
                         qstr = ''.join(map(lambda x: chr( x+33 ), r.query_qualities))
                         print("@%s\n%s\n+\n%s" % ( r.query_name, r.query_sequence, qstr), file=out_fq )

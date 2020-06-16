@@ -85,7 +85,7 @@ def replace_tokens(s, tok):
     return(s)
 
 # Converts read positions to genomic positions (1-based) by taking all cigar operations into account. 
-# The returned coords are relative to the alignment start, ie. absolute coords reeequire to add read.reference_start
+# The returned coords are relative to the alignment start, ie. absolute coords require to add read.reference_start
 def readidx2genpos_rel( read, idx ):
     if len(read.get_aligned_pairs(matches_only=True))<idx:
         #print("invalid index %i, possibly softclipped? " % ( idx) )
@@ -307,6 +307,8 @@ class Isoform():
     # convert isoform-relative coordinates to genomic coordinates.
     # E.g., a rel_pos==0 will return the 1st position of the transcript in genomic coordinates (1-based)
     def rel2abs_pos(self, rel_pos):
+        if self.t.transcript.Strand == '-':
+            rel_pos = self.t.len - rel_pos
         abs_pos=None
         off = rel_pos
         block_id=0
@@ -337,6 +339,7 @@ class Transcript():
         self.df = df 
         self.transcript = self.df[self.df.Feature=='transcript'].iloc[0]
         self.region = to_region(self.transcript)
+        self.len = self.transcript.End - self.transcript.Start + 1
         self.transcript_seq = genome.fetch(region=self.region)
         self.exons = self.df[self.df.Feature=='exon']
         self.introns = pd.DataFrame(columns=self.df.columns, index=[0])
@@ -658,12 +661,13 @@ for cond in conditions:
                         print("%s\t%i\t%i\t%s\t%s\t%i\t%i\t%i\t%s" % (r.query_name, 
                                                                       r.reference_start,
                                                                       r.reference_end, 
-                                                                      ",".join(str(p) for p in cigar_to_rel_pos(r)),
+                                                                      (",".join(str(p) for p in cigar_to_rel_pos(r)) ) if len(p)>0 else 'NA',
                                                                       iso.t.transcript.Chromosome,
                                                                       start_abs,
                                                                       end_abs, 
                                                                       read_spliced, 
-                                                                      ",".join(str(iso.rel2abs_pos(p)[0]) for p in cigar_to_rel_pos(r))  ), file=out_truth )
+                                                                      (",".join(str(iso.rel2abs_pos(p)[0]) for p in cigar_to_rel_pos(r)) )  if len(p)>0 else 'NA'  
+                                                                      ), file=out_truth )
                         qstr = ''.join(map(lambda x: chr( x+33 ), r.query_qualities))
                         print("@%s\n%s\n+\n%s" % ( r.query_name, r.query_sequence, qstr), file=out_fq )
                     else:

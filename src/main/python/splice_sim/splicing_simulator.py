@@ -293,7 +293,9 @@ class Isoform():
         self.fractions = fractions
         self.splicing_status = splicing_status
         self.t = transcript
-        # extract alignment blocks
+        self.strand = self.t.transcript.Strand
+        # extract alignment blocks. Those contain absolute coords and are always ordered by genomic coords 
+        # (e.g., [(16101295, 16101359), (16101727, 16101936), (16102490, 16102599), (16102692, 16102829), (16103168, 16103334), (16103510, 16103684), (16104365, 16104662)])
         self.aln_blocks=[]
         bstart=self.t.transcript.Start
         for idx, splicing in list(enumerate(self.splicing_status)):
@@ -303,25 +305,28 @@ class Isoform():
                 bstart=self.t.introns.iloc[idx].End+1 # 1st exonic 1-based pos
         bend=self.t.transcript.End
         self.aln_blocks+=[(bstart, bend)]
-        print("alignment blocks: %s" % (self.aln_blocks))
+        #print("alignment blocks: %s" % (self.aln_blocks))
         
     # convert isoform-relative coordinates to genomic coordinates.
     # E.g., a rel_pos==0 will return the 1st position of the transcript in genomic coordinates (1-based)
     def rel2abs_pos(self, rel_pos):
+        ablocks = self.aln_blocks if self.strand == '+' else reversed(self.aln_blocks)
         abs_pos=None
         off = rel_pos
         block_id=0
         for bstart,bend in self.aln_blocks:
             bwidth = bend-bstart+1
-            abs_pos = bstart
+            abs_pos = bstart if self.strand == '+' else bend
             if off - bwidth < 0:
-                return (abs_pos+off, block_id)
+                ret = abs_pos+off if self.strand == '+' else abs_pos-off
+                return (ret, block_id)
             # next block
             off -= bwidth
             block_id+=1
         if off != 0:
             print("WARN: Invalid relative position %i / %i in isoform %s: %i" % (rel_pos, abs_pos, self, off))
-        return (abs_pos+off, block_id)
+        ret = abs_pos+off if self.strand == '+' else abs_pos-off
+        return (ret, block_id)
     
     def __repr__(self):
         return self.__str__()  
@@ -654,8 +659,6 @@ for cond in conditions:
                         iso = transcripts[tid].isoforms[iso_id]
                         start_abs, bid_start = iso.rel2abs_pos(r.reference_start)
                         end_abs, bid_end = iso.rel2abs_pos(r.reference_end-1)
-                        if read_strand == '-': # swap start/end coords
-                            start_abs, bid_start, end_abs, bid_end = end_abs, bid_end, start_abs, bid_start 
                         read_spliced = 1 if bid_start != bid_end else 0
                         rel_pos = cigar_to_rel_pos(r)
                         print("%s\t%i\t%i\t%s\t%s\t%i\t%i\t%i\t%s" % (r.query_name, 

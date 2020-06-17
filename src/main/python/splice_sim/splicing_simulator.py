@@ -314,7 +314,7 @@ class Isoform():
         abs_pos=None
         off = rel_pos
         block_id=0
-        for bstart,bend in self.aln_blocks:
+        for bstart,bend in ablocks:
             bwidth = bend-bstart+1
             abs_pos = bstart if self.strand == '+' else bend
             if off - bwidth < 0:

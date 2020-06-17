@@ -321,7 +321,7 @@ class Isoform():
             off -= bwidth
             block_id+=1
         if off != 0:
-            print("WARN: Invalid relative position %i / %i in isoform %s" % (rel_pos, abs_pos, self))
+            print("WARN: Invalid relative position %i / %i in isoform %s: %i" % (rel_pos, abs_pos, self, off))
 
         return (abs_pos+off, block_id)
     
@@ -329,7 +329,7 @@ class Isoform():
         return self.__str__()  
     
     def __str__(self):
-        ret = ("%s_%s, [%s], [%s]" % (self.t.tid, self.id, ",".join(str(x) for x in self.fractions), ",".join(str(x) for x in self.splicing_status)) )
+        ret = ("%s_%s @ %s, [%s], [%s]" % (self.t.tid, self.id, self.t.region, ",".join(str(x) for x in self.fractions), ",".join(str(x) for x in self.splicing_status)) )
         return (ret)   
 
 class Transcript():
@@ -655,7 +655,9 @@ for cond in conditions:
                         valid_reads[cond].add(r.query_name)
                         iso = transcripts[tid].isoforms[iso_id]
                         start_abs, bid_start = iso.rel2abs_pos(r.reference_start)
-                        end_abs, bid_end = iso.rel2abs_pos(r.reference_end)
+                        end_abs, bid_end = iso.rel2abs_pos(r.reference_end-1)
+                        if read_strand == '-': # swap start/end coords
+                            start_abs, bid_start, end_abs, bid_end = end_abs, bid_end, start_abs, bid_start 
                         read_spliced = 1 if bid_start != bid_end else 0
                         rel_pos = cigar_to_rel_pos(r)
                         print("%s\t%i\t%i\t%s\t%s\t%i\t%i\t%i\t%s" % (r.query_name, 

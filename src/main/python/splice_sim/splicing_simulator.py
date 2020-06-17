@@ -682,6 +682,7 @@ for cond in conditions:
     else:
         print("Will not re-create existing file %s" % (f_fq+".gz"))
 
+sys.exit("done")
                
 # concat files per condition, introduce T/C conversions and bgzip
 for cond in conditions:

@@ -303,12 +303,11 @@ class Isoform():
                 bstart=self.t.introns.iloc[idx].End+1 # 1st exonic 1-based pos
         bend=self.t.transcript.End
         self.aln_blocks+=[(bstart, bend)]
+        print("alignment blocks: %s" % (self.aln_blocks))
         
     # convert isoform-relative coordinates to genomic coordinates.
     # E.g., a rel_pos==0 will return the 1st position of the transcript in genomic coordinates (1-based)
     def rel2abs_pos(self, rel_pos):
-        if self.t.transcript.Strand == '-':
-            rel_pos = self.t.len - rel_pos
         abs_pos=None
         off = rel_pos
         block_id=0
@@ -322,7 +321,6 @@ class Isoform():
             block_id+=1
         if off != 0:
             print("WARN: Invalid relative position %i / %i in isoform %s: %i" % (rel_pos, abs_pos, self, off))
-
         return (abs_pos+off, block_id)
     
     def __repr__(self):

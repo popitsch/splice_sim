@@ -44,6 +44,30 @@ usage = '''
 USAGE
 '''
 
+class ReadTruth:
+
+    def __init__(self, name, chromosome, relStart, relEnd, relSeqError, absStart, absEnd, absSeqError, splicing):
+        # Name of the parsed read
+        self.name = name
+        # Chromosome
+        self.chromosome = chromosome
+        # Relative starting position of the read alignment
+        self.relStart = relStart
+        # Relative end position of the read alignment
+        self.relEnd = relEnd
+        # Relative position of a sequencing error
+        self.relSeqError = relSeqError
+        # Absolute starting position of the read alignment
+        self.absStart = absStart
+        # Absolute end position of the read alignment
+        self.absEnd = absEnd
+        # Absolute position of a sequencing error
+        self.absSeqError = absSeqError
+        # Splicing status
+        self.splicing = splicing
+
+    def __repr__(self):
+        return "\t".join([self.name, self.chromosome, str(self.absStart), str(self.absEnd), str(self.absSeqError), str(self.splicing)])
 
 class SimulatedRead:
 
@@ -154,6 +178,7 @@ class SpliceSimFile:
 
 parser = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
 parser.add_argument("-b","--bam", type=existing_file, required=True, dest="bamFile", help="Mapped bam file")
+parser.add_argument("-t","--truth", type=existing_file, required=True, dest="truthFile", help="Read truth tsv file")
 parser.add_argument("-o","--out", type=str, required=False, default="outdir", dest="outdir", metavar="outdir", help="Output folder")
 args = parser.parse_args()
 startTime = time.time()
@@ -170,6 +195,26 @@ if not os.path.exists(outdir):
 tmpdir = outdir + "/tmp/"
 if not os.path.exists(tmpdir):
     os.makedirs(tmpdir)
+
+with gzip.open(args.truthFile,'rt') as f:
+    # skip header
+    next(f)
+    for line in f:
+        name, relStart, relEnd, relSeqError, chromosome, absStart, absEnd, splicing, absSeqError = line.rstrip().split("\t")
+
+        if relSeqError == "NA":
+            relSeqError = list()
+        else:
+            relSeqError = relSeqError.split(",")
+
+        if absSeqError == "NA":
+            absSeqError = list()
+        else:
+            absSeqError = absSeqError.split(",")
+
+        readTruth = ReadTruth(name, chromosome, relStart, relEnd, relSeqError, absStart, absEnd, absSeqError, splicing == "1")
+        print(readTruth)
+        sys.stdin.readline()
 
 simFile = SpliceSimFile(args.bamFile)
 

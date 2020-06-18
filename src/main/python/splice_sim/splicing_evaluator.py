@@ -47,26 +47,32 @@ USAGE
 
 class SimulatedRead:
 
-    def __init__(self):
+    def __init__(self, name, chromosome, relStart, relEnd, relSeqError, relConversion, absStart, absEnd, absSeqError, absConversion, splicing):
         # Name of the parsed read
-        self.name = None
+        self.name = name
+        # Chromosome
+        self.chromosome = chromosome
         # Relative starting position of the read alignment
-        self.relStart = None
+        self.relStart = relStart
         # Relative end position of the read alignment
-        self.relEnd = None
+        self.relEnd = relEnd
         # Relative position of a sequencing error
-        self.relSeqError = []
+        self.relSeqError = relSeqError
+        # Relative position of a nucleotide conversion
+        self.relConversion = relConversion
         # Absolute starting position of the read alignment
-        self.absStart = None
+        self.absStart = absStart
         # Absolute end position of the read alignment
-        self.absEnd = None
+        self.absEnd = absEnd
         # Absolute position of a sequencing error
-        self.absSeqError = []
+        self.absSeqError = absSeqError
+        # Absolute position of a nucleotide conversion
+        self.absConversion = absConversion
         # Splicing status
-        self.splicing = None
+        self.splicing = splicing
 
     def __repr__(self):
-        return "\t".join([self.name, str(self.relStart), str(self.relEnd), self.relSeqError, str(self.absStart), str(self.absEnd), self.absSeqError, self.splicing])
+        return "\t".join([self.name, self.chromosome, str(self.absStart), str(self.absEnd), str(self.absSeqError), str(self.absConversion), str(self.splicing)])
 
 
 class SimulatedReadIterator:
@@ -81,11 +87,50 @@ class SimulatedReadIterator:
 
         read = self._readIterator.__next__()
 
-        print(read)
+        name = read.query_name
 
-        simulatedRead = SimulatedRead()
+        chromosome = read.reference_name
+
+        start = read.reference_start
+
+        end = read.reference_end
+
+        # Fix later to only skip splice site but include Indels
+        matches = read.get_aligned_pairs(matches_only=True, with_seq=True)
+
+        conversions = list()
+        errors = list()
+
+        for match in matches:
+            readPos, refPos, refBase = match
+
+            readBase = read.query_sequence[readPos]
+
+            readBase = readBase.upper()
+            refBase = refBase.upper()
+
+            if readBase.upper() != refBase.upper():
+                if not self.isTCMismatch(readBase, refBase, read.is_reverse):
+                    conversions.append(refPos)
+                else :
+                    errors.append(refPos)
+
+        spliced = False
+        for operation in read.cigartuples:
+            if operation[0] == 3:
+                spliced = True
+                break
+
+        simulatedRead = SimulatedRead(name, chromosome, 0, 0, list(), list(),
+        start, end, errors, conversions, spliced)
 
         return simulatedRead
+
+    def isTCMismatch(self, readBase, refBase, isReverse):
+        if(isReverse):
+            return readBase == "G" and refBase == "A"
+        else:
+            return readBase == "C" and refBase == "T"
 
 class SpliceSimFile:
 

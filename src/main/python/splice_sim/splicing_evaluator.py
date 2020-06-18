@@ -69,6 +69,40 @@ class ReadTruth:
     def __repr__(self):
         return "\t".join([self.name, self.chromosome, str(self.absStart), str(self.absEnd), str(self.absSeqError), str(self.splicing)])
 
+class TruthCollection:
+
+    def __init__(self, truthFile):
+        self._truthFile = truthFile
+        self._truthDict = dict()
+
+    def readTruth(self):
+
+        with gzip.open(self._truthFile,'rt') as f:
+            # skip header
+            next(f)
+            for line in f:
+                name, relStart, relEnd, relSeqError, chromosome, absStart, absEnd, splicing, absSeqError = line.rstrip().split("\t")
+
+                if relSeqError == "NA":
+                    relSeqError = list()
+                else:
+                    relSeqError = relSeqError.split(",")
+
+                if absSeqError == "NA":
+                    absSeqError = list()
+                else:
+                    absSeqError = absSeqError.split(",")
+
+                readTruth = ReadTruth(name, chromosome, relStart, relEnd, relSeqError, absStart, absEnd, absSeqError, splicing == "1")
+
+                self._truthDict[name] = readTruth
+
+    def getTruth(self, name):
+        if name in self._truthDict:
+            return self._truthDict[name]
+        else:
+            return None
+
 class SimulatedRead:
 
     def __init__(self, name, chromosome, relStart, relEnd, relSeqError, relConversion, absStart, absEnd, absSeqError, absConversion, splicing):
@@ -135,9 +169,9 @@ class SimulatedReadIterator:
 
             if readBase.upper() != refBase.upper():
                 if not self.isTCMismatch(readBase, refBase, read.is_reverse):
-                    conversions.append(refPos)
+                    conversions.append(refPos + 1)
                 else :
-                    errors.append(refPos)
+                    errors.append(refPos + 1)
 
         spliced = False
         for operation in read.cigartuples:
@@ -146,7 +180,7 @@ class SimulatedReadIterator:
                 break
 
         simulatedRead = SimulatedRead(name, chromosome, 0, 0, list(), list(),
-        start, end, errors, conversions, spliced)
+        start + 1, end, errors, conversions, spliced)
 
         return simulatedRead
 
@@ -196,25 +230,11 @@ tmpdir = outdir + "/tmp/"
 if not os.path.exists(tmpdir):
     os.makedirs(tmpdir)
 
-with gzip.open(args.truthFile,'rt') as f:
-    # skip header
-    next(f)
-    for line in f:
-        name, relStart, relEnd, relSeqError, chromosome, absStart, absEnd, splicing, absSeqError = line.rstrip().split("\t")
+truthCollection = TruthCollection(args.truthFile)
 
-        if relSeqError == "NA":
-            relSeqError = list()
-        else:
-            relSeqError = relSeqError.split(",")
+truthCollection.readTruth()
 
-        if absSeqError == "NA":
-            absSeqError = list()
-        else:
-            absSeqError = absSeqError.split(",")
-
-        readTruth = ReadTruth(name, chromosome, relStart, relEnd, relSeqError, absStart, absEnd, absSeqError, splicing == "1")
-        print(readTruth)
-        sys.stdin.readline()
+print("Done reading truth collection")
 
 simFile = SpliceSimFile(args.bamFile)
 
@@ -222,4 +242,5 @@ readIterator = simFile.readsGenomeWide()
 
 for read in readIterator:
     print(read)
+    print(truthCollection.getTruth(read.name))
     sys.stdin.readline()

@@ -67,39 +67,25 @@ class ReadTruth:
         self.splicing = splicing
 
     def __repr__(self):
-        return "\t".join([self.name, self.chromosome, str(self.absStart), str(self.absEnd), str(self.absSeqError), str(self.splicing)])
+        return "\t".join([self.name, str(self.chromosome), str(self.absStart), str(self.absEnd), str(self.absSeqError), str(self.splicing)])
 
 class TruthCollection:
 
     def __init__(self, truthFile):
         self._truthFile = truthFile
-        self._truthDict = dict()
+        self._truth = None
 
     def readTruth(self):
 
-        with gzip.open(self._truthFile,'rt') as f:
-            # skip header
-            next(f)
-            for line in f:
-                name, relStart, relEnd, relSeqError, chromosome, absStart, absEnd, splicing, absSeqError = line.rstrip().split("\t")
-
-                if relSeqError == "NA":
-                    relSeqError = list()
-                else:
-                    relSeqError = relSeqError.split(",")
-
-                if absSeqError == "NA":
-                    absSeqError = list()
-                else:
-                    absSeqError = absSeqError.split(",")
-
-                readTruth = ReadTruth(name, chromosome, relStart, relEnd, relSeqError, absStart, absEnd, absSeqError, splicing == "1")
-
-                self._truthDict[name] = readTruth
+        self._truth = pd.read_csv(self._truthFile, delimiter='\t')
+        self._truth.index = self._truth.read_name
 
     def getTruth(self, name):
-        if name in self._truthDict:
-            return self._truthDict[name]
+
+        row = self._truth.loc[name, :]
+
+        if len(row) > 0:
+            return ReadTruth(row.read_name, row.chr_abs, row.start_rel, row.end_rel, row.seq_err_pos_rel, row.start_abs, row.end_abs, row.seq_err_pos_abs, row.read_spliced)
         else:
             return None
 
@@ -242,5 +228,6 @@ readIterator = simFile.readsGenomeWide()
 
 for read in readIterator:
     print(read)
+    sys.stdin.readline()
     print(truthCollection.getTruth(read.name))
     sys.stdin.readline()

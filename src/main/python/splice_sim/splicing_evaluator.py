@@ -115,6 +115,33 @@ class SimulatedRead:
         # Splicing status
         self.splicing = splicing
 
+    def evaluate(self, truth):
+
+        print(self.chromosome,end="\t")
+        print(truth.chromosome,end="\t")
+        print(self.absStart,end="\t")
+        print(truth.absStart,end="\t")
+        print(self.absEnd,end="\t")
+        print(truth.absEnd,end="\t")
+        seqErrorMeasured = self.absSeqError
+        seqErrorTruth = truth.absSeqError
+        print(len(seqErrorMeasured),end="\t")
+        if type(seqErrorTruth) is float:
+            seqErrorTruth = list()
+        else :
+            seqErrorTruth = seqErrorTruth.split(",")
+            seqErrorTruth = list(map(int, seqErrorTruth))
+        positionalMismatches = 0
+
+        for position in seqErrorMeasured:
+            if position in seqErrorTruth:
+                positionalMismatches += 1
+        print(len(seqErrorTruth),end="\t")
+        print(positionalMismatches,end="\t")
+
+        print(self.splicing,end="\t")
+        print(truth.splicing == 1)
+
     def __repr__(self):
         return "\t".join([self.name, self.chromosome, str(self.absStart), str(self.absEnd), str(self.absSeqError), str(self.absConversion), str(self.splicing)])
 
@@ -154,7 +181,7 @@ class SimulatedReadIterator:
             refBase = refBase.upper()
 
             if readBase.upper() != refBase.upper():
-                if not self.isTCMismatch(readBase, refBase, read.is_reverse):
+                if self.isTCMismatch(readBase, refBase, read.is_reverse):
                     conversions.append(refPos + 1)
                 else :
                     errors.append(refPos + 1)
@@ -226,8 +253,14 @@ simFile = SpliceSimFile(args.bamFile)
 
 readIterator = simFile.readsGenomeWide()
 
+print("\t".join(["chromsome_observed","chromosome_truth",
+                 "start_observed","start_truth",
+                 "end_observed","end_truth",
+                 "mm_observed","mm_truth",
+                 "matching_positions",
+                 "splicing_observed","splicing_truth"]))
+
 for read in readIterator:
-    print(read)
-    sys.stdin.readline()
-    print(truthCollection.getTruth(read.name))
+    truth = truthCollection.getTruth(read.name)
+    read.evaluate(truth)
     sys.stdin.readline()

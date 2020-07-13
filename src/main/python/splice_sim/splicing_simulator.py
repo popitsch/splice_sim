@@ -146,6 +146,7 @@ def runSTAR(bam, ref, reads1=[], reads2=None,  gtf=None, force=True, run_flagsta
         cmd+=["--outFileNamePrefix", pre]
         cmd+=["--runThreadN", str(threads)]
         cmd+=["--genomeDir", ref]
+        cmd+=["--outSAMattributes", "NH HI AS nM MD"] # @see http://samtools.github.io/hts-specs/SAMtags.pdf
         if reads2 is not None:
             cmd+=["--readFilesIn", reads1[idx], reads2[idx]]
         else:

@@ -19,6 +19,7 @@ from utils import *
 import random
 import math
 import gzip
+import re
 
 #============================================================================
 # splice eval readme
@@ -145,7 +146,7 @@ class ReadTruth:
 
 class ReadEvaluation:
 
-    def __init__(self, name, trueChromosome, measuredChromosome, trueStart, measuredStart, trueEnd, measuredEnd, trueSeqErrors, measuredSeqErrors, errorMatches, trueSplicing, measuredSplicing):
+    def __init__(self, name, trueChromosome, measuredChromosome, trueStart, measuredStart, trueEnd, measuredEnd, trueSeqErrors, measuredSeqErrors, errorMatches, trueSplicing, measuredSplicing, knownSpliceSites, novelSpliceSites):
         # Name of the read
         self.name = name
         # True chromosome
@@ -170,10 +171,15 @@ class ReadEvaluation:
         self.trueSplicing = trueSplicing
         # True chromosome
         self.measuredSplicing = measuredSplicing
+        # True chromosome
+        self.knownSpliceSites = knownSpliceSites
+        # True chromosome
+        self.novelSpliceSites = novelSpliceSites
 
     def __repr__(self):
         return "\t".join([self.name, str(self.measuredChromosome), str(self.trueChromosome), str(self.measuredStart), str(self.trueStart), str(self.measuredEnd),
-        str(self.trueEnd), str(self.measuredSeqErrors), str(self.trueSeqErrors),str(self.errorMatches),str(self.measuredSplicing),str(self.trueSplicing)])
+        str(self.trueEnd), str(self.measuredSeqErrors), str(self.trueSeqErrors),str(self.errorMatches),str(self.measuredSplicing),str(self.trueSplicing),
+        str(self.knownSpliceSites), str(self.novelSpliceSites)])
 
 class TruthCollection:
 
@@ -197,7 +203,7 @@ class TruthCollection:
 
 class SimulatedRead:
 
-    def __init__(self, name, chromosome, relStart, relEnd, relSeqError, relConversion, absStart, absEnd, absSeqError, absConversion, splicing):
+    def __init__(self, name, chromosome, relStart, relEnd, relSeqError, relConversion, absStart, absEnd, absSeqError, absConversion, splicing, spliceSites):
         # Name of the parsed read
         self.name = name
         # Chromosome
@@ -220,8 +226,10 @@ class SimulatedRead:
         self.absConversion = absConversion
         # Splicing status
         self.splicing = splicing
+        # Splicing status
+        self.spliceSites = spliceSites
 
-    def evaluate(self, truth):
+    def evaluate(self, truth, junctions):
 
         seqErrorMeasured = self.absSeqError
         seqErrorTruth = truth.absSeqError
@@ -237,7 +245,23 @@ class SimulatedRead:
             if position in seqErrorTruth:
                 positionalMismatches += 1
 
-        return ReadEvaluation(self.name, truth.chromosome, self.chromosome, truth.absStart, self.absStart, truth.absEnd, self.absEnd, len(seqErrorTruth), len(seqErrorMeasured), positionalMismatches, truth.splicing == 1, self.splicing)
+        knownSpliceSite = 0
+        novelSpliceSite = 0
+
+        if self.splicing:
+            for spliceSite in self.spliceSites:
+                res = junctions[self.chromosome].envelop(spliceSite[0], spliceSite[1])
+                if (res) :
+                    iv = res.pop()
+                    begin, end, data = iv
+                    if begin == spliceSite[0] and end == spliceSite[1] and data == re.sub("_.*","",self.name):
+                        knownSpliceSite += 1
+                    else :
+                        novelSpliceSite += 1
+                else :
+                    novelSpliceSite += 1
+
+        return ReadEvaluation(self.name, truth.chromosome, self.chromosome, truth.absStart, self.absStart, truth.absEnd, self.absEnd, len(seqErrorTruth), len(seqErrorMeasured), positionalMismatches, truth.splicing == 1, self.splicing, knownSpliceSite, novelSpliceSite)
 
     def __repr__(self):
         return "\t".join([self.name, self.chromosome, str(self.absStart), str(self.absEnd), str(self.absSeqError), str(self.absConversion), str(self.splicing)])
@@ -283,14 +307,20 @@ class SimulatedReadIterator:
                 else :
                     errors.append(refPos + 1)
 
+        spliceSites = list()
         spliced = False
+
+        refPositions = read.get_aligned_pairs(matches_only=False, with_seq=False)
+        offset = 0
         for operation in read.cigartuples:
             if operation[0] == 3:
                 spliced = True
-                break
+                spliceSite = (refPositions[offset - 1][1] + 1,refPositions[offset + operation[1]][1] + 1)
+                spliceSites.append(spliceSite)
+            offset += operation[1]
 
         simulatedRead = SimulatedRead(name, chromosome, 0, 0, list(), list(),
-        start + 1, end, errors, conversions, spliced)
+        start + 1, end, errors, conversions, spliced, spliceSites)
 
         return simulatedRead
 
@@ -358,9 +388,10 @@ print("\t".join(["name","chromsome_observed","chromosome_truth",
                  "end_observed","end_truth",
                  "mm_observed","mm_truth",
                  "matching_positions",
-                 "splicing_observed","splicing_truth"]))
+                 "splicing_observed","splicing_truth",
+                 "known_splice_sites","novel_splice_sites"]))
 
 for read in readIterator:
     truth = truthCollection.getTruth(read.name)
-    evaluation = read.evaluate(truth)
+    evaluation = read.evaluate(truth, junctions)
     print(evaluation)

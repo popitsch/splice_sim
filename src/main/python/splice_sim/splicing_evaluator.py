@@ -8,6 +8,7 @@
 from argparse import ArgumentParser, RawDescriptionHelpFormatter, \
     ArgumentTypeError
 from collections import *
+from intervaltree import Interval, IntervalTree
 import csv, datetime, time, logging, sys, os, json
 import pysam
 import pyranges as pr
@@ -44,6 +45,79 @@ usage = '''
 USAGE
 '''
 
+# Functions
+
+# Adapted to GFF3 from
+## https://github.com/DaehwanKimLab/hisat2/blob/master/hisat2_extract_splice_sites.py
+
+
+def extract_splice_sites(gff_file, verbose=False):
+    genes = defaultdict(list)
+    trans = {}
+
+    fh = gzip.open(gff_file, 'rt')
+
+    # Parse valid exon lines from the GFF file into a dict by transcript_id
+    for line in fh:
+
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        if '#' in line:
+            line = line.split('#')[0].strip()
+
+        try:
+            chrom, source, feature, left, right, score, \
+                strand, frame, values = line.split('\t')
+        except ValueError:
+            continue
+        left, right = int(left), int(right)
+
+        if feature != 'exon' or left >= right:
+            continue
+
+        values_dict = {}
+        for attr in values.split(';'):
+            if attr:
+                attr, _, val = attr.strip().partition('=')
+                values_dict[attr] = val.strip('"')
+
+        if 'gene_id' not in values_dict or \
+                'transcript_id' not in values_dict:
+            continue
+
+        transcript_id = values_dict['transcript_id']
+        if transcript_id not in trans:
+            trans[transcript_id] = [chrom, strand, [[left, right]]]
+            genes[values_dict['gene_id']].append(transcript_id)
+        else:
+            trans[transcript_id][2].append([left, right])
+
+    # Sort exons and merge where separating introns are <=5 bps
+    for tran, [chrom, strand, exons] in trans.items():
+            exons.sort()
+            tmp_exons = [exons[0]]
+            for i in range(1, len(exons)):
+                if exons[i][0] - tmp_exons[-1][1] <= 5:
+                    tmp_exons[-1][1] = exons[i][1]
+                else:
+                    tmp_exons.append(exons[i])
+            trans[tran] = [chrom, strand, tmp_exons]
+
+    # Calculate and print the unique junctions
+    junctions = dict()
+    for transcript, value in trans.items():
+        chrom, strand, exons = value
+
+        if not chrom in junctions:
+            junctions[chrom] = IntervalTree()
+        for i in range(1, len(exons)):
+            junctions[chrom][exons[i-1][1]:exons[i][0]] = transcript
+
+    return junctions
+
+# Classes
+
 class ReadTruth:
 
     def __init__(self, name, chromosome, relStart, relEnd, relSeqError, absStart, absEnd, absSeqError, splicing):
@@ -68,6 +142,38 @@ class ReadTruth:
 
     def __repr__(self):
         return "\t".join([self.name, str(self.chromosome), str(self.absStart), str(self.absEnd), str(self.absSeqError), str(self.splicing)])
+
+class ReadEvaluation:
+
+    def __init__(self, name, trueChromosome, measuredChromosome, trueStart, measuredStart, trueEnd, measuredEnd, trueSeqErrors, measuredSeqErrors, errorMatches, trueSplicing, measuredSplicing):
+        # Name of the read
+        self.name = name
+        # True chromosome
+        self.trueChromosome = trueChromosome
+        # True chromosome
+        self.measuredChromosome = measuredChromosome
+        # True chromosome
+        self.trueStart = trueStart
+        # True chromosome
+        self.measuredStart = measuredStart
+        # True chromosome
+        self.trueEnd = trueEnd
+        # True chromosome
+        self.measuredEnd = measuredEnd
+        # True chromosome
+        self.trueSeqErrors = trueSeqErrors
+        # True chromosome
+        self.measuredSeqErrors = measuredSeqErrors
+        # True chromosome
+        self.errorMatches = errorMatches
+        # True chromosome
+        self.trueSplicing = trueSplicing
+        # True chromosome
+        self.measuredSplicing = measuredSplicing
+
+    def __repr__(self):
+        return "\t".join([self.name, str(self.measuredChromosome), str(self.trueChromosome), str(self.measuredStart), str(self.trueStart), str(self.measuredEnd),
+        str(self.trueEnd), str(self.measuredSeqErrors), str(self.trueSeqErrors),str(self.errorMatches),str(self.measuredSplicing),str(self.trueSplicing)])
 
 class TruthCollection:
 
@@ -117,15 +223,9 @@ class SimulatedRead:
 
     def evaluate(self, truth):
 
-        print(self.chromosome,end="\t")
-        print(truth.chromosome,end="\t")
-        print(self.absStart,end="\t")
-        print(truth.absStart,end="\t")
-        print(self.absEnd,end="\t")
-        print(truth.absEnd,end="\t")
         seqErrorMeasured = self.absSeqError
         seqErrorTruth = truth.absSeqError
-        print(len(seqErrorMeasured),end="\t")
+
         if type(seqErrorTruth) is float:
             seqErrorTruth = list()
         else :
@@ -136,11 +236,8 @@ class SimulatedRead:
         for position in seqErrorMeasured:
             if position in seqErrorTruth:
                 positionalMismatches += 1
-        print(len(seqErrorTruth),end="\t")
-        print(positionalMismatches,end="\t")
 
-        print(self.splicing,end="\t")
-        print(truth.splicing == 1)
+        return ReadEvaluation(self.name, truth.chromosome, self.chromosome, truth.absStart, self.absStart, truth.absEnd, self.absEnd, len(seqErrorTruth), len(seqErrorMeasured), positionalMismatches, truth.splicing == 1, self.splicing)
 
     def __repr__(self):
         return "\t".join([self.name, self.chromosome, str(self.absStart), str(self.absEnd), str(self.absSeqError), str(self.absConversion), str(self.splicing)])
@@ -225,35 +322,38 @@ class SpliceSimFile:
 
 parser = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
 parser.add_argument("-b","--bam", type=existing_file, required=True, dest="bamFile", help="Mapped bam file")
+parser.add_argument("-g","--gff", type=existing_file, required=True, dest="gffFile", help="GFF3 file of gene models")
 parser.add_argument("-t","--truth", type=existing_file, required=True, dest="truthFile", help="Read truth tsv file")
 parser.add_argument("-o","--out", type=str, required=False, default="outdir", dest="outdir", metavar="outdir", help="Output folder")
 args = parser.parse_args()
 startTime = time.time()
 
-print(logo)
+print(logo, file=sys.stderr)
 
 # output dir (current dir if none provided)
 outdir = args.outdir if args.outdir else os.getcwd()
 if not outdir.endswith("/"):
     outdir += "/"
 if not os.path.exists(outdir):
-    print("Creating dir " + outdir)
+    print("Creating dir " + outdir, file=sys.stderr)
     os.makedirs(outdir)
 tmpdir = outdir + "/tmp/"
 if not os.path.exists(tmpdir):
     os.makedirs(tmpdir)
 
+junctions = extract_splice_sites(args.gffFile)
+
 truthCollection = TruthCollection(args.truthFile)
 
 truthCollection.readTruth()
 
-print("Done reading truth collection")
+print("Done reading truth collection", file = sys.stderr)
 
 simFile = SpliceSimFile(args.bamFile)
 
 readIterator = simFile.readsGenomeWide()
 
-print("\t".join(["chromsome_observed","chromosome_truth",
+print("\t".join(["name","chromsome_observed","chromosome_truth",
                  "start_observed","start_truth",
                  "end_observed","end_truth",
                  "mm_observed","mm_truth",
@@ -262,5 +362,5 @@ print("\t".join(["chromsome_observed","chromosome_truth",
 
 for read in readIterator:
     truth = truthCollection.getTruth(read.name)
-    read.evaluate(truth)
-    sys.stdin.readline()
+    evaluation = read.evaluate(truth)
+    print(evaluation)

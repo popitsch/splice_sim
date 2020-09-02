@@ -229,6 +229,17 @@ class SimulatedRead:
         # Splicing status
         self.spliceSites = spliceSites
 
+    def hasSpliceSite(self, junction):
+        if self.splicing:
+            for spliceSite in self.spliceSites:
+                res = junction.envelop(spliceSite[0], spliceSite[1])
+                if (res) :
+                    iv = res.pop()
+                    begin, end, data = iv
+                    if begin == spliceSite[0] and end == spliceSite[1]:
+                        return True
+        return False
+
     def evaluate(self, truth, junctions):
 
         seqErrorMeasured = self.absSeqError
@@ -250,12 +261,15 @@ class SimulatedRead:
 
         if self.splicing:
             for spliceSite in self.spliceSites:
-                res = junctions[self.chromosome].envelop(spliceSite[0], spliceSite[1])
-                if (res) :
-                    iv = res.pop()
-                    begin, end, data = iv
-                    if begin == spliceSite[0] and end == spliceSite[1] and data == re.sub("_.*","",self.name):
-                        knownSpliceSite += 1
+                if self.chromosome in junctions:
+                    res = junctions[self.chromosome].envelop(spliceSite[0], spliceSite[1])
+                    if (res) :
+                        iv = res.pop()
+                        begin, end, data = iv
+                        if begin == spliceSite[0] and end == spliceSite[1] and data == re.sub("_.*","",self.name):
+                            knownSpliceSite += 1
+                        else :
+                            novelSpliceSite += 1
                     else :
                         novelSpliceSite += 1
                 else :
@@ -339,6 +353,10 @@ class SpliceSimFile:
 
         return SimulatedReadIterator(self._bamFile.fetch())
 
+    def readsInInterval(self, chromosome, start, end):
+
+        return SimulatedReadIterator(self._bamFile.fetch(contig = chromosome, start = start, stop = end))
+
     def atoi(self, text):
         return int(text) if text.isdigit() else text
 
@@ -354,6 +372,7 @@ parser = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFor
 parser.add_argument("-b","--bam", type=existing_file, required=True, dest="bamFile", help="Mapped bam file")
 parser.add_argument("-g","--gff", type=existing_file, required=True, dest="gffFile", help="GFF3 file of gene models")
 parser.add_argument("-t","--truth", type=existing_file, required=True, dest="truthFile", help="Read truth tsv file")
+parser.add_argument('-i', "--intron-based", action='store_true', dest="introns", help="Quantify per intron, not per read")
 parser.add_argument("-o","--out", type=str, required=False, default="outdir", dest="outdir", metavar="outdir", help="Output folder")
 args = parser.parse_args()
 startTime = time.time()
@@ -381,17 +400,61 @@ print("Done reading truth collection", file = sys.stderr)
 
 simFile = SpliceSimFile(args.bamFile)
 
-readIterator = simFile.readsGenomeWide()
+if args.introns:
 
-print("\t".join(["name","chromsome_observed","chromosome_truth",
-                 "start_observed","start_truth",
-                 "end_observed","end_truth",
-                 "mm_observed","mm_truth",
-                 "matching_positions",
-                 "splicing_observed","splicing_truth",
-                 "known_splice_sites","novel_splice_sites"]))
+    print("\t".join(["Transcript", "exon-intron", "intron", "intron-exon", "exon-exon", "exon-exon-false", "garbage"]))
 
-for read in readIterator:
-    truth = truthCollection.getTruth(read.name)
-    evaluation = read.evaluate(truth, junctions)
-    print(evaluation)
+    iv = junctions["6"][122707991:122710920].pop()
+    ivTree = IntervalTree()
+    ivTree.add(iv)
+    readIterator = simFile.readsInInterval("6", iv.begin, iv.end)
+
+    exonintron = 0
+    exonexon = 0
+    intronexon = 0
+    intron = 0
+    exonexonfalse = 0
+    garbage = 0
+
+    for read in readIterator:
+        truth = truthCollection.getTruth(read.name)
+        evaluation = read.evaluate(truth, junctions)
+        start = read.absStart
+        end = read.absEnd
+
+        if start <= iv.begin and end > iv.begin:
+            if read.splicing and not read.hasSpliceSite(ivTree):
+                exonexonfalse += 1
+            elif read.splicing and read.hasSpliceSite(ivTree):
+                exonexon += 1
+            elif end < iv.end:
+                exonintron += 1
+            else :
+                garbage += 1
+
+        elif start < iv.end and end >= iv.end :
+            intronexon += 1
+        elif start >= iv.begin and end <= iv.end:
+            intron +=1
+        else:
+            garbage += 1
+
+    print("\t".join([iv.data, str(exonintron), str(intron), str(intronexon), str(exonexon), str(exonexonfalse), str(garbage)]))
+
+
+else:
+
+    readIterator = simFile.readsGenomeWide()
+
+    print("\t".join(["name","chromsome_observed","chromosome_truth",
+                     "start_observed","start_truth",
+                     "end_observed","end_truth",
+                     "mm_observed","mm_truth",
+                     "matching_positions",
+                     "splicing_observed","splicing_truth",
+                     "known_splice_sites","novel_splice_sites"]))
+
+    for read in readIterator:
+        truth = truthCollection.getTruth(read.name)
+        evaluation = read.evaluate(truth, junctions)
+        print(evaluation)

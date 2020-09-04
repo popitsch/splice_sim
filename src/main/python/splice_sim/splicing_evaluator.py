@@ -46,11 +46,11 @@ usage = '''
 USAGE
 '''
 
+# TODO: Maybe remove
 # Functions
 
 # Adapted to GFF3 from
 ## https://github.com/DaehwanKimLab/hisat2/blob/master/hisat2_extract_splice_sites.py
-
 
 def extract_splice_sites(gff_file, verbose=False):
     genes = defaultdict(list)
@@ -116,6 +116,201 @@ def extract_splice_sites(gff_file, verbose=False):
             junctions[chrom][exons[i-1][1]:exons[i][0]] = transcript
 
     return junctions
+
+# TODO: Put back
+# Methods from splicing_simulator.py
+
+#============================================================================
+# utility methods
+#============================================================================
+def to_region(dat):
+    return(dat.Chromosome + ":" + str(dat.Start) + "-" + str(dat.End))
+
+# TODO: Put back
+# Classes from splicing_simulator.py
+
+#============================================================================
+#    Classes
+#============================================================================
+
+class Stat():
+    def __init__(self, id, value, cond=None, mapper=None ):
+        self.id=id
+        self.cond=cond
+        self.mapper=mapper
+        self.value=value
+
+    def get_header(self):
+        ret = ("id\tcond\tmapper\tvalue")
+        return (ret)
+
+    def __str__(self):
+        ret = ("%s\t%s\t%s\t%s" % (self.id if self.id is not None else "NA",
+                                   self.cond if self.cond is not None else "NA",
+                                   self.mapper if self.mapper is not None else "NA",
+                                   str(self.value)) )
+        return (ret)
+
+class Condition():
+    def __init__(self, id, timepoint, conversion_rate, coverage ):
+        self.id = id
+        self.timepoint=timepoint
+        self.conversion_rate=conversion_rate
+        self.coverage = coverage
+        self.bam="?"
+
+    def __repr__(self):
+        return self.__str__()
+
+    def __str__(self):
+        ret = ("%s: [tp=%i, cr=%f, cv=%f]" % (self.id, self.timepoint, self.conversion_rate, self.coverage ) )
+        return (ret)
+
+class Isoform():
+    def __init__(self, id, fractions, splicing_status, transcript ):
+        self.id = id
+        self.fractions = fractions
+        self.splicing_status = splicing_status
+        self.t = transcript
+        # extract alignment blocks
+        self.aln_blocks=[]
+        bstart=self.t.transcript.Start
+        for idx, splicing in list(enumerate(self.splicing_status)):
+            if splicing==1:
+                bend=self.t.introns.iloc[idx].Start-1 # last exonic 1-based pos
+                self.aln_blocks+=[(bstart, bend)]
+                bstart=self.t.introns.iloc[idx].End+1 # 1st exonic 1-based pos
+        bend=self.t.transcript.End
+        self.aln_blocks+=[(bstart, bend)]
+
+    # convert isoform-relative coordinates to genomic coordinates.
+    # E.g., a rel_pos==0 will return the 1st position of the transcript in genomic coordinates (1-based)
+    def rel2abs_pos(self, rel_pos):
+        abs_pos=None
+        off = rel_pos
+        block_id=0
+        for bstart,bend in self.aln_blocks:
+            bwidth = bend-bstart+1
+            abs_pos = bstart
+            if off - bwidth < 0:
+                return (abs_pos+off, block_id)
+            # next block
+            off -= bwidth
+            block_id+=1
+        # TODO: check WARN: Invalid relative position 3641 / 142903114 in isoform ENSMUST00000100497.10_pre, [0.5], [0,0,0,0,0]
+        print("WARN: Invalid relative position %i / %i in isoform %s" % (rel_pos, abs_pos, self))
+        return (abs_pos+off, block_id)
+
+    def __repr__(self):
+        return self.__str__()
+
+    def __str__(self):
+        ret = ("%s_%s, [%s], [%s]" % (self.t.tid, self.id, ",".join(str(x) for x in self.fractions), ",".join(str(x) for x in self.splicing_status)) )
+        return (ret)
+
+class Transcript():
+    def __init__(self, tid, df, genome, conditions ):
+        self.tid = tid
+        self.is_valid = True
+        self.df = df
+        self.transcript = self.df[self.df.Feature=='transcript'].iloc[0]
+        self.region = to_region(self.transcript)
+        self.transcript_seq = genome.fetch(region=self.region)
+        self.exons = self.df[self.df.Feature=='exon']
+        self.introns = pd.DataFrame(columns=self.df.columns, index=[0])
+        last_end = -1
+        idata = []
+        for index, ex in self.exons.iterrows():
+            if last_end > 0: # skip 1st
+                dat={ 'transcript_id': self.transcript.transcript_id,
+                      'Feature': 'intron',
+                      'Chromosome':self.transcript.Chromosome,
+                      'Strand':self.transcript.Strand,
+                      'Start':last_end+1,
+                      'End':ex.Start-1,
+                      'exon_number': int(ex.exon_number)
+                      }
+                intron = pd.DataFrame(data=dat, columns=self.df.columns, index=[0])
+                idata.append(intron)
+            last_end = ex.End
+        if idata:
+            self.introns=pd.concat(idata)
+        else:
+            self.introns=pd.DataFrame()
+        # set abundance and isoforms
+        self.cond = conditions
+        self.abundance = math.ceil(config['transcripts'][tid]['abundance']) # abundance is float
+        self.isoforms={}
+        total_frac = [0] * len(self.cond)
+        for iso in config['transcripts'][tid]['isoforms'].keys():
+            frac=config['transcripts'][tid]['isoforms'][iso]['fractions']
+            splicing_status=config['transcripts'][tid]['isoforms'][iso]['splicing_status'] if 'splicing_status' in config['transcripts'][tid]['isoforms'][iso] else []
+            if self.transcript.Strand == "-":
+                splicing_status = list(reversed(splicing_status)) # so 1st entry in config refers to 1st intron.
+            # assert len(splicing_status)==len(self.introns), "misconfigured splicing status for some isoform/conditions: %s (%i vs %i)" % ( self.tid, len(splicing_status), len(self.introns))
+            if len(splicing_status)!=len(self.introns):
+                print("Misconfigured splicing status for some isoform/conditions of transcript %s (%i vs %i). Skipping transcript..." % ( self.tid, len(splicing_status), len(self.introns)))
+                self.is_valid = False
+                return
+            self.isoforms[iso] = Isoform(iso, frac, splicing_status, self)
+            total_frac = [x + y for x, y in zip(total_frac, frac)]
+        for x in total_frac:
+            # assert with rounding error
+            assert x <= 1.00001, "Total fraction of transcript > 1 (%s) for some isoform/conditions: %s" % ( ",".join(str(x) for x in total_frac), self.tid )
+        # add mature form if not configured
+        if 'mat' not in self.isoforms:
+            frac = [(1.0 - x) for x in total_frac]
+            iso='mat'
+            splicing_status=[1] * len(self.introns)
+            self.isoforms[iso] = Isoform(iso, frac, splicing_status, self)
+        #print('added mature isoform for %s: %s' % (tid, self.isoforms[iso]) )
+
+    def get_dna_seq(self, splicing_status):
+        seq = self.transcript_seq
+        for idx, splicing in reversed(list(enumerate(splicing_status))):
+            if splicing==1:
+                pos1=self.introns.iloc[idx].Start - self.transcript.Start
+                pos2=self.introns.iloc[idx].End - self.transcript.Start + 1
+                seq = seq[:pos1]+seq[pos2:]
+        return (seq)
+
+    def get_rna_seq(self, iso):
+        seq = self.get_dna_seq(self.isoforms[iso].splicing_status)
+        if self.transcript.Strand == '-':
+            seq = str(Seq(seq).reverse_complement())
+        return (seq)
+
+    def get_sequences(self):
+        ret=OrderedDict()
+        for cond_idx, cond in enumerate(self.cond):
+            ret[cond]=OrderedDict()
+            total_count=0
+            for id in self.isoforms.keys():
+                frac = self.isoforms[id].fractions[cond_idx]
+                count=int(self.abundance * frac)
+                total_count+=count
+                ret[cond][id]=[
+                    self.get_rna_seq(id),
+                    count]
+            toadd = self.abundance - total_count
+            #assert toadd==0 | toadd==1 , "rounding error"
+            if toadd > 0: # add 1 to last isoform
+                print("corrected counts by %i" % (toadd))
+                id = list(self.isoforms.keys())[-1]
+                ret[cond][id]=[ret[cond][id][0], ret[cond][id][1] + toadd]
+        return (ret)
+
+    def to_bed(self):
+        t=self.transcript
+        return ("%s\t%i\t%i\t%s\t%i\t%s" % (t.Chromosome, t.Start, t.End, t.ID, 1000, t.Strand) )
+
+    def __repr__(self):
+        return self.__str__()
+
+    def __str__(self):
+        ret = ("%s" % (self.transcript.transcript_id) )
+        return (ret)
+
 
 # Classes
 
@@ -278,7 +473,7 @@ class SimulatedRead:
         return ReadEvaluation(self.name, truth.chromosome, self.chromosome, truth.absStart, self.absStart, truth.absEnd, self.absEnd, len(seqErrorTruth), len(seqErrorMeasured), positionalMismatches, truth.splicing == 1, self.splicing, knownSpliceSite, novelSpliceSite)
 
     def __repr__(self):
-        return "\t".join([self.name, self.chromosome, str(self.absStart), str(self.absEnd), str(self.absSeqError), str(self.absConversion), str(self.splicing)])
+        return "\t".join([self.name, self.chromosome, str(self.absStart), str(self.absEnd), str(self.absSeqError), str(self.absConversion), str(self.splicing), str(self.spliceSites)])
 
 
 class SimulatedReadIterator:
@@ -370,7 +565,7 @@ class SpliceSimFile:
 
 parser = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
 parser.add_argument("-b","--bam", type=existing_file, required=True, dest="bamFile", help="Mapped bam file")
-parser.add_argument("-g","--gff", type=existing_file, required=True, dest="gffFile", help="GFF3 file of gene models")
+parser.add_argument("-c","--config", type=existing_file, required=True, dest="confF", help="JSON config file")
 parser.add_argument("-t","--truth", type=existing_file, required=True, dest="truthFile", help="Read truth tsv file")
 parser.add_argument('-i', "--intron-based", action='store_true', dest="introns", help="Quantify per intron, not per read")
 parser.add_argument("-o","--out", type=str, required=False, default="outdir", dest="outdir", metavar="outdir", help="Output folder")
@@ -390,59 +585,120 @@ tmpdir = outdir + "/tmp/"
 if not os.path.exists(tmpdir):
     os.makedirs(tmpdir)
 
-junctions = extract_splice_sites(args.gffFile)
-
-truthCollection = TruthCollection(args.truthFile)
-
-truthCollection.readTruth()
-
-print("Done reading truth collection", file = sys.stderr)
-
-simFile = SpliceSimFile(args.bamFile)
+# load + check config
+config = json.load(open(args.confF), object_pairs_hook=OrderedDict)
 
 if args.introns:
 
+    # TODO: Duplicated code from splicing_simulator.py
+
+    # read transcript data from external file if not in config
+    if 'transcripts' not in config:
+        assert "transcript_data" in config, "Transcript data needs to be configured either in config file ('transcripts' section) or in an external file referenced via 'transcript_data'"
+        tfile = config['transcript_data']
+        if not os.path.isabs(tfile):
+            tfile = os.path.dirname(os.path.abspath(args.confF))+"/"+tfile
+        tdata = json.load(open(tfile), object_pairs_hook=OrderedDict)
+        config["transcripts"]=tdata
+
+    # get conditions and configuration
+    conditions=[]
+    for id in config["conditions"].keys():
+        conditions+=[Condition(id, config["conditions"][id][0], config["conditions"][id][1], config["conditions"][id][2] )]
+    print("Configured conditions: %s" % (", ".join(str(x) for x in conditions)) , file = sys.stderr)
+
+    # load + filter gene gff
+    print("Loading gene GFF", file = sys.stderr)
+    gff = pr.read_gff3(config["gene_gff"])
+    gff_df = gff.df
+    df = gff_df[gff_df['transcript_id'].isin(list(config['transcripts'].keys()))] # reduce to contain only configured transcripts
+
+    # load genome
+    print("Loading genome", file = sys.stderr)
+    genome = pysam.FastaFile(config["genome_fa"])
+    chrom_sizes = config["chrom_sizes"] if 'chrom_sizes' in config else config["genome_fa"]+".chrom.sizes"
+
+    # instantiate transcripts
+    transcripts=OrderedDict()
+    for tid in list(config['transcripts'].keys()):
+        tid_df = df[df['transcript_id']==tid] # extract data for this transcript only
+        if tid_df.empty:
+            print("No annotation data found for configured tid %s, skipping..." % (tid), file = sys.stderr)
+        else:
+            t = Transcript(tid, tid_df, genome, conditions)
+            if t.is_valid:
+                transcripts[tid] = t
+
+    print("Evaluating introns", file = sys.stderr)
+
+    simFile = SpliceSimFile(args.bamFile)
+
+    # TODO: Wrap in proper function
+
     print("\t".join(["Transcript", "exon-intron", "intron", "intron-exon", "exon-exon", "exon-exon-false", "garbage"]))
 
-    iv = junctions["6"][122707991:122710920].pop()
-    ivTree = IntervalTree()
-    ivTree.add(iv)
-    readIterator = simFile.readsInInterval("6", iv.begin, iv.end)
+    for tid in transcripts:
+        t = transcripts[tid]
+        for i in range(0, len(t.introns)):
 
-    exonintron = 0
-    exonexon = 0
-    intronexon = 0
-    intron = 0
-    exonexonfalse = 0
-    garbage = 0
+            txid = t.introns.iloc[i]['transcript_id']
+            exonnumber = t.introns.iloc[i]['exon_number']
+            chromosome = t.introns.iloc[i]['Chromosome']
+            start = t.introns.iloc[i]['Start']
+            end = t.introns.iloc[i]['End']
 
-    for read in readIterator:
-        truth = truthCollection.getTruth(read.name)
-        evaluation = read.evaluate(truth, junctions)
-        start = read.absStart
-        end = read.absEnd
+            iv = Interval(start - 1, end + 2)
+            ivTree = IntervalTree()
+            ivTree.add(iv)
 
-        if start <= iv.begin and end > iv.begin:
-            if read.splicing and not read.hasSpliceSite(ivTree):
-                exonexonfalse += 1
-            elif read.splicing and read.hasSpliceSite(ivTree):
-                exonexon += 1
-            elif end < iv.end:
-                exonintron += 1
-            else :
-                garbage += 1
+            readIterator = simFile.readsInInterval(chromosome, start - 1, end + 2)
 
-        elif start < iv.end and end >= iv.end :
-            intronexon += 1
-        elif start >= iv.begin and end <= iv.end:
-            intron +=1
-        else:
-            garbage += 1
+            exonintron = 0
+            exonexon = 0
+            intronexon = 0
+            intron = 0
+            exonexonfalse = 0
+            garbage = 0
 
-    print("\t".join([iv.data, str(exonintron), str(intron), str(intronexon), str(exonexon), str(exonexonfalse), str(garbage)]))
+            for read in readIterator:
 
+                # TODO: Implement check if read mapping actually reflects truth
 
-else:
+                #truth = truthCollection.getTruth(read.name)
+                #evaluation = read.evaluate(truth, junctions)
+                start = read.absStart
+                end = read.absEnd
+
+                if start <= iv.begin and end > iv.begin:
+                    if read.splicing and not read.hasSpliceSite(ivTree):
+                        exonexonfalse += 1
+                    elif read.splicing and read.hasSpliceSite(ivTree):
+                        exonexon += 1
+                    elif end < iv.end:
+                        exonintron += 1
+                    else :
+                        garbage += 1
+
+                elif start < iv.end and end >= iv.end :
+                    intronexon += 1
+                elif start >= iv.begin and end <= iv.end:
+                    intron +=1
+                else:
+                    garbage += 1
+
+            print("\t".join([txid + "_" + str(exonnumber), str(exonintron), str(intron), str(intronexon), str(exonexon), str(exonexonfalse), str(garbage)]))
+
+else :
+
+    junctions = extract_splice_sites(config["gene_gff"])
+
+    truthCollection = TruthCollection(args.truthFile)
+
+    truthCollection.readTruth()
+
+    print("Done reading truth collection", file = sys.stderr)
+
+    simFile = SpliceSimFile(args.bamFile)
 
     readIterator = simFile.readsGenomeWide()
 

@@ -52,6 +52,13 @@ USAGE
 # Adapted to GFF3 from
 ## https://github.com/DaehwanKimLab/hisat2/blob/master/hisat2_extract_splice_sites.py
 
+colors = {"exonexonfalse" : "228,26,28",
+          "exonexontrue" : "55,126,184",
+          "exonintron" : "77,175,74",
+          "garbage" : "255,127,0",
+          "intron" : "200,200,200"
+}
+
 def extract_splice_sites(gff_file, verbose=False):
     genes = defaultdict(list)
     trans = {}
@@ -398,7 +405,7 @@ class TruthCollection:
 
 class SimulatedRead:
 
-    def __init__(self, name, chromosome, relStart, relEnd, relSeqError, relConversion, absStart, absEnd, absSeqError, absConversion, splicing, spliceSites):
+    def __init__(self, name, chromosome, relStart, relEnd, relSeqError, relConversion, absStart, absEnd, absSeqError, absConversion, splicing, spliceSites, bamRead):
         # Name of the parsed read
         self.name = name
         # Chromosome
@@ -423,6 +430,8 @@ class SimulatedRead:
         self.splicing = splicing
         # Splicing status
         self.spliceSites = spliceSites
+        # Pysam read object
+        self.bamRead = bamRead
 
     def hasSpliceSite(self, junction):
         if self.splicing:
@@ -529,7 +538,7 @@ class SimulatedReadIterator:
             offset += operation[1]
 
         simulatedRead = SimulatedRead(name, chromosome, 0, 0, list(), list(),
-        start + 1, end, errors, conversions, spliced, spliceSites)
+        start + 1, end, errors, conversions, spliced, spliceSites, read)
 
         return simulatedRead
 
@@ -631,11 +640,14 @@ if args.introns:
 
     print("Evaluating introns", file = sys.stderr)
 
+    headerfile = pysam.AlignmentFile(args.bamFile, "rb")
+    classifiedReads = pysam.AlignmentFile(outdir + "/classifiedreads.bam", "wb", template=headerfile)
+
     simFile = SpliceSimFile(args.bamFile)
 
     # TODO: Wrap in proper function
 
-    print("\t".join(["Transcript", "exon-intron", "intron", "intron-exon", "exon-exon", "exon-exon-false", "garbage"]))
+    print("\t".join(["Transcript", "exon-intron", "intron", "intron-exon", "exon-exon", "exon-exon-false"]))
 
     for tid in transcripts:
         t = transcripts[tid]
@@ -646,6 +658,8 @@ if args.introns:
             chromosome = t.introns.iloc[i]['Chromosome']
             start = t.introns.iloc[i]['Start']
             end = t.introns.iloc[i]['End']
+
+            #print(txid + "\t" + str(exonnumber) + "\t" + str(chromosome) + "\t" + str(start) + "\t" + str(end))
 
             iv = Interval(start - 1, end + 2)
             ivTree = IntervalTree()
@@ -669,24 +683,57 @@ if args.introns:
                 start = read.absStart
                 end = read.absEnd
 
+                bamRead = read.bamRead
+
+                color = ""
+
                 if start <= iv.begin and end > iv.begin:
+
                     if read.splicing and not read.hasSpliceSite(ivTree):
                         exonexonfalse += 1
+                        color = colors["exonexonfalse"]
                     elif read.splicing and read.hasSpliceSite(ivTree):
                         exonexon += 1
+                        color = colors["exonexontrue"]
                     elif end < iv.end:
                         exonintron += 1
+                        color = colors["exonintron"]
                     else :
-                        garbage += 1
+                        #garbage += 1
+                        color = colors["intron"]
 
                 elif start < iv.end and end >= iv.end :
-                    intronexon += 1
-                elif start >= iv.begin and end <= iv.end:
-                    intron +=1
-                else:
-                    garbage += 1
+                    if read.splicing and not read.hasSpliceSite(ivTree):
+                        exonexonfalse += 1
+                        color = colors["exonexonfalse"]
+                    elif read.splicing and read.hasSpliceSite(ivTree):
+                        exonexon += 1
+                        color = colors["exonexontrue"]
+                    else :
+                        intronexon += 1
+                        color = colors["exonintron"]
 
-            print("\t".join([txid + "_" + str(exonnumber), str(exonintron), str(intron), str(intronexon), str(exonexon), str(exonexonfalse), str(garbage)]))
+                elif start >= iv.begin and end <= iv.end:
+                    if read.splicing and not read.hasSpliceSite(ivTree):
+                        exonexonfalse += 1
+                        color = colors["exonexonfalse"]
+                    elif read.splicing and read.hasSpliceSite(ivTree):
+                        exonexon += 1
+                        color = colors["exonexontrue"]
+                    else :
+                        intron +=1
+                        color = colors["intron"]
+                else:
+                    # These are reads that start at base 1 of the exon
+                    #garbage += 1
+                    color = colors["intron"]
+
+                bamRead.setTag('YC', color)
+
+                classifiedReads.write(bamRead)
+
+            print("\t".join([txid + "_" + str(exonnumber), str(exonintron), str(intron), str(intronexon), str(exonexon), str(exonexonfalse)]))
+    classifiedReads.close()
 
 else :
 

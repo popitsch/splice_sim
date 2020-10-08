@@ -827,7 +827,25 @@ if args.introns:
                 if not truthRead in intronDict["tpspliced"] and not truthRead in intronDict["fpspliced"] and not truthRead in intronDict["fnspliced"] and not truthRead in intronDict["tpexonintron"] and not truthRead in intronDict["fpexonintron"] and not truthRead in intronDict["fnexonintron"] and not truthRead in intronDict["tpintron"] and not truthRead in intronDict["fpintron"] and not truthRead in intronDict["fnintron"]:
 
                    # TODO more sophisticated check
-                   intronDict["fnspliced"][truthRead] = 0
+                   readTruth = truthCollection.getTruth(truthRead)
+
+                   if readTruth.splicing == 1:
+                       intronDict["fnspliced"][truthRead] = 0
+                   elif readTruth.absStart >= (iv.begin + 1) and readTruth.absEnd <= (iv.end - 2):
+                       intronDict["fnintron"][truthRead] = 0
+                   else :
+                       intronDict["fnexonintron"][truthRead] = 0
+                       # if (len(intronDict["tpspliced"]) > 0):
+                       #     print(iv)
+                       #     print(readTruth)
+                       #     print(readTruth.splicing == 1)
+                       #     print(readTruth.absStart >= iv.begin and readTruth.absEnd <= iv.end)
+                       #
+                       #     print(intronDict["fnspliced"])
+                       #     print(intronDict["fnexonintron"])
+                       #     print(intronDict["fnintron"])
+                       #
+                       #     sys.stdin.readline()
 
             for read in intronDict["tpspliced"]:
                 bamRead = intronDict["tpspliced"][read]

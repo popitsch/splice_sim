@@ -378,6 +378,9 @@ class ReadEvaluation:
         # True chromosome
         self.novelSpliceSites = novelSpliceSites
 
+    def isTruthPositionMatch(self) :
+        return self.measuredChromosome == str(self.trueChromosome) and self.measuredStart == self.trueStart and self.measuredEnd == self.trueEnd and self.measuredSplicing == self.trueSplicing
+
     def __repr__(self):
         return "\t".join([self.name, str(self.measuredChromosome), str(self.trueChromosome), str(self.measuredStart), str(self.trueStart), str(self.measuredEnd),
         str(self.trueEnd), str(self.measuredSeqErrors), str(self.trueSeqErrors),str(self.errorMatches),str(self.measuredSplicing),str(self.trueSplicing),
@@ -402,6 +405,28 @@ class TruthCollection:
             return ReadTruth(row.read_name, row.chr_abs, row.start_rel, row.end_rel, row.seq_err_pos_rel, row.start_abs, row.end_abs, row.seq_err_pos_abs, row.read_spliced)
         else:
             return None
+
+    def getTruthByInterval(self, chromosome, start, end) :
+
+        subset = self._truth[self._truth.chr_abs.eq(int(chromosome)) &
+        (
+        ((self._truth.start_abs < start) & (self._truth.end_abs >= start)) |
+        ((self._truth.start_abs <= end) & (self._truth.end_abs > end)) |
+        ((self._truth.start_abs >= start) & (self._truth.end_abs <= end))
+        )
+        ]
+
+        #print(start)
+        #print(end)
+        #print(subset)
+        #print(subset["read_name"].tolist())
+        #print("ENSMUST00000112580.7_+_pre_4-1258" in subset["read_name"].tolist())
+        #print("ENSMUST00000112580.7_+_pre_4-1258" in self._truth["read_name"].tolist())
+        #print(self._truth[self._truth.read_name == "ENSMUST00000112580.7_+_pre_4-1258"])
+        #print(self._truth[(self._truth.read_name == "ENSMUST00000112580.7_+_pre_4-1258") & ((self._truth.end_abs >= end))])
+        #sys.stdin.readline()
+
+        return subset["read_name"].tolist()
 
 class SimulatedRead:
 
@@ -597,6 +622,12 @@ if not os.path.exists(tmpdir):
 # load + check config
 config = json.load(open(args.confF), object_pairs_hook=OrderedDict)
 
+truthCollection = TruthCollection(args.truthFile)
+
+truthCollection.readTruth()
+
+print("Done reading truth collection", file = sys.stderr)
+
 if args.introns:
 
     # TODO: Duplicated code from splicing_simulator.py
@@ -647,7 +678,8 @@ if args.introns:
 
     # TODO: Wrap in proper function
 
-    print("\t".join(["Transcript", "exon-intron", "intron", "intron-exon", "exon-exon", "exon-exon-false"]))
+    #print("\t".join(["Transcript", "exon-intron", "intron", "intron-exon", "exon-exon", "exon-exon-false"]))
+    print("\t".join(["Transcript", "tp-exon-exon", "fp-exon-exon", "fn-exon-exon", "tp-exon-intron", "fp-exon-intron", "fn-exon-intron", "tp-intron", "fp-intron", "fn-intron"]))
 
     for tid in transcripts:
         t = transcripts[tid]
@@ -660,6 +692,8 @@ if args.introns:
             end = t.introns.iloc[i]['End']
 
             #print(txid + "\t" + str(exonnumber) + "\t" + str(chromosome) + "\t" + str(start) + "\t" + str(end))
+
+            truthReadSet = truthCollection.getTruthByInterval(chromosome, start, end)
 
             iv = Interval(start - 1, end + 2)
             ivTree = IntervalTree()
@@ -674,12 +708,25 @@ if args.introns:
             exonexonfalse = 0
             garbage = 0
 
+            intronDict =  {
+                "tpspliced" : dict(),
+                "fpspliced" : dict(),
+                "fnspliced" : dict(),
+                "tpexonintron" : dict(),
+                "fpexonintron" : dict(),
+                "fnexonintron" : dict(),
+                "tpintron" : dict(),
+                "fpintron" : dict(),
+                "fnintron" : dict()
+            }
+
             for read in readIterator:
+
+                truth = truthCollection.getTruth(read.name)
+                evaluation = read.evaluate(truth, {chromosome : ivTree})
 
                 # TODO: Implement check if read mapping actually reflects truth
 
-                #truth = truthCollection.getTruth(read.name)
-                #evaluation = read.evaluate(truth, junctions)
                 start = read.absStart
                 end = read.absEnd
 
@@ -690,60 +737,136 @@ if args.introns:
                 if start <= iv.begin and end > iv.begin:
 
                     if read.splicing and not read.hasSpliceSite(ivTree):
-                        exonexonfalse += 1
-                        color = colors["exonexonfalse"]
+                        intronDict["fpspliced"][read.name] = bamRead
+                        #exonexonfalse += 1
+                        #color = colors["exonexonfalse"]
                     elif read.splicing and read.hasSpliceSite(ivTree):
-                        exonexon += 1
-                        color = colors["exonexontrue"]
+                        if read.name in truthReadSet:
+                            if evaluation.isTruthPositionMatch():
+                                intronDict["tpspliced"][read.name] = bamRead
+                            else :
+                                intronDict["fpspliced"][read.name] = bamRead
+                        else :
+                            intronDict["fpspliced"][read.name] = bamRead
+                        #exonexon += 1
+                        #color = colors["exonexontrue"]
                     elif end < iv.end:
-                        exonintron += 1
-                        color = colors["exonintron"]
+                        if read.name in truthReadSet:
+
+                            if evaluation.isTruthPositionMatch():
+                                intronDict["tpexonintron"][read.name] = bamRead
+                            else :
+                                intronDict["fpexonintron"][read.name] = bamRead
+                        else :
+                            intronDict["fpexonintron"][read.name] = bamRead
+                        #exonintron += 1
+                        #color = colors["exonintron"]
                     else :
                         #garbage += 1
                         color = colors["intron"]
 
                 elif start < iv.end and end >= iv.end :
                     if read.splicing and not read.hasSpliceSite(ivTree):
-                        exonexonfalse += 1
-                        color = colors["exonexonfalse"]
+                        intronDict["fpspliced"][read.name] = bamRead
+                        #exonexonfalse += 1
+                        #color = colors["exonexonfalse"]
                     elif read.splicing and read.hasSpliceSite(ivTree):
-                        exonexon += 1
-                        color = colors["exonexontrue"]
+                        if read.name in truthReadSet:
+                            if evaluation.isTruthPositionMatch():
+                                intronDict["tpspliced"][read.name] = bamRead
+                            else :
+                                intronDict["fpspliced"][read.name] = bamRead
+                        else :
+                            intronDict["fpspliced"][read.name] = bamRead
+                        #exonexon += 1
+                        #color = colors["exonexontrue"]
                     else :
-                        intronexon += 1
-                        color = colors["exonintron"]
+                        if read.name in truthReadSet:
+                            if evaluation.isTruthPositionMatch():
+                                intronDict["tpexonintron"][read.name] = bamRead
+                            else :
+                                intronDict["fpexonintron"][read.name] = bamRead
+                        else :
+                            intronDict["fpexonintron"][read.name] = bamRead
+                        #intronexon += 1
+                        #color = colors["exonintron"]
 
                 elif start >= iv.begin and end <= iv.end:
                     if read.splicing and not read.hasSpliceSite(ivTree):
-                        exonexonfalse += 1
-                        color = colors["exonexonfalse"]
+                        intronDict["fpspliced"][read.name] = bamRead
+                        #exonexonfalse += 1
+                        #color = colors["exonexonfalse"]
                     elif read.splicing and read.hasSpliceSite(ivTree):
-                        exonexon += 1
-                        color = colors["exonexontrue"]
+                        if read.name in truthReadSet:
+                            if evaluation.isTruthPositionMatch():
+                                intronDict["tpspliced"][read.name] = bamRead
+                            else :
+                                intronDict["fpspliced"][read.name] = bamRead
+                        else :
+                            intronDict["fpspliced"][read.name] = bamRead
+                        #exonexon += 1
+                        #color = colors["exonexontrue"]
                     else :
-                        intron +=1
-                        color = colors["intron"]
+                        if read.name in truthReadSet:
+                            if evaluation.isTruthPositionMatch():
+                                intronDict["tpintron"][read.name] = bamRead
+                            else :
+                                intronDict["fpintron"][read.name] = bamRead
+                        else :
+                            intronDict["fpintron"][read.name] = bamRead
+                        #intron +=1
+                        #color = colors["intron"]
                 else:
+                    pass
                     # These are reads that start at base 1 of the exon
                     #garbage += 1
-                    color = colors["intron"]
+                    #color = colors["intron"]
 
-                bamRead.setTag('YC', color)
+                #bamRead.setTag('YC', color)
+            for truthRead in truthReadSet:
+                if not truthRead in intronDict["tpspliced"] and not truthRead in intronDict["fpspliced"] and not truthRead in intronDict["fnspliced"] and not truthRead in intronDict["tpexonintron"] and not truthRead in intronDict["fpexonintron"] and not truthRead in intronDict["fnexonintron"] and not truthRead in intronDict["tpintron"] and not truthRead in intronDict["fpintron"] and not truthRead in intronDict["fnintron"]:
 
+                   # TODO more sophisticated check
+                   intronDict["fnspliced"][truthRead] = 0
+
+            for read in intronDict["tpspliced"]:
+                bamRead = intronDict["tpspliced"][read]
+                bamRead.setTag('YC', colors["exonexontrue"])
                 classifiedReads.write(bamRead)
 
-            print("\t".join([txid + "_" + str(exonnumber), str(exonintron), str(intron), str(intronexon), str(exonexon), str(exonexonfalse)]))
+            for read in intronDict["fpspliced"]:
+                bamRead = intronDict["fpspliced"][read]
+                bamRead.setTag('YC', colors["exonexonfalse"])
+                classifiedReads.write(bamRead)
+
+            for read in intronDict["tpexonintron"]:
+                bamRead = intronDict["tpexonintron"][read]
+                bamRead.setTag('YC', colors["exonintron"])
+                classifiedReads.write(bamRead)
+
+            for read in intronDict["fpexonintron"]:
+                bamRead = intronDict["fpexonintron"][read]
+                bamRead.setTag('YC', colors["exonexonfalse"])
+                classifiedReads.write(bamRead)
+
+            for read in intronDict["tpintron"]:
+                bamRead = intronDict["tpintron"][read]
+                bamRead.setTag('YC', colors["intron"])
+                classifiedReads.write(bamRead)
+
+            for read in intronDict["fpintron"]:
+                bamRead = intronDict["fpintron"][read]
+                bamRead.setTag('YC', colors["exonexonfalse"])
+                classifiedReads.write(bamRead)
+
+            print("\t".join([txid + "_" + str(exonnumber), str(len(intronDict["tpspliced"])), str(len(intronDict["fpspliced"])), str(len(intronDict["fnspliced"])), str(len(intronDict["tpexonintron"])), str(len(intronDict["fpexonintron"])), str(len(intronDict["fnexonintron"])),str(len(intronDict["tpintron"])), str(len(intronDict["fpintron"])), str(len(intronDict["fnintron"]))]))
+
+            #print("\t".join([txid + "_" + str(exonnumber), str(exonintron), str(intron), str(intronexon), str(exonexon), str(exonexonfalse)]))
     classifiedReads.close()
 
 else :
 
     junctions = extract_splice_sites(config["gene_gff"])
-
-    truthCollection = TruthCollection(args.truthFile)
-
-    truthCollection.readTruth()
-
-    print("Done reading truth collection", file = sys.stderr)
 
     simFile = SpliceSimFile(args.bamFile)
 

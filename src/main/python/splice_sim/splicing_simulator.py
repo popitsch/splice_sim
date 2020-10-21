@@ -202,7 +202,7 @@ def runSTAR(bam, ref, reads1=[], reads2=None,  gtf=None, force=True, run_flagsta
 #
 # Run HISAT2_TLA
 #
-def runHISAT2_TLA(bam, ref, fq, idx1, idx2, force=True, run_flagstat=False, threads=1, doSort=True, additionalParameters=[], HISAT2_EXE='hisat2'):
+def runHISAT2_TLA(bam, ref, fq, idx1, idx2, known_splicesites=None, force=True, run_flagstat=False, threads=1, doSort=True, additionalParameters=[], HISAT2_EXE='hisat2'):
     success = True
     if files_exist(bam) and not force:
         print("BAM file " + bam + " already exists! use -f to recreate.")
@@ -229,6 +229,8 @@ def runHISAT2_TLA(bam, ref, fq, idx1, idx2, force=True, run_flagstat=False, thre
          "--threads", str(threads),
          "-S", sam
         ]
+    if known_splicesites is not None:
+        cmd+=[ "--known-splicesite-infile", known_splicesites ]
     print(cmd)
     success = success and pipelineStep([fq], sam, cmd, shell=True)
     
@@ -785,6 +787,7 @@ if 'mappers' in config:
                 HISAT2_EXE=config['mappers'][mapper]['hisat2_cmd'] if 'hisat2_cmd' in config['mappers'][mapper] else 'hisat2'
                 hisat2_idx1=config['mappers'][mapper]['hisat2_idx1']
                 hisat2_idx2=config['mappers'][mapper]['hisat2_idx2']
+                hisat2_kss=config['mappers'][mapper]['hisat2_kss'] if 'hisat2_kss' in config['mappers'][mapper] else None
                 if write_uncoverted:
                     if args.force or not files_exist(final_all):
                         runHISAT2_TLA(b_all, 
@@ -792,6 +795,7 @@ if 'mappers' in config:
                                 fq=f_all,
                                 idx1=hisat2_idx1,
                                 idx2=hisat2_idx2,
+                                known_splicesites=hisat2_kss,
                                 threads=threads, 
                                 HISAT2_EXE=HISAT2_EXE,
                                 force=args.force )

@@ -536,6 +536,23 @@ class SimulatedReadIterator:
         conversions = list()
         errors = list()
 
+        softclippedlist = read.get_reference_positions(full_length=True)
+
+        offsetStart = 0
+        offsetEnd = 0
+
+        while (softclippedlist[offsetStart] != start) :
+            offsetStart += 1
+
+        softclippedlist.reverse()
+
+        # reference_end points to one past the last aligned residue
+        while (softclippedlist[offsetEnd] != (end - 1)) :
+            offsetEnd += 1
+
+        start -= offsetStart
+        end += offsetEnd
+
         for match in matches:
             readPos, refPos, refBase = match
 

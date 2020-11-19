@@ -890,10 +890,9 @@ if args.introns:
 
     print("\t".join(["Transcript", "tp-exon-exon", "fp-exon-exon", "fn-exon-exon", "tp-exon-intron", "fp-exon-intron", "fn-exon-intron", "tp-intron", "fp-intron", "fn-intron"]))
 
-    Parallel(n_jobs=1)(delayed(classifyIntron)(transcripts[tid], truthCollection, args.bamFile) for tid in transcripts)
+    Parallel(n_jobs=args.threads, verbose = 40)(delayed(classifyIntron)(transcripts[tid], truthCollection, args.bamFile) for tid in transcripts)
     # for tid in transcripts:
-    #
-    #     classifyIntron(transcripts[tid], truthCollection, simFile, classifiedReads)
+    #     classifyIntron(transcripts[tid], truthCollection, args.bamFile)
     classifiedReads.close()
 
 else :

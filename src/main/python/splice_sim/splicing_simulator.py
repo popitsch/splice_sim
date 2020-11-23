@@ -569,15 +569,16 @@ if __name__ == '__main__':
     print("Writing filtered gene GFF")
     f_anno=outdir+"gene_anno.gff3"
     d=pd.read_csv(config["gene_gff"],delimiter='\t',encoding='utf-8')
-    with open(f_anno, 'w') as out:
-        for index, row in d.iterrows():
-            keep=False
-            for k in row[8].split(';'):
-                if k.startswith('transcript_id='):
-                    keep=k[len('transcript_id='):] in config['transcripts'].keys()
-            if keep:
-                print('\t'.join(str(x) for x in row), file=out)
-    bgzip(f_anno, override=True, delinFile=True, index=True, threads=threads)
+    if not files_exist(f_anno+".gz"):
+        with open(f_anno, 'w') as out:
+            for index, row in d.iterrows():
+                keep=False
+                for k in row[8].split(';'):
+                    if k.startswith('transcript_id='):
+                        keep=k[len('transcript_id='):] in config['transcripts'].keys()
+                if keep:
+                    print('\t'.join(str(x) for x in row), file=out)
+        bgzip(f_anno, override=True, delinFile=True, index=True, threads=threads)
     f_anno=f_anno+".gz"
           
     # load genome
@@ -836,7 +837,7 @@ if __name__ == '__main__':
                     bams[cond.id + "."+mapper]=os.path.abspath(final_tc)
     
     
-    # write stats
+    # write stats. FIXME: stats are not complete if pipeline was restarted with 
     print("Writing stats")
     f_roi = outdir + "stats.tsv"
     with open(f_roi, 'w') as out:
@@ -852,8 +853,8 @@ if __name__ == '__main__':
             print(s, file=out)
     
     # write slamstr config
-        if 'slamstr_config_template' in config and 'mappers' in config:
-            print("Writing slamstr config files")
+    if 'slamstr_config_template' in config and 'mappers' in config:
+        print("Writing slamstr config files")
         with open(config['slamstr_config_template'], 'r') as f:
             x = f.read().splitlines()
         for mapper in config['mappers'].keys():

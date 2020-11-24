@@ -14,6 +14,7 @@ import csv, datetime, time, logging, sys, os, json
 import pysam
 import pyranges as pr
 import pandas as pd
+from multiprocessing import Process, Manager
 import numpy as np
 from Bio.Seq import Seq
 from utils import *
@@ -21,6 +22,8 @@ import random
 import math
 import gzip
 import re
+import shutil
+from itertools import zip_longest
 
 #============================================================================
 # splice eval readme
@@ -615,303 +618,348 @@ class SpliceSimFile:
         '''
         return [ self.atoi(c) for c in re.split('(\d+)', text) ]
 
-parser = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
-parser.add_argument("-b","--bam", type=existing_file, required=True, dest="bamFile", help="Mapped bam file")
-parser.add_argument("-c","--config", type=existing_file, required=True, dest="confF", help="JSON config file")
-parser.add_argument("-t","--truth", type=existing_file, required=True, dest="truthFile", help="Read truth tsv file")
-parser.add_argument("-p","--parallel", type=int, required=False, default=1, dest="threads", help="Number of threads")
-parser.add_argument('-i', "--intron-based", action='store_true', dest="introns", help="Quantify per intron, not per read")
-parser.add_argument("-o","--out", type=str, required=False, default="outdir", dest="outdir", metavar="outdir", help="Output folder")
-args = parser.parse_args()
-startTime = time.time()
+def partitionDict(dictionary, chunks=2):
 
-print(logo, file=sys.stderr)
+    partition = [dict() for idx in range(chunks)]
+    idx = 0
+    for k, v in dictionary.items():
+        partition[idx][k] = v
+        if idx < chunks - 1:  # indexes start at 0
+            idx += 1
+        else:
+            idx = 0
+    return partition
 
-# output dir (current dir if none provided)
-outdir = args.outdir if args.outdir else os.getcwd()
-if not outdir.endswith("/"):
-    outdir += "/"
-if not os.path.exists(outdir):
-    print("Creating dir " + outdir, file=sys.stderr)
-    os.makedirs(outdir)
-tmpdir = outdir + "/tmp/"
-if not os.path.exists(tmpdir):
-    os.makedirs(tmpdir)
-
-# load + check config
-config = json.load(open(args.confF), object_pairs_hook=OrderedDict)
-
-truthCollection = TruthCollection(args.truthFile)
-
-truthCollection.readTruth()
-
-print("Done reading truth collection", file = sys.stderr)
-
-def classifyIntron(t, truthCollection, bamFile):
+def classifyIntron(transcripts, truthCollection, bamFile, outdir, thread):
 
     simFile = SpliceSimFile(bamFile)
 
-    #t = transcripts[tid]
-    for i in range(0, len(t.introns)):
+    results = dict()
 
-        txid = t.introns.iloc[i]['transcript_id']
-        exonnumber = t.introns.iloc[i]['exon_number']
-        chromosome = t.introns.iloc[i]['Chromosome']
-        start = t.introns.iloc[i]['Start']
-        end = t.introns.iloc[i]['End']
+    headerfile = pysam.AlignmentFile(bamFile, "rb")
+    classifiedReads = pysam.AlignmentFile(outdir + "/" + str(thread) + ".bam", "wb", template=headerfile)
 
-        # print(txid + "\t" + str(exonnumber) + "\t" + str(chromosome) + "\t" + str(start) + "\t" + str(end))
+    for tid in transcripts:
 
-        truthReadSet = truthCollection.getTruthByInterval(chromosome, start, end)
+        results[tid] = list()
 
-        iv = Interval(start - 1, end + 2)
-        ivTree = IntervalTree()
-        ivTree.add(iv)
+        t = transcripts[tid]
 
-        readIterator = simFile.readsInInterval(chromosome, start - 1, end + 2)
+        for i in range(0, len(t.introns)):
 
-        exonintron = 0
-        exonexon = 0
-        intronexon = 0
-        intron = 0
-        exonexonfalse = 0
-        garbage = 0
+            txid = t.introns.iloc[i]['transcript_id']
+            exonnumber = t.introns.iloc[i]['exon_number']
+            chromosome = t.introns.iloc[i]['Chromosome']
+            start = t.introns.iloc[i]['Start']
+            end = t.introns.iloc[i]['End']
 
-        intronDict = {
-            "tpspliced": dict(),
-            "fpspliced": dict(),
-            "fnspliced": dict(),
-            "tpexonintron": dict(),
-            "fpexonintron": dict(),
-            "fnexonintron": dict(),
-            "tpintron": dict(),
-            "fpintron": dict(),
-            "fnintron": dict()
-        }
+            truthReadSet = truthCollection.getTruthByInterval(chromosome, start, end)
 
-        for read in readIterator:
+            iv = Interval(start - 1, end + 2)
+            ivTree = IntervalTree()
+            ivTree.add(iv)
 
-            truth = truthCollection.getTruth(read.name)
-            evaluation = read.evaluate(truth, {chromosome: ivTree})
+            readIterator = simFile.readsInInterval(chromosome, start - 1, end + 2)
 
-            start = read.absStart
-            end = read.absEnd
+            exonintron = 0
+            exonexon = 0
+            intronexon = 0
+            intron = 0
+            exonexonfalse = 0
+            garbage = 0
 
-            bamRead = read.bamRead
+            intronDict = {
+                "tpspliced": dict(),
+                "fpspliced": dict(),
+                "fnspliced": dict(),
+                "tpexonintron": dict(),
+                "fpexonintron": dict(),
+                "fnexonintron": dict(),
+                "tpintron": dict(),
+                "fpintron": dict(),
+                "fnintron": dict()
+            }
 
-            color = ""
+            for read in readIterator:
 
-            if start <= iv.begin and end > iv.begin:
+                truth = truthCollection.getTruth(read.name)
+                evaluation = read.evaluate(truth, {chromosome: ivTree})
 
-                if read.splicing and not read.hasSpliceSite(ivTree):
-                    intronDict["fpspliced"][read.name] = bamRead
-                    # exonexonfalse += 1
-                    # color = colors["exonexonfalse"]
-                elif read.splicing and read.hasSpliceSite(ivTree):
-                    if read.name in truthReadSet:
-                        if evaluation.isTruthPositionMatch():
-                            intronDict["tpspliced"][read.name] = bamRead
+                start = read.absStart
+                end = read.absEnd
+
+                bamRead = read.bamRead
+
+                color = ""
+
+                if start <= iv.begin and end > iv.begin:
+
+                    if read.splicing and not read.hasSpliceSite(ivTree):
+                        intronDict["fpspliced"][read.name] = bamRead
+                        # exonexonfalse += 1
+                        # color = colors["exonexonfalse"]
+                    elif read.splicing and read.hasSpliceSite(ivTree):
+                        if read.name in truthReadSet:
+                            if evaluation.isTruthPositionMatch():
+                                intronDict["tpspliced"][read.name] = bamRead
+                            else:
+                                intronDict["fpspliced"][read.name] = bamRead
                         else:
                             intronDict["fpspliced"][read.name] = bamRead
-                    else:
-                        intronDict["fpspliced"][read.name] = bamRead
-                    # exonexon += 1
-                    # color = colors["exonexontrue"]
-                elif end < iv.end:
-                    if read.name in truthReadSet:
+                        # exonexon += 1
+                        # color = colors["exonexontrue"]
+                    elif end < iv.end:
+                        if read.name in truthReadSet:
 
-                        if evaluation.isTruthPositionMatch():
-                            intronDict["tpexonintron"][read.name] = bamRead
+                            if evaluation.isTruthPositionMatch():
+                                intronDict["tpexonintron"][read.name] = bamRead
+                            else:
+                                intronDict["fpexonintron"][read.name] = bamRead
                         else:
                             intronDict["fpexonintron"][read.name] = bamRead
+                        # exonintron += 1
+                        # color = colors["exonintron"]
                     else:
-                        intronDict["fpexonintron"][read.name] = bamRead
-                    # exonintron += 1
-                    # color = colors["exonintron"]
-                else:
-                    # garbage += 1
-                    color = colors["intron"]
+                        # garbage += 1
+                        color = colors["intron"]
 
-            elif start < iv.end and end >= iv.end:
-                if read.splicing and not read.hasSpliceSite(ivTree):
-                    intronDict["fpspliced"][read.name] = bamRead
-                    # exonexonfalse += 1
-                    # color = colors["exonexonfalse"]
-                elif read.splicing and read.hasSpliceSite(ivTree):
-                    if read.name in truthReadSet:
-                        if evaluation.isTruthPositionMatch():
-                            intronDict["tpspliced"][read.name] = bamRead
+                elif start < iv.end and end >= iv.end:
+                    if read.splicing and not read.hasSpliceSite(ivTree):
+                        intronDict["fpspliced"][read.name] = bamRead
+                        # exonexonfalse += 1
+                        # color = colors["exonexonfalse"]
+                    elif read.splicing and read.hasSpliceSite(ivTree):
+                        if read.name in truthReadSet:
+                            if evaluation.isTruthPositionMatch():
+                                intronDict["tpspliced"][read.name] = bamRead
+                            else:
+                                intronDict["fpspliced"][read.name] = bamRead
                         else:
                             intronDict["fpspliced"][read.name] = bamRead
+                        # exonexon += 1
+                        # color = colors["exonexontrue"]
                     else:
-                        intronDict["fpspliced"][read.name] = bamRead
-                    # exonexon += 1
-                    # color = colors["exonexontrue"]
-                else:
-                    if read.name in truthReadSet:
-                        if evaluation.isTruthPositionMatch():
-                            intronDict["tpexonintron"][read.name] = bamRead
+                        if read.name in truthReadSet:
+                            if evaluation.isTruthPositionMatch():
+                                intronDict["tpexonintron"][read.name] = bamRead
+                            else:
+                                intronDict["fpexonintron"][read.name] = bamRead
                         else:
                             intronDict["fpexonintron"][read.name] = bamRead
-                    else:
-                        intronDict["fpexonintron"][read.name] = bamRead
-                    # intronexon += 1
-                    # color = colors["exonintron"]
-
-            elif start >= iv.begin and end <= iv.end:
-                if read.splicing and not read.hasSpliceSite(ivTree):
-                    intronDict["fpspliced"][read.name] = bamRead
-                    # exonexonfalse += 1
-                    # color = colors["exonexonfalse"]
-                elif read.splicing and read.hasSpliceSite(ivTree):
-                    if read.name in truthReadSet:
-                        if evaluation.isTruthPositionMatch():
-                            intronDict["tpspliced"][read.name] = bamRead
+                        # intronexon += 1
+                        # color = colors["exonintron"]
+                elif start >= iv.begin and end <= iv.end:
+                    if read.splicing and not read.hasSpliceSite(ivTree):
+                        intronDict["fpspliced"][read.name] = bamRead
+                        # exonexonfalse += 1
+                        # color = colors["exonexonfalse"]
+                    elif read.splicing and read.hasSpliceSite(ivTree):
+                        if read.name in truthReadSet:
+                            if evaluation.isTruthPositionMatch():
+                                intronDict["tpspliced"][read.name] = bamRead
+                            else:
+                                intronDict["fpspliced"][read.name] = bamRead
                         else:
                             intronDict["fpspliced"][read.name] = bamRead
+                        # exonexon += 1
+                        # color = colors["exonexontrue"]
                     else:
-                        intronDict["fpspliced"][read.name] = bamRead
-                    # exonexon += 1
-                    # color = colors["exonexontrue"]
-                else:
-                    if read.name in truthReadSet:
-                        if evaluation.isTruthPositionMatch():
-                            intronDict["tpintron"][read.name] = bamRead
+                        if read.name in truthReadSet:
+                            if evaluation.isTruthPositionMatch():
+                                intronDict["tpintron"][read.name] = bamRead
+                            else:
+                                intronDict["fpintron"][read.name] = bamRead
                         else:
                             intronDict["fpintron"][read.name] = bamRead
-                    else:
-                        intronDict["fpintron"][read.name] = bamRead
-                    # intron +=1
-                    # color = colors["intron"]
-            else:
-                pass
-                # These are reads that start at base 1 of the exon
-                # garbage += 1
-                # color = colors["intron"]
-
-            # bamRead.setTag('YC', color)
-        for truthRead in truthReadSet:
-            if not truthRead in intronDict["tpspliced"] and not truthRead in intronDict[
-                "fpspliced"] and not truthRead in intronDict["fnspliced"] and not truthRead in intronDict[
-                "tpexonintron"] and not truthRead in intronDict["fpexonintron"] and not truthRead in intronDict[
-                "fnexonintron"] and not truthRead in intronDict["tpintron"] and not truthRead in intronDict[
-                "fpintron"] and not truthRead in intronDict["fnintron"]:
-
-                readTruth = truthCollection.getTruth(truthRead)
-
-                if readTruth.splicing == 1:
-                    intronDict["fnspliced"][truthRead] = 0
-                elif readTruth.absStart >= (iv.begin + 1) and readTruth.absEnd <= (iv.end - 2):
-                    intronDict["fnintron"][truthRead] = 0
+                        # intron +=1
+                        # color = colors["intron"]
                 else:
-                    intronDict["fnexonintron"][truthRead] = 0
+                    pass
+                    # These are reads that start at base 1 of the exon
+                    # garbage += 1
+                    # color = colors["intron"]
 
-        for read in intronDict["tpspliced"]:
-            bamRead = intronDict["tpspliced"][read]
-            bamRead.setTag('YC', colors["exonexontrue"])
-            #classifiedReads.write(bamRead)
+                # bamRead.setTag('YC', color)
+            for truthRead in truthReadSet:
+                if not truthRead in intronDict["tpspliced"] and not truthRead in intronDict[
+                    "fpspliced"] and not truthRead in intronDict["fnspliced"] and not truthRead in intronDict[
+                    "tpexonintron"] and not truthRead in intronDict["fpexonintron"] and not truthRead in intronDict[
+                    "fnexonintron"] and not truthRead in intronDict["tpintron"] and not truthRead in intronDict[
+                    "fpintron"] and not truthRead in intronDict["fnintron"]:
 
-        for read in intronDict["fpspliced"]:
-            bamRead = intronDict["fpspliced"][read]
-            bamRead.setTag('YC', colors["exonexonfalse"])
-            #classifiedReads.write(bamRead)
+                    readTruth = truthCollection.getTruth(truthRead)
 
-        for read in intronDict["tpexonintron"]:
-            bamRead = intronDict["tpexonintron"][read]
-            bamRead.setTag('YC', colors["exonintron"])
-            #classifiedReads.write(bamRead)
+                    if readTruth.splicing == 1:
+                        intronDict["fnspliced"][truthRead] = 0
+                    elif readTruth.absStart >= (iv.begin + 1) and readTruth.absEnd <= (iv.end - 2):
+                        intronDict["fnintron"][truthRead] = 0
+                    else:
+                        intronDict["fnexonintron"][truthRead] = 0
 
-        for read in intronDict["fpexonintron"]:
-            bamRead = intronDict["fpexonintron"][read]
-            bamRead.setTag('YC', colors["exonexonfalse"])
-            #classifiedReads.write(bamRead)
+            for read in intronDict["tpspliced"]:
+                bamRead = intronDict["tpspliced"][read]
+                bamRead.setTag('YC', colors["exonexontrue"])
+                classifiedReads.write(bamRead)
 
-        for read in intronDict["tpintron"]:
-            bamRead = intronDict["tpintron"][read]
-            bamRead.setTag('YC', colors["intron"])
-            #classifiedReads.write(bamRead)
+            for read in intronDict["fpspliced"]:
+                bamRead = intronDict["fpspliced"][read]
+                bamRead.setTag('YC', colors["exonexonfalse"])
+                classifiedReads.write(bamRead)
 
-        for read in intronDict["fpintron"]:
-            bamRead = intronDict["fpintron"][read]
-            bamRead.setTag('YC', colors["exonexonfalse"])
-            #classifiedReads.write(bamRead)
+            for read in intronDict["tpexonintron"]:
+                bamRead = intronDict["tpexonintron"][read]
+                bamRead.setTag('YC', colors["exonintron"])
+                classifiedReads.write(bamRead)
 
-        print("\t".join(
-            [txid + "_" + str(exonnumber), str(len(intronDict["tpspliced"])), str(len(intronDict["fpspliced"])),
-             str(len(intronDict["fnspliced"])), str(len(intronDict["tpexonintron"])),
-             str(len(intronDict["fpexonintron"])), str(len(intronDict["fnexonintron"])),
-             str(len(intronDict["tpintron"])), str(len(intronDict["fpintron"])), str(len(intronDict["fnintron"]))]))
+            for read in intronDict["fpexonintron"]:
+                bamRead = intronDict["fpexonintron"][read]
+                bamRead.setTag('YC', colors["exonexonfalse"])
+                classifiedReads.write(bamRead)
 
-if args.introns:
+            for read in intronDict["tpintron"]:
+                bamRead = intronDict["tpintron"][read]
+                bamRead.setTag('YC', colors["intron"])
+                classifiedReads.write(bamRead)
 
-    # TODO: Duplicated code from splicing_simulator.py
+            for read in intronDict["fpintron"]:
+                bamRead = intronDict["fpintron"][read]
+                bamRead.setTag('YC', colors["exonexonfalse"])
+                classifiedReads.write(bamRead)
 
-    # read transcript data from external file if not in config
-    if 'transcripts' not in config:
-        assert "transcript_data" in config, "Transcript data needs to be configured either in config file ('transcripts' section) or in an external file referenced via 'transcript_data'"
-        tfile = config['transcript_data']
-        if not os.path.isabs(tfile):
-            tfile = os.path.dirname(os.path.abspath(args.confF))+"/"+tfile
-        tdata = json.load(open(tfile), object_pairs_hook=OrderedDict)
-        config["transcripts"]=tdata
+            results[tid].append("\t".join(
+                [txid + "_" + str(exonnumber), str(len(intronDict["tpspliced"])), str(len(intronDict["fpspliced"])),
+                 str(len(intronDict["fnspliced"])), str(len(intronDict["tpexonintron"])),
+                 str(len(intronDict["fpexonintron"])), str(len(intronDict["fnexonintron"])),
+                 str(len(intronDict["tpintron"])), str(len(intronDict["fpintron"])), str(len(intronDict["fnintron"]))]))
 
-    # get conditions and configuration
-    conditions=[]
-    for id in config["conditions"].keys():
-        conditions+=[Condition(id, config["conditions"][id][0], config["conditions"][id][1], config["conditions"][id][2] )]
-    print("Configured conditions: %s" % (", ".join(str(x) for x in conditions)) , file = sys.stderr)
-
-    # load + filter gene gff
-    print("Loading gene GFF", file = sys.stderr)
-    gff = pr.read_gff3(config["gene_gff"])
-    gff_df = gff.df
-    df = gff_df[gff_df['transcript_id'].isin(list(config['transcripts'].keys()))] # reduce to contain only configured transcripts
-
-    # load genome
-    print("Loading genome", file = sys.stderr)
-    genome = pysam.FastaFile(config["genome_fa"])
-    chrom_sizes = config["chrom_sizes"] if 'chrom_sizes' in config else config["genome_fa"]+".chrom.sizes"
-
-    # instantiate transcripts
-    transcripts=OrderedDict()
-    for tid in list(config['transcripts'].keys()):
-        tid_df = df[df['transcript_id']==tid] # extract data for this transcript only
-        if tid_df.empty:
-            print("No annotation data found for configured tid %s, skipping..." % (tid), file = sys.stderr)
-        else:
-            t = Transcript(tid, tid_df, genome, conditions)
-            if t.is_valid:
-                transcripts[tid] = t
-
-    print("Evaluating introns", file = sys.stderr)
-
-    headerfile = pysam.AlignmentFile(args.bamFile, "rb")
-    classifiedReads = pysam.AlignmentFile(outdir + "/classifiedreads.bam", "wb", template=headerfile)
-
-    print("\t".join(["Transcript", "tp-exon-exon", "fp-exon-exon", "fn-exon-exon", "tp-exon-intron", "fp-exon-intron", "fn-exon-intron", "tp-intron", "fp-intron", "fn-intron"]))
-
-    Parallel(n_jobs=args.threads, verbose = 40)(delayed(classifyIntron)(transcripts[tid], truthCollection, args.bamFile) for tid in transcripts)
-    # for tid in transcripts:
-    #     classifyIntron(transcripts[tid], truthCollection, args.bamFile)
     classifiedReads.close()
 
-else :
+    return (results)
 
-    junctions = extract_splice_sites(config["gene_gff"])
+if __name__ == '__main__':
 
-    simFile = SpliceSimFile(args.bamFile)
+    parser = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
+    parser.add_argument("-b","--bam", type=existing_file, required=True, dest="bamFile", help="Mapped bam file")
+    parser.add_argument("-c","--config", type=existing_file, required=True, dest="confF", help="JSON config file")
+    parser.add_argument("-t","--truth", type=existing_file, required=True, dest="truthFile", help="Read truth tsv file")
+    parser.add_argument("-p","--parallel", type=int, required=False, default=3, dest="threads", help="Number of threads")
+    parser.add_argument('-i', "--intron-based", action='store_true', dest="introns", help="Quantify per intron, not per read")
+    parser.add_argument("-o","--out", type=str, required=False, default="outdir", dest="outdir", metavar="outdir", help="Output folder")
+    args = parser.parse_args()
+    startTime = time.time()
 
-    readIterator = simFile.readsGenomeWide()
+    print(logo, file=sys.stderr)
 
-    print("\t".join(["name","chromsome_observed","chromosome_truth",
-                     "start_observed","start_truth",
-                     "end_observed","end_truth",
-                     "mm_observed","mm_truth",
-                     "matching_positions",
-                     "splicing_observed","splicing_truth",
-                     "known_splice_sites","novel_splice_sites"]))
+    # output dir (current dir if none provided)
+    outdir = args.outdir if args.outdir else os.getcwd()
+    if not outdir.endswith("/"):
+        outdir += "/"
+    if not os.path.exists(outdir):
+        print("Creating dir " + outdir, file=sys.stderr)
+        os.makedirs(outdir)
+    tmpdir = outdir + "/tmp/"
+    if not os.path.exists(tmpdir):
+        os.makedirs(tmpdir)
 
-    for read in readIterator:
-        truth = truthCollection.getTruth(read.name)
-        evaluation = read.evaluate(truth, junctions)
-        print(evaluation)
+    # load + check config
+    config = json.load(open(args.confF), object_pairs_hook=OrderedDict)
+
+    truthCollection = TruthCollection(args.truthFile)
+
+    truthCollection.readTruth()
+
+    print("Done reading truth collection", file = sys.stderr)
+
+    if args.introns:
+
+        # TODO: Duplicated code from splicing_simulator.py
+
+        # read transcript data from external file if not in config
+        if 'transcripts' not in config:
+            assert "transcript_data" in config, "Transcript data needs to be configured either in config file ('transcripts' section) or in an external file referenced via 'transcript_data'"
+            tfile = config['transcript_data']
+            if not os.path.isabs(tfile):
+                tfile = os.path.dirname(os.path.abspath(args.confF))+"/"+tfile
+            tdata = json.load(open(tfile), object_pairs_hook=OrderedDict)
+            config["transcripts"]=tdata
+
+        # get conditions and configuration
+        conditions=[]
+        for id in config["conditions"].keys():
+            conditions+=[Condition(id, config["conditions"][id][0], config["conditions"][id][1], config["conditions"][id][2] )]
+        print("Configured conditions: %s" % (", ".join(str(x) for x in conditions)) , file = sys.stderr)
+
+        # load + filter gene gff
+        print("Loading gene GFF", file = sys.stderr)
+        gff = pr.read_gff3(config["gene_gff"])
+        gff_df = gff.df
+        df = gff_df[gff_df['transcript_id'].isin(list(config['transcripts'].keys()))] # reduce to contain only configured transcripts
+
+        # load genome
+        print("Loading genome", file = sys.stderr)
+        genome = pysam.FastaFile(config["genome_fa"])
+        chrom_sizes = config["chrom_sizes"] if 'chrom_sizes' in config else config["genome_fa"]+".chrom.sizes"
+
+        # instantiate transcripts
+        transcripts=OrderedDict()
+        for tid in list(config['transcripts'].keys()):
+            tid_df = df[df['transcript_id']==tid] # extract data for this transcript only
+            if tid_df.empty:
+                print("No annotation data found for configured tid %s, skipping..." % (tid), file = sys.stderr)
+            else:
+                t = Transcript(tid, tid_df, genome, conditions)
+                if t.is_valid:
+                    transcripts[tid] = t
+
+        print("Evaluating introns", file = sys.stderr)
+
+        chunks = partitionDict(transcripts, args.threads)
+
+        print("\t".join(["Transcript", "tp-exon-exon", "fp-exon-exon", "fn-exon-exon", "tp-exon-intron", "fp-exon-intron", "fn-exon-intron", "tp-intron", "fp-intron", "fn-intron"]))
+
+        results = Parallel(n_jobs=args.threads, verbose = 30)(delayed(classifyIntron)(chunks[chunk], truthCollection, args.bamFile, os.path.join(outdir, "tmp"), chunk) for chunk in range(len(chunks)))
+
+        mergedResults = dict()
+
+        for result in results:
+            mergedResults.update(result)
+
+        mergeBams = list()
+        for chunk in range(len(chunks)):
+            mergeBams.append(os.path.join(outdir, "tmp", str(chunk) + ".bam"))
+
+        pysam.merge("-f", os.path.join(outdir, "tmp.bam"), *mergeBams)
+
+        pysam.sort("-o", os.path.join(outdir, "classifiedreads.bam"), os.path.join(outdir, "tmp.bam"))
+
+        pysam.index(os.path.join(outdir, "classifiedreads.bam"))
+
+        os.remove(os.path.join(outdir, "tmp.bam"))
+
+        shutil.rmtree(tmpdir)
+
+        for tid in transcripts:
+            if tid in mergedResults:
+                for quantification in mergedResults[tid]:
+                    print(quantification)
+
+    else :
+
+        junctions = extract_splice_sites(config["gene_gff"])
+
+        simFile = SpliceSimFile(args.bamFile)
+
+        readIterator = simFile.readsGenomeWide()
+
+        print("\t".join(["name","chromsome_observed","chromosome_truth",
+                         "start_observed","start_truth",
+                         "end_observed","end_truth",
+                         "mm_observed","mm_truth",
+                         "matching_positions",
+                         "splicing_observed","splicing_truth",
+                         "known_splice_sites","novel_splice_sites"]))
+
+        for read in readIterator:
+            truth = truthCollection.getTruth(read.name)
+            evaluation = read.evaluate(truth, junctions)
+            print(evaluation)

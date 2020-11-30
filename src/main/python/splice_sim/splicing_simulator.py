@@ -339,7 +339,7 @@ class Isoform():
         return (ret)   
 
 class Transcript():
-    def __init__(self, tid, df, genome, conditions ):
+    def __init__(self, tid, df, genome, conditions, max_ilen=None ):
         self.tid = tid  
         self.is_valid = True
         self.df = df 
@@ -362,6 +362,11 @@ class Transcript():
                       'exon_number': int(ex.exon_number)
                       }
                 intron = pd.DataFrame(data=dat, columns=self.df.columns, index=[0])
+                ilen = (ex.Start-1) - (last_end+1) + 1
+                if (max_ilen is not None) and (ilen > max_ilen):
+                    print("Skipping transcript %s due to too long intron (%i vs %i). Skipping transcript..." % ( self.tid, ilen, max_ilen))
+                    self.is_valid = False
+                    return
                 idata.append(intron)
             last_end = ex.End
         if idata:
@@ -588,13 +593,14 @@ if __name__ == '__main__':
     
     # instantiate transcripts
     transcripts=OrderedDict()
+    max_ilen = config["max_ilen"] if 'max_ilen' in config else None
     stats=[]
     for tid in list(config['transcripts'].keys()):
         tid_df = df[df['transcript_id']==tid] # extract data for this transcript only
         if tid_df.empty:
             print("No annotation data found for configured tid %s, skipping..." % (tid))
         else:
-            t = Transcript(tid, tid_df, genome, conditions) 
+            t = Transcript(tid, tid_df, genome, conditions, max_ilen=max_ilen) 
             if t.is_valid:
                 transcripts[tid] = t
     stats+=[Stat("transcripts", len(transcripts))]

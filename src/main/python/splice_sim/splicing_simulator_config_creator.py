@@ -254,7 +254,6 @@ if args.mode == 'from_slamstr':
 elif args.mode == '1:1':
     # create output
     transcripts = pd.read_csv(config["slamstr_transcript_table"],delimiter='\t',encoding='utf-8')
-    introns = pd.read_csv(config["slamstr_intron_table"],delimiter='\t',encoding='utf-8')
     abundances = [10] * len ( transcripts.index )
     min_abundance = config["min_abundance"] if 'min_abundance' in config else 0.0
     for i, t in transcripts.iterrows():

@@ -185,100 +185,135 @@ def calc_iso(tid, transcript, introns, rnk, conditions, times):
     return (ret)
 
 
-parser = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
-parser.add_argument("-conf","--config", type=existing_file, required=True, dest="confF", help="JSON config file")
-parser.add_argument("-m","--mode", type=str, required=True, dest="mode", help="mode: 'from_slamstr', '1:1'")
-parser.add_argument("-o","--out", type=str, required=False, dest="outF", metavar="outF", help="Output file (otional). If not set, results will be written to file configured in 'transcript_data' config property.")
-args = parser.parse_args()   
-startTime = time.time()
-print(logo)
-
+if __name__ == '__main__':
+    parser = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
+    parser.add_argument("-conf","--config", type=existing_file, required=True, dest="confF", help="JSON config file")
+    parser.add_argument("-m","--mode", type=str, required=True, dest="mode", help="mode: 'from_slamstr', '1:1_slamstr', '1:1'")
+    parser.add_argument("-o","--out", type=str, required=False, dest="outF", metavar="outF", help="Output file (otional). If not set, results will be written to file configured in 'transcript_data' config property.")
+    args = parser.parse_args()   
+    startTime = time.time()
+    print(logo)
     
-# load + check config
-#config = json.load(open('/Users/niko.popitsch/eclipse-workspace/slamstr/src/test/splicing_simulator/testconfig_data_creator.json'), object_pairs_hook=OrderedDict)
-config = json.load(open(args.confF), object_pairs_hook=OrderedDict)
-if "random_seed" in config:
-    random.seed(config["random_seed"])
-
-# outoput file
-outF = args.outF if args.outF else config['transcript_data']
-if not os.path.isabs(outF):
-    outF = os.path.abspath(outF)      
-outdir =  os.path.dirname(outF)                       
-if not os.path.exists(outdir):
-    print("Creating dir " + outdir)
-    os.makedirs(outdir)
-
-# get readlen (needed for abundance calc)
-readlen=config["readlen"]
-
-# get conditions and labeling times
-conditions = list(config["conditions"].keys())
-times = list(config["conditions"].values())
-out=OrderedDict()
-
-# ------------------------------------------------------------------------------------
-#    from slamstr data
-# ------------------------------------------------------------------------------------
-if args.mode == 'from_slamstr':
-    # get abundance data
-    ab_table=pd.read_csv(config["slamstr_abundance_data_table"],delimiter='\t',encoding='utf-8')
-    TAB_ALL=list(ab_table["TAB_ALL_"+conditions[-1]])
-    transcript_len=list(ab_table["len"])
-    abundance_multiplier = config["abundance_multiplier"] if 'abundance_multiplier' in config else 1.0
-    abundances = [(x*readlen*abundance_multiplier)/y for x, y in zip(TAB_ALL, transcript_len)]
-    min_abundance = config["min_abundance"] if 'min_abundance' in config else 0.0
-    print("minimum abundance: %f" % (min_abundance) )
+        
+    # load + check config
+    #config = json.load(open('/Users/niko.popitsch/eclipse-workspace/slamstr/src/test/splicing_simulator/testconfig_data_creator.json'), object_pairs_hook=OrderedDict)
+    config = json.load(open(args.confF), object_pairs_hook=OrderedDict)
+    if "random_seed" in config:
+        random.seed(config["random_seed"])
     
-    # create output
-    transcripts = pd.read_csv(config["slamstr_transcript_table"],delimiter='\t',encoding='utf-8')
-    introns = pd.read_csv(config["slamstr_intron_table"],delimiter='\t',encoding='utf-8')
-    for i, t in transcripts.iterrows():
-        if abundances[i] > min_abundance:
-            tid = t['transcript_id']
-            rnk = None if math.isnan(t['rnk']) else int(t['rnk']) 
-            isoform_data=calc_iso(tid, t, introns[introns['transcript_id']==tid], rnk, conditions, times) if rnk else OrderedDict()
-            if rnk and len(isoform_data) == 0:
-                # not enough data. skip
-                print("Skipped %s due to too-low number of informative reads" % (tid) )
+    # outoput file
+    outF = args.outF if args.outF else config['transcript_data']
+    if not os.path.isabs(outF):
+        outF = os.path.abspath(outF)      
+    outdir =  os.path.dirname(outF)                       
+    if not os.path.exists(outdir):
+        print("Creating dir " + outdir)
+        os.makedirs(outdir)
+    
+    # get readlen (needed for abundance calc)
+    readlen=config["readlen"]
+    
+    # get conditions and labeling times
+    conditions = list(config["conditions"].keys())
+    times = list(config["conditions"].values())
+    out=OrderedDict()
+    
+    # ------------------------------------------------------------------------------------
+    #    from slamstr data
+    # ------------------------------------------------------------------------------------
+    if args.mode == 'from_slamstr':
+        # get abundance data
+        ab_table=pd.read_csv(config["slamstr_abundance_data_table"],delimiter='\t',encoding='utf-8')
+        TAB_ALL=list(ab_table["TAB_ALL_"+conditions[-1]])
+        transcript_len=list(ab_table["len"])
+        abundance_multiplier = config["abundance_multiplier"] if 'abundance_multiplier' in config else 1.0
+        abundances = [(x*readlen*abundance_multiplier)/y for x, y in zip(TAB_ALL, transcript_len)]
+        min_abundance = config["min_abundance"] if 'min_abundance' in config else 0.0
+        print("minimum abundance: %f" % (min_abundance) )
+        
+        # create output
+        transcripts = pd.read_csv(config["slamstr_transcript_table"],delimiter='\t',encoding='utf-8')
+        introns = pd.read_csv(config["slamstr_intron_table"],delimiter='\t',encoding='utf-8')
+        for i, t in transcripts.iterrows():
+            if abundances[i] > min_abundance:
+                tid = t['transcript_id']
+                rnk = None if math.isnan(t['rnk']) else int(t['rnk']) 
+                isoform_data=calc_iso(tid, t, introns[introns['transcript_id']==tid], rnk, conditions, times) if rnk else OrderedDict()
+                if rnk and len(isoform_data) == 0:
+                    # not enough data. skip
+                    print("Skipped %s due to too-low number of informative reads" % (tid) )
+                else:
+                    out[tid] = OrderedDict()
+                    out[tid]["gene_name"] = t['gene_name']
+                    out[tid]["abundance"] = abundances[i]
+                    out[tid]["isoforms"] = isoform_data
             else:
+                print("Skipped %s due to too-low abundance." % (tid) )
+    # ------------------------------------------------------------------------------------
+    #    1:1 mat/pre mix with fixed abundance for all transcripts.
+    #    input: slamstr_transcript_table with columns transcript_id, gene_name, rnk (=#introns)
+    # ------------------------------------------------------------------------------------
+    elif args.mode == '1:1_slamstr':
+        # create output
+        transcripts = pd.read_csv(config["slamstr_transcript_table"],delimiter='\t',encoding='utf-8')
+        base_abundance = config["base_abundance"] if 'base_abundance' in config else 10
+        abundances = [base_abundance] * len ( transcripts.index )
+        min_abundance = config["min_abundance"] if 'min_abundance' in config else 0.0
+        for i, t in transcripts.iterrows():
+            if abundances[i] > min_abundance:
+                tid = t['transcript_id']
+                rnk = None if math.isnan(t['rnk']) else int(t['rnk']) 
+                isoform_data=OrderedDict()
+                isoform_data['pre'] = OrderedDict()
+                if rnk:
+                    isoform_data['pre']['splicing_status']=[0] * rnk
+                isoform_data['pre']['fractions']=[0.5] * len(times)
+                # output data
                 out[tid] = OrderedDict()
                 out[tid]["gene_name"] = t['gene_name']
                 out[tid]["abundance"] = abundances[i]
                 out[tid]["isoforms"] = isoform_data
-        else:
-            print("Skipped %s due to too-low abundance." % (tid) )
-# ------------------------------------------------------------------------------------
-#    1:1 mat/pre mix with fixed abundance for all transcripts
-# ------------------------------------------------------------------------------------
-elif args.mode == '1:1':
-    # create output
-    transcripts = pd.read_csv(config["slamstr_transcript_table"],delimiter='\t',encoding='utf-8')
-    abundances = [10] * len ( transcripts.index )
-    min_abundance = config["min_abundance"] if 'min_abundance' in config else 0.0
-    for i, t in transcripts.iterrows():
-        if abundances[i] > min_abundance:
-            tid = t['transcript_id']
-            rnk = None if math.isnan(t['rnk']) else int(t['rnk']) 
-            isoform_data=OrderedDict()
-            isoform_data['pre'] = OrderedDict()
-            if rnk:
-                isoform_data['pre']['splicing_status']=[0] * rnk
-            isoform_data['pre']['fractions']=[0.5] * len(times)
-            # output data
-            out[tid] = OrderedDict()
-            out[tid]["gene_name"] = t['gene_name']
-            out[tid]["abundance"] = abundances[i]
-            out[tid]["isoforms"] = isoform_data
-        else:
-            print("Skipped %s due to too-low abundance." % (tid) )
+            else:
+                print("Skipped %s due to too-low abundance." % (tid) )
+    # ------------------------------------------------------------------------------------
+    #    1:1 mat/pre mix with fixed abundance for all transcripts.
+    #    input: transcript_ids table with column transcript_id
+    #    config: 
+    # ------------------------------------------------------------------------------------
+    elif args.mode == '1:1':
+        # load GFF
+        gff = pr.read_gff3(config["gene_gff"])
+        gff_df = gff.df
+        # create output
+        transcripts = pd.read_csv(config["transcript_ids"],delimiter='\t',encoding='utf-8')
+        base_abundance = config["base_abundance"] if 'base_abundance' in config else 10
+        abundances = [base_abundance] * len ( transcripts.index )
+        min_abundance = config["min_abundance"] if 'min_abundance' in config else 0.0
+        for i, t in transcripts.iterrows():
+            if abundances[i] > min_abundance:
+                tid = t['transcript_id']
+                df = gff_df[gff_df['transcript_id']==tid] 
+                rnk=len(df[df.Feature=='exon'].index)-1
+                gene_name = df[df.Feature=='transcript'].iloc[0]['gene_name']
+                isoform_data=OrderedDict()
+                isoform_data['pre'] = OrderedDict()
+                if rnk:
+                    isoform_data['pre']['splicing_status']=[0] * rnk
+                isoform_data['pre']['fractions']=[0.5] * len(times)
+                # output data
+                out[tid] = OrderedDict()
+                out[tid]["gene_name"] = gene_name
+                out[tid]["abundance"] = abundances[i]
+                out[tid]["isoforms"] = isoform_data
+            else:
+                print("Skipped %s due to too-low abundance." % (tid) )
+        
+    else:
+        print("Unknown mode %s " % (args.mode))  
+        sys.exit(1)
+        
+    with open(outF, 'w') as config_file:
+        json.dump(out, config_file, indent=2)
+        
     
-else:
-    print("Unknown mode %s " % (args.mode))  
-    sys.exit(1)
-    
-with open(outF, 'w') as config_file:
-    json.dump(out, config_file, indent=2)
-    
-
-print('Done. Results written to %s' % (outF))
+    print('Done. Results written to %s' % (outF))

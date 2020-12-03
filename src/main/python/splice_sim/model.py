@@ -1,3 +1,10 @@
+#============================================================================
+# utility methods
+#============================================================================
+def to_region(dat):
+    return(dat.Chromosome + ":" + str(dat.Start) + "-" + str(dat.End))
+
+
 class Condition():
     def __init__(self, id, timepoint, conversion_rate, coverage ):
         self.id = id

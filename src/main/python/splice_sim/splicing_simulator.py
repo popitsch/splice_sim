@@ -47,12 +47,6 @@ BAM_CDIFF=8
 BAM_CBACK=9
 
 
-#============================================================================
-# utility methods
-#============================================================================
-def to_region(dat):
-    return(dat.Chromosome + ":" + str(dat.Start) + "-" + str(dat.End))
-
 def pad_n(seq, minlen):
     ret = seq
     if ( len(ret)<minlen):
@@ -60,8 +54,6 @@ def pad_n(seq, minlen):
         pad1="N" * int(minlen-(len(ret)+len(pad0))) 
         ret=pad0+ret+pad1
     return (ret)
-
-
 
 # 
 # introduces TC / AG conversions

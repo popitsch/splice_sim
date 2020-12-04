@@ -184,6 +184,7 @@ class Transcript():
 class Model():
     """ builds a model using the passed configuration and conditions. 
         required config keys:
+            conditions:   the configured experimental conditions
             gene_gff:     the GFF3 file comtaining all gencode-style annotations
             transcripts:  a dict with configured transcript configurations, mapping tids to gene_name, abundance and possible isoforms_+fractions (e.g., as created by splicing_simulator_config_creator)
             genome_fa:    FASTA file of the genome
@@ -193,7 +194,13 @@ class Model():
     """
     def __init__(self, config, conditions):
         self.config = config
-        self.conditions = conditions
+        
+        # init conditions
+        self.conditions=[]
+        for id in config["conditions"].keys():
+            self.conditions+=[Condition(id, config["conditions"][id][0], config["conditions"][id][1], config["conditions"][id][2] )]
+        print("Configured conditions: %s" % (", ".join(str(x) for x in self.conditions)) )
+        
         # load + filter gene gff
         print("Loading gene GFF")
         self.gff = pr.read_gff3(config["gene_gff"])

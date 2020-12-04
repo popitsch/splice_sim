@@ -292,11 +292,6 @@ if __name__ == '__main__':
     threads=config["threads"] if "threads" in config else 1
     
     
-    # get conditions and configuration
-    conditions=[]
-    for id in config["conditions"].keys():
-        conditions+=[Condition(id, config["conditions"][id][0], config["conditions"][id][1], config["conditions"][id][2] )]
-    print("Configured conditions: %s" % (", ".join(str(x) for x in conditions)) )
     
     if args.force:
         print("NOTE: existing result files will be overwritten!")
@@ -312,7 +307,7 @@ if __name__ == '__main__':
     
     
     # instantiate model
-    m = Model( config, conditions )
+    m = Model( config )
     
     # write considered transcripts to GFF
     m.write_gff(outdir)
@@ -322,7 +317,7 @@ if __name__ == '__main__':
     
     # now write one fasta file per transcript/cond
     print("Calculating isoform data")
-    for cond in conditions:
+    for cond in m.conditions:
         fout = tmpdir + config['dataset_name'] + "." + cond.id + ".fa"
         if args.force or (not files_exist(fout) and not files_exist(fout+".gz")):
             buf=[]
@@ -346,7 +341,7 @@ if __name__ == '__main__':
     print("Running read simulator")
     artlog=tmpdir + config['dataset_name'] + ".art.log" 
     valid_reads={}
-    for cond in conditions:
+    for cond in m.conditions:
         valid_reads[cond]=set()
         f = tmpdir + config['dataset_name'] + "." + cond.id + ".fa"
         # art output
@@ -412,7 +407,7 @@ if __name__ == '__main__':
     
                    
     # concat files per condition, introduce T/C conversions and bgzip
-    for cond in conditions:
+    for cond in m.conditions:
         f_all = tmpdir + config['dataset_name'] + "." + cond.id + ".fq"
         f_tc  = tmpdir + config['dataset_name'] + "." + cond.id + ".TC.fq"
         hist_tc=[]
@@ -460,7 +455,7 @@ if __name__ == '__main__':
     bams={}
     if 'mappers' in config:
         print("Mapping reads")
-        for cond in conditions:
+        for cond in m.conditions:
             for mapper in config['mappers'].keys():
                 f_all = tmpdir + config['dataset_name'] + "." + cond.id + ".fq.gz"
                 b_all = tmpdir + config['dataset_name'] + "." + cond.id + "."+mapper+".bam"
@@ -590,9 +585,9 @@ if __name__ == '__main__':
                     tokens["gff"]=os.path.abspath(f_anno)
                     tokens["datasets"]="\n"
                     tokens["timepoints"]="\n"
-                    for idx, cond in enumerate(conditions):
-                        tokens["datasets"]+='\t"' + cond.id + '": "' + bams[cond.id + "."+mapper] + '"' + ("," if idx < len(conditions)-1 else "") + "\n"
-                        tokens["timepoints"]+='\t"' + cond.id + '": "' + str(cond.timepoint)+ '"' + ("," if idx < len(conditions)-1 else "")+ "\n"
+                    for idx, cond in enumerate(m.conditions):
+                        tokens["datasets"]+='\t"' + cond.id + '": "' + bams[cond.id + "."+mapper] + '"' + ("," if idx < len(m.conditions)-1 else "") + "\n"
+                        tokens["timepoints"]+='\t"' + cond.id + '": "' + str(cond.timepoint)+ '"' + ("," if idx < len(m.conditions)-1 else "")+ "\n"
                     for l in x:
                         print(replace_tokens(l, tokens), file=out)
                         

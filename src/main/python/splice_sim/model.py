@@ -70,7 +70,8 @@ class Isoform():
         return (ret)   
 
 class Transcript():
-    def __init__(self, tid, df, genome, conditions, max_ilen=None ):
+    def __init__(self, config, tid, df, genome, conditions, max_ilen=None ):
+        self.config = config
         self.tid = tid  
         self.is_valid = True
         self.df = df 
@@ -106,12 +107,12 @@ class Transcript():
             self.introns=pd.DataFrame()
         # set abundance and isoforms
         self.cond = conditions
-        self.abundance = math.ceil(config['transcripts'][tid]['abundance']) # abundance is float
+        self.abundance = math.ceil(self.config['transcripts'][tid]['abundance']) # abundance is float
         self.isoforms={}
         total_frac = [0] * len(self.cond)
-        for iso in config['transcripts'][tid]['isoforms'].keys():
-            frac=config['transcripts'][tid]['isoforms'][iso]['fractions']
-            splicing_status=config['transcripts'][tid]['isoforms'][iso]['splicing_status'] if 'splicing_status' in config['transcripts'][tid]['isoforms'][iso] else []
+        for iso in self.config['transcripts'][tid]['isoforms'].keys():
+            frac=self.config['transcripts'][tid]['isoforms'][iso]['fractions']
+            splicing_status=self.config['transcripts'][tid]['isoforms'][iso]['splicing_status'] if 'splicing_status' in self.config['transcripts'][tid]['isoforms'][iso] else []
             if self.transcript.Strand == "-":
                 splicing_status = list(reversed(splicing_status)) # so 1st entry in config refers to 1st intron.
             # assert len(splicing_status)==len(self.introns), "misconfigured splicing status for some isoform/conditions: %s (%i vs %i)" % ( self.tid, len(splicing_status), len(self.introns))
@@ -181,7 +182,7 @@ class Transcript():
     
     
 class Model():
-    """ builds a model using the passed configuration. 
+    """ builds a model using the passed configuration and conditions. 
         required config keys:
             gene_gff:     the GFF3 file comtaining all gencode-style annotations
             transcripts:  a dict with configured transcript configurations, mapping tids to gene_name, abundance and possible isoforms_+fractions (e.g., as created by splicing_simulator_config_creator)
@@ -190,12 +191,13 @@ class Model():
             max_ilen:     maximum intron length. Transcriptrs with a longer intron will be filetered out.
             
     """
-    def __init__(self, config ):
+    def __init__(self, config, conditions):
         self.config = config
+        self.conditions = conditions
         # load + filter gene gff
         print("Loading gene GFF")
         self.gff = pr.read_gff3(config["gene_gff"])
-        self.gff_df = gff.df
+        self.gff_df = self.gff.df
         self.gff_df.Start = self.gff_df.Start + 1 # correct for pyranges bug?
         self.df = self.gff_df[self.gff_df['transcript_id'].isin(list(config['transcripts'].keys()))] # reduce to contain only configured transcripts
         
@@ -213,7 +215,7 @@ class Model():
             if tid_df.empty:
                 print("No annotation data found for configured tid %s, skipping..." % (tid))
             else:
-                t = Transcript(tid, tid_df, genome, conditions, max_ilen=max_ilen) 
+                t = Transcript(config, tid, self.tid_df, self.genome, self.conditions, max_ilen=self.max_ilen) 
                 if t.is_valid:
                     self.transcripts[tid] = t
         print("Instantiated %i transcripts" % len(self.transcripts))

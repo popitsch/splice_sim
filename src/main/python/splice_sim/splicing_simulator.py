@@ -36,10 +36,8 @@ Slamstr splice_sim v%s
 #============================================================================
 
 
-#
-# Run STAR, supports SE+PE and can merge multiple files (needs sambamba access). Can create samtools flagstats
-#
 def runSTAR(bam, ref, reads1=[], reads2=None,  gtf=None, force=True, run_flagstat=False, threads=1, chimeric=0, writeUnmapped=False, doSort=True, additionalParameters=[], STAR_EXE='STAR'):
+    """ Run STAR, supports SE+PE and can merge multiple files (needs sambamba access). Can create samtools flagstats """
     success = True
     if files_exist(bam) and not force:
         print("BAM file " + bam + " already exists! use -f to recreate.")
@@ -121,10 +119,8 @@ def runSTAR(bam, ref, reads1=[], reads2=None,  gtf=None, force=True, run_flagsta
     return success
 
 
-#
-# Run HISAT2_TLA
-#
 def runHISAT2_TLA(bam, ref, fq, idx1, idx2, known_splicesites=None, force=True, run_flagstat=False, threads=1, doSort=True, additionalParameters=[], HISAT2_EXE='hisat2'):
+    """ Run HISAT2_TLA """
     success = True
     if files_exist(bam) and not force:
         print("BAM file " + bam + " already exists! use -f to recreate.")
@@ -180,6 +176,7 @@ def create_tdf(bam, tdf, chrom_sizes, igvtools_cmd='igvtools', logfile="igvtools
 #============================================================================
 
 class Stat():
+    """ For collecting mapper-specific stats """
     def __init__(self, id, value, cond=None, mapper=None ):
         self.id=id
         self.cond=cond
@@ -199,8 +196,9 @@ class Stat():
     
 
 
-#============================================================================
 def postfilter_bam( bam_in, bam_out, tag_tc=None, tag_mp=None):
+    """ Filters reads by correct read strand (i.e., removes all reads that were simulated on the wrong read strand by by ART) and adds 
+        XC/XP/YC bam tags """  
     samin = pysam.AlignmentFile(bam_in, "rb")
     samout = pysam.AlignmentFile(bam_out, "wb", template=samin, )
     if tag_tc is None:

@@ -224,7 +224,7 @@ class Model():
             if tid_df.empty:
                 print("No annotation data found for configured tid %s, skipping..." % (tid))
             else:
-                t = Transcript(config, tid, self.tid_df, self.genome, self.conditions, max_ilen=self.max_ilen) 
+                t = Transcript(config, tid, tid_df, self.genome, self.conditions, max_ilen=self.max_ilen) 
                 if t.is_valid:
                     self.transcripts[tid] = t
         print("Instantiated %i transcripts" % len(self.transcripts))

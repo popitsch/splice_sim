@@ -312,7 +312,7 @@ if __name__ == '__main__':
     
     
     # instantiate model
-    m = Model( config )
+    m = Model( config, conditions )
     
     # write considered transcripts to GFF
     m.write_gff(outdir)

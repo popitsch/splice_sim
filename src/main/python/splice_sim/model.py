@@ -245,5 +245,5 @@ class Model():
                     if keep:
                         print('\t'.join(str(x) for x in row), file=out)
             bgzip(out_file, override=True, delinFile=True, index=True, threads=self.threads)
-        out_file=f_anno+".gz"
+        out_file=out_file+".gz"
         return out_file

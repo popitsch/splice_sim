@@ -597,6 +597,6 @@ if __name__ == '__main__':
         igvtools_log=tmpdir + config['dataset_name'] + ".igvtools.log" 
         for b in list(bams.values()):
             if args.force or not files_exist(b+".tdf"):
-                create_tdf(b, b+".tdf", chrom_sizes, igvtools_cmd=igvtools_cmd, logfile=igvtools_log)
+                create_tdf(b, b+".tdf", m.chrom_sizes, igvtools_cmd=igvtools_cmd, logfile=igvtools_log)
     
     print("All done in", datetime.timedelta(seconds=time.time()-startTime))

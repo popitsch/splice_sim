@@ -1,8 +1,8 @@
-#============================================================================
-# utility methods
-#============================================================================
-def to_region(dat):
-    return(dat.Chromosome + ":" + str(dat.Start) + "-" + str(dat.End))
+import pyranges as pr
+import pandas as pd
+import numpy as np
+from utils import *
+
 
 
 class Condition():

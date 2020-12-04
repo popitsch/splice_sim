@@ -220,7 +220,7 @@ class Model():
         self.max_ilen = config["max_ilen"] if 'max_ilen' in config else None
     
         for tid in list(config['transcripts'].keys()):
-            tid_df = df[df['transcript_id']==tid] # extract data for this transcript only
+            tid_df = self.df[self.df['transcript_id']==tid] # extract data for this transcript only
             if tid_df.empty:
                 print("No annotation data found for configured tid %s, skipping..." % (tid))
             else:

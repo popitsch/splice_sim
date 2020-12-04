@@ -311,48 +311,14 @@ if __name__ == '__main__':
         config["transcripts"]=tdata
     
     
+    # instantiate model
+    m = Model( config )
     
+    # write considered transcripts to GFF
+    m.write_gff(outdir)
     
-    # load + filter gene gff
-    print("Loading gene GFF")
-    gff = pr.read_gff3(config["gene_gff"])
-    gff_df = gff.df
-    gff_df.Start = gff_df.Start + 1 # correct for pyranges bug?
-    df = gff_df[gff_df['transcript_id'].isin(list(config['transcripts'].keys()))] # reduce to contain only configured transcripts
-    
-    print("Writing filtered gene GFF")
-    f_anno=outdir+"gene_anno.gff3"
-    d=pd.read_csv(config["gene_gff"],delimiter='\t',encoding='utf-8')
-    if not files_exist(f_anno+".gz"):
-        with open(f_anno, 'w') as out:
-            for index, row in d.iterrows():
-                keep=False
-                for k in row[8].split(';'):
-                    if k.startswith('transcript_id='):
-                        keep=k[len('transcript_id='):] in config['transcripts'].keys()
-                if keep:
-                    print('\t'.join(str(x) for x in row), file=out)
-        bgzip(f_anno, override=True, delinFile=True, index=True, threads=threads)
-    f_anno=f_anno+".gz"
-          
-    # load genome
-    print("Loading genome")
-    genome = pysam.FastaFile(config["genome_fa"])
-    chrom_sizes = config["chrom_sizes"] if 'chrom_sizes' in config else config["genome_fa"]+".chrom.sizes"
-    
-    # instantiate transcripts
-    transcripts=OrderedDict()
-    max_ilen = config["max_ilen"] if 'max_ilen' in config else None
-    stats=[]
-    for tid in list(config['transcripts'].keys()):
-        tid_df = df[df['transcript_id']==tid] # extract data for this transcript only
-        if tid_df.empty:
-            print("No annotation data found for configured tid %s, skipping..." % (tid))
-        else:
-            t = Transcript(tid, tid_df, genome, conditions, max_ilen=max_ilen) 
-            if t.is_valid:
-                transcripts[tid] = t
-    stats+=[Stat("transcripts", len(transcripts))]
+    # add number of transcripts to stats
+    stats=[Stat("transcripts", len(m.transcripts))]
     
     # now write one fasta file per transcript/cond
     print("Calculating isoform data")
@@ -361,7 +327,7 @@ if __name__ == '__main__':
         if args.force or (not files_exist(fout) and not files_exist(fout+".gz")):
             buf=[]
             with open(fout, 'w') as out:
-                for t in transcripts.values():
+                for t in m.transcripts.values():
                     sequences = t.get_sequences()
                     #print("Writing to %s" % (fout) )            
                     for iso in t.isoforms.keys():
@@ -415,7 +381,7 @@ if __name__ == '__main__':
                         read_stats['all_'+read_strand]=read_stats['all_'+read_strand]+1 if 'all_'+read_strand in read_stats else 1
                         if transcript_strand == read_strand: # NOTE: reads that were mapped to opposite strand will be dropped later in post_filtering step!
                             valid_reads[cond].add(r.query_name)
-                            iso = transcripts[tid].isoforms[iso_id]
+                            iso = m.transcripts[tid].isoforms[iso_id]
                             start_abs, bid_start = iso.rel2abs_pos(r.reference_start)
                             end_abs, bid_end = iso.rel2abs_pos(r.reference_end-1)
                             if read_strand == '-': # swap start/end coords
@@ -486,7 +452,7 @@ if __name__ == '__main__':
     print("Writing ROI bed")
     f_roi = outdir + "roi.bed"
     with open(f_roi, 'w') as out:
-        for t in transcripts.values():
+        for t in m.transcripts.values():
             print(t.to_bed(), file=out)
     
     

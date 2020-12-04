@@ -1,7 +1,7 @@
 import pyranges as pr
 import pandas as pd
 import numpy as np
-import maths
+import math
 from utils import *
 
 
@@ -177,3 +177,61 @@ class Transcript():
     def __str__(self):
         ret = ("%s" % (self.transcript.transcript_id) )
         return (ret)   
+    
+    
+    
+class Model():
+    """ builds a model using the passed configuration. 
+        required config keys:
+            gene_gff:     the GFF3 file comtaining all gencode-style annotations
+            transcripts:  a dict with configured transcript configurations, mapping tids to gene_name, abundance and possible isoforms_+fractions (e.g., as created by splicing_simulator_config_creator)
+            genome_fa:    FASTA file of the genome
+            chrom_sizes:  optional file containing chrom sizes.
+            max_ilen:     maximum intron length. Transcriptrs with a longer intron will be filetered out.
+            
+    """
+    def __init__(self, config ):
+        self.config = config
+        # load + filter gene gff
+        print("Loading gene GFF")
+        self.gff = pr.read_gff3(config["gene_gff"])
+        self.gff_df = gff.df
+        self.gff_df.Start = self.gff_df.Start + 1 # correct for pyranges bug?
+        self.df = self.gff_df[self.gff_df['transcript_id'].isin(list(config['transcripts'].keys()))] # reduce to contain only configured transcripts
+        
+        # load genome
+        print("Loading genome")
+        self.genome = pysam.FastaFile(config["genome_fa"])
+        self.chrom_sizes = config["chrom_sizes"] if 'chrom_sizes' in config else config["genome_fa"]+".chrom.sizes"
+
+        # instantiate transcripts
+        self.transcripts=OrderedDict()
+        self.max_ilen = config["max_ilen"] if 'max_ilen' in config else None
+    
+        for tid in list(config['transcripts'].keys()):
+            tid_df = df[df['transcript_id']==tid] # extract data for this transcript only
+            if tid_df.empty:
+                print("No annotation data found for configured tid %s, skipping..." % (tid))
+            else:
+                t = Transcript(tid, tid_df, genome, conditions, max_ilen=max_ilen) 
+                if t.is_valid:
+                    self.transcripts[tid] = t
+        print("Instantiated %i transcripts" % len(self.transcripts))
+        
+    def write_gff(self, outdir):
+        """ Write a filtered GFF file containing all kept/simulated transcripts """
+        print("Writing filtered gene GFF")
+        out_file=outdir+"gene_anno.gff3"
+        d=pd.read_csv(self.config["gene_gff"],delimiter='\t',encoding='utf-8')
+        if not files_exist(out_file+".gz"):
+            with open(out_file, 'w') as out:
+                for index, row in d.iterrows():
+                    keep=False
+                    for k in row[8].split(';'):
+                        if k.startswith('transcript_id='):
+                            keep=k[len('transcript_id='):] in self.transcripts.keys()
+                    if keep:
+                        print('\t'.join(str(x) for x in row), file=out)
+            bgzip(out_file, override=True, delinFile=True, index=True, threads=threads)
+        out_file=f_anno+".gz"
+        return out_file

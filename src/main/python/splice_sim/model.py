@@ -196,6 +196,7 @@ class Model():
     """
     def __init__(self, config):
         self.config = config
+        self.threads=config["threads"] if "threads" in config else 1
         
         # init conditions
         self.conditions=[]
@@ -243,6 +244,6 @@ class Model():
                             keep=k[len('transcript_id='):] in self.transcripts.keys()
                     if keep:
                         print('\t'.join(str(x) for x in row), file=out)
-            bgzip(out_file, override=True, delinFile=True, index=True, threads=threads)
+            bgzip(out_file, override=True, delinFile=True, index=True, threads=self.threads)
         out_file=f_anno+".gz"
         return out_file

@@ -15,7 +15,7 @@ from utils import *
 import random
 import math
 import gzip
-from model import Condition, Isoform, Transcript
+from model import Model, Condition, Isoform, Transcript
 
 #============================================================================
 # splice sim readme

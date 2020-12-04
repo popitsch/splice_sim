@@ -192,7 +192,7 @@ class Model():
             max_ilen:     maximum intron length. Transcriptrs with a longer intron will be filetered out.
             
     """
-    def __init__(self, config, conditions):
+    def __init__(self, config):
         self.config = config
         
         # init conditions

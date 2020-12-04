@@ -21,6 +21,99 @@ from zipfile import ZipFile
 import gzip
 from shutil import copyfile
 
+#============================================================================
+# constants
+#============================================================================
+# @see https://pysam.readthedocs.io/en/latest/api.html#pysam.AlignedSegment.cigar
+BAM_CMATCH=0
+BAM_CINS=1
+BAM_CDEL=2
+BAM_CREF_SKIP=3
+BAM_CSOFT_CLIP=4
+BAM_CHARD_CLIP=5
+BAM_CPAD=6
+BAM_CEQUAL=7
+BAM_CDIFF=8
+BAM_CBACK=9
+
+# Table of reverse complement bases
+COMP_TABLE = {
+    "A": 'T', "C": 'G', "T": 'A', "G": 'C'
+    }
+def reverse_complement(seq):
+    """ Calculate reverse complement DNA sequence """
+    rev=[]
+    for c in seq[::-1]:
+        c=c.upper()
+        rev+=[COMP_TABLE.get(c, 'N')]
+    return ''.join(rev)
+
+def to_region(dat):
+    """ Create region string (chr:start-end) """
+    return(dat.Chromosome + ":" + str(dat.Start) + "-" + str(dat.End))
+
+def pad_n(seq, minlen):
+    """ Add up-/downstream padding with N's to ensure a given minimum length of the passed sequence """ 
+    ret = seq
+    if ( len(ret)<minlen):
+        pad0="N" * int((minlen-len(ret))/2)
+        pad1="N" * int(minlen-(len(ret)+len(pad0))) 
+        ret=pad0+ret+pad1
+    return (ret)
+
+# 
+# 
+def add_tc(seq, strand, conversion_rate):
+    """ introduces TC / AG conversions
+        returns the new sequence and the converted positions (always! 5'-3' as shown in genome browser)
+        positions are 0-based """
+    ref="T"
+    alt="C"
+    conv=[]
+    convseq=""
+    for i,c in enumerate(seq):
+        if c == ref and random.uniform(0, 1) < conversion_rate:
+            c=alt.lower()
+            conv+=[i if strand=="+" else len(seq)-i-1] # converted positions
+        convseq+=c
+    return convseq, conv  
+
+def replace_tokens(s, tok):
+    """ replace all tokens in a strings """
+    for t in tok.keys():
+        s=s.replace("@"+t+"@", tok[t])
+    return(s)
+
+
+def readidx2genpos_rel( read, idx ):
+    """ Converts read positions to genomic positions (1-based) by taking all cigar operations into account. 
+        The returned coords are relative to the alignment start, ie. absolute coords require to add read.reference_start """
+    if len(read.get_aligned_pairs(matches_only=True))<idx:
+        #print("invalid index %i, possibly softclipped? " % ( idx) )
+        #print(read)
+        return None
+    return (read.get_aligned_pairs(matches_only=True)[idx-1][1]-read.reference_start+1)
+
+def readidx2genpos_abs( read, idx ):
+    """ Converts read positions to genomic positions (1-based) by taking all cigar operations into account. """
+    if len(read.get_aligned_pairs(matches_only=True))<idx:
+        return None
+    return (read.get_aligned_pairs(matches_only=True)[idx-1][1]+1)
+ 
+def cigar_to_rel_pos(read):
+    """ converts a (art_illumina) cigar string to a set of relative ref-mismatch (=seqerr) positions (0-based) """
+    pos=[]
+    off = 0
+    for op, len in read.cigartuples:
+        if (op == BAM_CMATCH) or (op == BAM_CEQUAL): # M or =
+           off+=len
+        elif op == BAM_CDIFF: # X
+          for i in range(0, len):
+              off+=1
+              pos+=[readidx2genpos_abs(read, off)-1]  
+    return pos
+
+
 # FIXME: there is a problem with called subprocessed that do not terminate! This will hang this code!
 # example-cmd:
 # 'bowtie2', '-t', '10', '-x', '/project/ngs-work/meta/reference/genomes/hg19_human/bowtie2_path/hg19', '-1', '../FASTQ/Probe7_CAGATC_L004_R1_001.fastq.gz', '-2', '../FASTQ/Probe7_CAGATC_L004_R2_001.fastq.gz', '-S', '../FASTQ/Probe7_CAGATC_L004_R1_001.fastq.gz.bt2.sam'

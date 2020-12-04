@@ -11,11 +11,11 @@ import pysam
 import pyranges as pr
 import pandas as pd
 import numpy as np
-from Bio.Seq import Seq
 from utils import *
 import random
 import math
 import gzip
+from model import Model, Condition, Isoform, Transcript
 
 #============================================================================
 # splice sim readme
@@ -30,94 +30,14 @@ Slamstr splice_sim v%s
 ===================================
 ''' % VERSION
 
-#============================================================================
-# constants
-#============================================================================
-# @see https://pysam.readthedocs.io/en/latest/api.html#pysam.AlignedSegment.cigar
-BAM_CMATCH=0
-BAM_CINS=1
-BAM_CDEL=2
-BAM_CREF_SKIP=3
-BAM_CSOFT_CLIP=4
-BAM_CHARD_CLIP=5
-BAM_CPAD=6
-BAM_CEQUAL=7
-BAM_CDIFF=8
-BAM_CBACK=9
 
-
-#============================================================================
-# utility methods
-#============================================================================
-def to_region(dat):
-    return(dat.Chromosome + ":" + str(dat.Start) + "-" + str(dat.End))
-
-def pad_n(seq, minlen):
-    ret = seq
-    if ( len(ret)<minlen):
-        pad0="N" * int((minlen-len(ret))/2)
-        pad1="N" * int(minlen-(len(ret)+len(pad0))) 
-        ret=pad0+ret+pad1
-    return (ret)
-
-
-
-# 
-# introduces TC / AG conversions
-# returns the new sequence and the converted positions (always! 5'-3' as shown in genome browser)
-# positions are 0-based
-def add_tc(seq, strand, conversion_rate):
-    ref="T"
-    alt="C"
-    conv=[]
-    convseq=""
-    for i,c in enumerate(seq):
-        if c == ref and random.uniform(0, 1) < conversion_rate:
-            c=alt.lower()
-            conv+=[i if strand=="+" else len(seq)-i-1] # converted positions
-        convseq+=c
-    return convseq, conv  
-
-# replace all tokens in a strings
-def replace_tokens(s, tok):
-    for t in tok.keys():
-        s=s.replace("@"+t+"@", tok[t])
-    return(s)
-
-# Converts read positions to genomic positions (1-based) by taking all cigar operations into account. 
-# The returned coords are relative to the alignment start, ie. absolute coords require to add read.reference_start
-def readidx2genpos_rel( read, idx ):
-    if len(read.get_aligned_pairs(matches_only=True))<idx:
-        #print("invalid index %i, possibly softclipped? " % ( idx) )
-        #print(read)
-        return None
-    return (read.get_aligned_pairs(matches_only=True)[idx-1][1]-read.reference_start+1)
-# Converts read positions to genomic positions (1-based) by taking all cigar operations into account. 
-def readidx2genpos_abs( read, idx ):
-    if len(read.get_aligned_pairs(matches_only=True))<idx:
-        return None
-    return (read.get_aligned_pairs(matches_only=True)[idx-1][1]+1)
-# converts a (art_illumina) cigar string to a set of relative ref-mismatch (=seqerr) positions (0-based)
-def cigar_to_rel_pos(read):
-    pos=[]
-    off = 0
-    for op, len in read.cigartuples:
-        if (op == BAM_CMATCH) or (op == BAM_CEQUAL): # M or =
-           off+=len
-        elif op == BAM_CDIFF: # X
-          for i in range(0, len):
-              off+=1
-              pos+=[readidx2genpos_abs(read, off)-1]  
-    return pos
 #============================================================================
 # Mapping methods
 #============================================================================
 
 
-#
-# Run STAR, supports SE+PE and can merge multiple files (needs sambamba access). Can create samtools flagstats
-#
 def runSTAR(bam, ref, reads1=[], reads2=None,  gtf=None, force=True, run_flagstat=False, threads=1, chimeric=0, writeUnmapped=False, doSort=True, additionalParameters=[], STAR_EXE='STAR'):
+    """ Run STAR, supports SE+PE and can merge multiple files (needs sambamba access). Can create samtools flagstats """
     success = True
     if files_exist(bam) and not force:
         print("BAM file " + bam + " already exists! use -f to recreate.")
@@ -199,10 +119,8 @@ def runSTAR(bam, ref, reads1=[], reads2=None,  gtf=None, force=True, run_flagsta
     return success
 
 
-#
-# Run HISAT2_TLA
-#
 def runHISAT2_TLA(bam, ref, fq, idx1, idx2, known_splicesites=None, force=True, run_flagstat=False, threads=1, doSort=True, additionalParameters=[], HISAT2_EXE='hisat2'):
+    """ Run HISAT2_TLA """
     success = True
     if files_exist(bam) and not force:
         print("BAM file " + bam + " already exists! use -f to recreate.")
@@ -258,6 +176,7 @@ def create_tdf(bam, tdf, chrom_sizes, igvtools_cmd='igvtools', logfile="igvtools
 #============================================================================
 
 class Stat():
+    """ For collecting mapper-specific stats """
     def __init__(self, id, value, cond=None, mapper=None ):
         self.id=id
         self.cond=cond
@@ -275,176 +194,11 @@ class Stat():
                                    str(self.value)) )
         return (ret)  
     
-class Condition():
-    def __init__(self, id, timepoint, conversion_rate, coverage ):
-        self.id = id
-        self.timepoint=timepoint
-        self.conversion_rate=conversion_rate
-        self.coverage = coverage
-        self.bam="?"
-        
-    def __repr__(self):
-        return self.__str__()  
-    
-    def __str__(self):
-        ret = ("%s: [tp=%i, cr=%f, cv=%f]" % (self.id, self.timepoint, self.conversion_rate, self.coverage ) )
-        return (ret)  
- 
-class Isoform():
-    def __init__(self, id, fractions, splicing_status, transcript ):
-        self.id = id
-        self.fractions = fractions
-        self.splicing_status = splicing_status
-        self.t = transcript
-        self.strand = self.t.transcript.Strand
-        # extract alignment blocks. Those contain absolute coords and are always ordered by genomic coords 
-        # (e.g., [(16101295, 16101359), (16101727, 16101936), (16102490, 16102599), (16102692, 16102829), (16103168, 16103334), (16103510, 16103684), (16104365, 16104662)])
-        self.aln_blocks=[]
-        bstart=self.t.transcript.Start
-        for idx, splicing in list(enumerate(self.splicing_status)):
-            if splicing==1:
-                bend=self.t.introns.iloc[idx].Start-1 # last exonic 1-based pos
-                self.aln_blocks+=[(bstart, bend)]
-                bstart=self.t.introns.iloc[idx].End+1 # 1st exonic 1-based pos
-        bend=self.t.transcript.End
-        self.aln_blocks+=[(bstart, bend)]
-        #print("alignment blocks: %s" % (self.aln_blocks))
-        
-    # convert isoform-relative coordinates to genomic coordinates.
-    # E.g., a rel_pos==0 will return the 1st position of the transcript in genomic coordinates (1-based)
-    def rel2abs_pos(self, rel_pos):
-        ablocks = self.aln_blocks if self.strand == '+' else reversed(self.aln_blocks)
-        abs_pos=None
-        off = rel_pos
-        block_id=0
-        for bstart,bend in ablocks:
-            bwidth = bend-bstart+1
-            abs_pos = bstart if self.strand == '+' else bend
-            if off - bwidth < 0:
-                ret = abs_pos+off if self.strand == '+' else abs_pos-off
-                return (ret, block_id)
-            # next block
-            off -= bwidth
-            block_id+=1
-        if off != 0:
-            print("WARN: Invalid relative position %i / %i in isoform %s: %i" % (rel_pos, abs_pos, self, off))
-        ret = abs_pos+off if self.strand == '+' else abs_pos-off
-        return (ret, block_id)
-    
-    def __repr__(self):
-        return self.__str__()  
-    
-    def __str__(self):
-        ret = ("%s_%s @ %s, [%s], [%s]" % (self.t.tid, self.id, self.t.region, ",".join(str(x) for x in self.fractions), ",".join(str(x) for x in self.splicing_status)) )
-        return (ret)   
-
-class Transcript():
-    def __init__(self, tid, df, genome, conditions ):
-        self.tid = tid  
-        self.is_valid = True
-        self.df = df 
-        self.transcript = self.df[self.df.Feature=='transcript'].iloc[0]
-        self.region = to_region(self.transcript)
-        self.len = self.transcript.End - self.transcript.Start + 1
-        self.transcript_seq = genome.fetch(region=self.region)
-        self.exons = self.df[self.df.Feature=='exon']
-        self.introns = pd.DataFrame(columns=self.df.columns, index=[0])
-        last_end = -1
-        idata = []
-        for index, ex in self.exons.iterrows():
-            if last_end > 0: # skip 1st
-                dat={ 'transcript_id': self.transcript.transcript_id,
-                      'Feature': 'intron',
-                      'Chromosome':self.transcript.Chromosome, 
-                      'Strand':self.transcript.Strand,
-                      'Start':last_end+1,
-                      'End':ex.Start-1,
-                      'exon_number': int(ex.exon_number)
-                      }
-                intron = pd.DataFrame(data=dat, columns=self.df.columns, index=[0])
-                idata.append(intron)
-            last_end = ex.End
-        if idata:
-            self.introns=pd.concat(idata) 
-        else:
-            self.introns=pd.DataFrame()
-        # set abundance and isoforms
-        self.cond = conditions
-        self.abundance = math.ceil(config['transcripts'][tid]['abundance']) # abundance is float
-        self.isoforms={}
-        total_frac = [0] * len(self.cond)
-        for iso in config['transcripts'][tid]['isoforms'].keys():
-            frac=config['transcripts'][tid]['isoforms'][iso]['fractions']
-            splicing_status=config['transcripts'][tid]['isoforms'][iso]['splicing_status'] if 'splicing_status' in config['transcripts'][tid]['isoforms'][iso] else []
-            if self.transcript.Strand == "-":
-                splicing_status = list(reversed(splicing_status)) # so 1st entry in config refers to 1st intron.
-            # assert len(splicing_status)==len(self.introns), "misconfigured splicing status for some isoform/conditions: %s (%i vs %i)" % ( self.tid, len(splicing_status), len(self.introns))
-            if len(splicing_status)!=len(self.introns):
-                print("Misconfigured splicing status for some isoform/conditions of transcript %s (%i vs %i). Skipping transcript..." % ( self.tid, len(splicing_status), len(self.introns)))
-                self.is_valid = False
-                return
-            self.isoforms[iso] = Isoform(iso, frac, splicing_status, self)    
-            total_frac = [x + y for x, y in zip(total_frac, frac)]
-        for x in total_frac:
-            # assert with rounding error
-            assert x <= 1.00001, "Total fraction of transcript > 1 (%s) for some isoform/conditions: %s" % ( ",".join(str(x) for x in total_frac), self.tid )
-        # add mature form if not configured
-        if 'mat' not in self.isoforms:
-            frac = [(1.0 - x) for x in total_frac]
-            iso='mat'
-            splicing_status=[1] * len(self.introns)
-            self.isoforms[iso] = Isoform(iso, frac, splicing_status, self)    
-        #print('added mature isoform for %s: %s' % (tid, self.isoforms[iso]) )
-        
-    def get_dna_seq(self, splicing_status):
-        seq = self.transcript_seq
-        for idx, splicing in reversed(list(enumerate(splicing_status))):
-            if splicing==1:
-                pos1=self.introns.iloc[idx].Start - self.transcript.Start
-                pos2=self.introns.iloc[idx].End - self.transcript.Start + 1
-                seq = seq[:pos1]+seq[pos2:]
-        return (seq)
-    
-    def get_rna_seq(self, iso):
-        seq = self.get_dna_seq(self.isoforms[iso].splicing_status)
-        if self.transcript.Strand == '-':
-            seq = str(Seq(seq).reverse_complement())
-        return (seq)
-    
-    def get_sequences(self):
-        ret=OrderedDict()
-        for cond_idx, cond in enumerate(self.cond):
-            ret[cond]=OrderedDict()
-            total_count=0
-            for id in self.isoforms.keys():
-                frac = self.isoforms[id].fractions[cond_idx]
-                count=int(self.abundance * frac)
-                total_count+=count
-                ret[cond][id]=[
-                    self.get_rna_seq(id), 
-                    count]
-            toadd = self.abundance - total_count
-            #assert toadd==0 | toadd==1 , "rounding error"
-            if toadd > 0: # add 1 to last isoform
-                print("corrected counts by %i" % (toadd))
-                id = list(self.isoforms.keys())[-1]
-                ret[cond][id]=[ret[cond][id][0], ret[cond][id][1] + toadd]
-        return (ret)
-    
-    def to_bed(self):
-        t=self.transcript
-        return ("%s\t%i\t%i\t%s\t%i\t%s" % (t.Chromosome, t.Start, t.End, t.ID, 1000, t.Strand) )
-    
-    def __repr__(self):
-        return self.__str__()  
-    
-    def __str__(self):
-        ret = ("%s" % (self.transcript.transcript_id) )
-        return (ret)   
 
 
-#============================================================================
 def postfilter_bam( bam_in, bam_out, tag_tc=None, tag_mp=None):
+    """ Filters reads by correct read strand (i.e., removes all reads that were simulated on the wrong read strand by by ART) and adds 
+        XC/XP/YC bam tags """  
     samin = pysam.AlignmentFile(bam_in, "rb")
     samout = pysam.AlignmentFile(bam_out, "wb", template=samin, )
     if tag_tc is None:
@@ -538,11 +292,6 @@ if __name__ == '__main__':
     threads=config["threads"] if "threads" in config else 1
     
     
-    # get conditions and configuration
-    conditions=[]
-    for id in config["conditions"].keys():
-        conditions+=[Condition(id, config["conditions"][id][0], config["conditions"][id][1], config["conditions"][id][2] )]
-    print("Configured conditions: %s" % (", ".join(str(x) for x in conditions)) )
     
     if args.force:
         print("NOTE: existing result files will be overwritten!")
@@ -557,55 +306,23 @@ if __name__ == '__main__':
         config["transcripts"]=tdata
     
     
+    # instantiate model
+    m = Model( config )
     
+    # write considered transcripts to GFF
+    m.write_gff(outdir)
     
-    # load + filter gene gff
-    print("Loading gene GFF")
-    gff = pr.read_gff3(config["gene_gff"])
-    gff_df = gff.df
-    gff_df.Start = gff_df.Start + 1 # correct for pyranges bug?
-    df = gff_df[gff_df['transcript_id'].isin(list(config['transcripts'].keys()))] # reduce to contain only configured transcripts
-    
-    print("Writing filtered gene GFF")
-    f_anno=outdir+"gene_anno.gff3"
-    d=pd.read_csv(config["gene_gff"],delimiter='\t',encoding='utf-8')
-    with open(f_anno, 'w') as out:
-        for index, row in d.iterrows():
-            keep=False
-            for k in row[8].split(';'):
-                if k.startswith('transcript_id='):
-                    keep=k[len('transcript_id='):] in config['transcripts'].keys()
-            if keep:
-                print('\t'.join(str(x) for x in row), file=out)
-    bgzip(f_anno, override=True, delinFile=True, index=True, threads=threads)
-    f_anno=f_anno+".gz"
-          
-    # load genome
-    print("Loading genome")
-    genome = pysam.FastaFile(config["genome_fa"])
-    chrom_sizes = config["chrom_sizes"] if 'chrom_sizes' in config else config["genome_fa"]+".chrom.sizes"
-    
-    # instantiate transcripts
-    transcripts=OrderedDict()
-    stats=[]
-    for tid in list(config['transcripts'].keys()):
-        tid_df = df[df['transcript_id']==tid] # extract data for this transcript only
-        if tid_df.empty:
-            print("No annotation data found for configured tid %s, skipping..." % (tid))
-        else:
-            t = Transcript(tid, tid_df, genome, conditions) 
-            if t.is_valid:
-                transcripts[tid] = t
-    stats+=[Stat("transcripts", len(transcripts))]
+    # add number of transcripts to stats
+    stats=[Stat("transcripts", len(m.transcripts))]
     
     # now write one fasta file per transcript/cond
     print("Calculating isoform data")
-    for cond in conditions:
+    for cond in m.conditions:
         fout = tmpdir + config['dataset_name'] + "." + cond.id + ".fa"
         if args.force or (not files_exist(fout) and not files_exist(fout+".gz")):
             buf=[]
             with open(fout, 'w') as out:
-                for t in transcripts.values():
+                for t in m.transcripts.values():
                     sequences = t.get_sequences()
                     #print("Writing to %s" % (fout) )            
                     for iso in t.isoforms.keys():
@@ -624,7 +341,7 @@ if __name__ == '__main__':
     print("Running read simulator")
     artlog=tmpdir + config['dataset_name'] + ".art.log" 
     valid_reads={}
-    for cond in conditions:
+    for cond in m.conditions:
         valid_reads[cond]=set()
         f = tmpdir + config['dataset_name'] + "." + cond.id + ".fa"
         # art output
@@ -659,7 +376,7 @@ if __name__ == '__main__':
                         read_stats['all_'+read_strand]=read_stats['all_'+read_strand]+1 if 'all_'+read_strand in read_stats else 1
                         if transcript_strand == read_strand: # NOTE: reads that were mapped to opposite strand will be dropped later in post_filtering step!
                             valid_reads[cond].add(r.query_name)
-                            iso = transcripts[tid].isoforms[iso_id]
+                            iso = m.transcripts[tid].isoforms[iso_id]
                             start_abs, bid_start = iso.rel2abs_pos(r.reference_start)
                             end_abs, bid_end = iso.rel2abs_pos(r.reference_end-1)
                             if read_strand == '-': # swap start/end coords
@@ -690,7 +407,7 @@ if __name__ == '__main__':
     
                    
     # concat files per condition, introduce T/C conversions and bgzip
-    for cond in conditions:
+    for cond in m.conditions:
         f_all = tmpdir + config['dataset_name'] + "." + cond.id + ".fq"
         f_tc  = tmpdir + config['dataset_name'] + "." + cond.id + ".TC.fq"
         hist_tc=[]
@@ -730,7 +447,7 @@ if __name__ == '__main__':
     print("Writing ROI bed")
     f_roi = outdir + "roi.bed"
     with open(f_roi, 'w') as out:
-        for t in transcripts.values():
+        for t in m.transcripts.values():
             print(t.to_bed(), file=out)
     
     
@@ -738,7 +455,7 @@ if __name__ == '__main__':
     bams={}
     if 'mappers' in config:
         print("Mapping reads")
-        for cond in conditions:
+        for cond in m.conditions:
             for mapper in config['mappers'].keys():
                 f_all = tmpdir + config['dataset_name'] + "." + cond.id + ".fq.gz"
                 b_all = tmpdir + config['dataset_name'] + "." + cond.id + "."+mapper+".bam"
@@ -836,7 +553,7 @@ if __name__ == '__main__':
                     bams[cond.id + "."+mapper]=os.path.abspath(final_tc)
     
     
-    # write stats
+    # write stats. FIXME: stats are not complete if pipeline was restarted with 
     print("Writing stats")
     f_roi = outdir + "stats.tsv"
     with open(f_roi, 'w') as out:
@@ -852,8 +569,8 @@ if __name__ == '__main__':
             print(s, file=out)
     
     # write slamstr config
-        if 'slamstr_config_template' in config and 'mappers' in config:
-            print("Writing slamstr config files")
+    if 'slamstr_config_template' in config and 'mappers' in config:
+        print("Writing slamstr config files")
         with open(config['slamstr_config_template'], 'r') as f:
             x = f.read().splitlines()
         for mapper in config['mappers'].keys():
@@ -868,9 +585,9 @@ if __name__ == '__main__':
                     tokens["gff"]=os.path.abspath(f_anno)
                     tokens["datasets"]="\n"
                     tokens["timepoints"]="\n"
-                    for idx, cond in enumerate(conditions):
-                        tokens["datasets"]+='\t"' + cond.id + '": "' + bams[cond.id + "."+mapper] + '"' + ("," if idx < len(conditions)-1 else "") + "\n"
-                        tokens["timepoints"]+='\t"' + cond.id + '": "' + str(cond.timepoint)+ '"' + ("," if idx < len(conditions)-1 else "")+ "\n"
+                    for idx, cond in enumerate(m.conditions):
+                        tokens["datasets"]+='\t"' + cond.id + '": "' + bams[cond.id + "."+mapper] + '"' + ("," if idx < len(m.conditions)-1 else "") + "\n"
+                        tokens["timepoints"]+='\t"' + cond.id + '": "' + str(cond.timepoint)+ '"' + ("," if idx < len(m.conditions)-1 else "")+ "\n"
                     for l in x:
                         print(replace_tokens(l, tokens), file=out)
                         
@@ -880,6 +597,6 @@ if __name__ == '__main__':
         igvtools_log=tmpdir + config['dataset_name'] + ".igvtools.log" 
         for b in list(bams.values()):
             if args.force or not files_exist(b+".tdf"):
-                create_tdf(b, b+".tdf", chrom_sizes, igvtools_cmd=igvtools_cmd, logfile=igvtools_log)
+                create_tdf(b, b+".tdf", m.chrom_sizes, igvtools_cmd=igvtools_cmd, logfile=igvtools_log)
     
     print("All done in", datetime.timedelta(seconds=time.time()-startTime))

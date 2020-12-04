@@ -147,7 +147,7 @@ class Transcript():
     def get_rna_seq(self, iso):
         seq = self.get_dna_seq(self.isoforms[iso].splicing_status)
         if self.transcript.Strand == '-':
-            seq = str(Seq(seq).reverse_complement())
+            seq = reverse_complement(seq)
         return (seq)
     
     def get_sequences(self):

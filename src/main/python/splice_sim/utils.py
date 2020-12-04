@@ -36,6 +36,18 @@ BAM_CEQUAL=7
 BAM_CDIFF=8
 BAM_CBACK=9
 
+# Table of reverse complement bases
+COMP_TABLE = {
+    "A": 'T', "C": 'G', "T": 'A', "G": 'C'
+    }
+def reverse_complement(seq):
+    """ Calculate reverse complement DNA sequence """
+    rev=[]
+    for c in seq[::-1]:
+        c=c.upper()
+        rev+=[COMP_TABLE.get(c, 'N')]
+    return ''.join(rev)
+
 def to_region(dat):
     """ Create region string (chr:start-end) """
     return(dat.Chromosome + ":" + str(dat.Start) + "-" + str(dat.End))

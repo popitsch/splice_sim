@@ -680,6 +680,8 @@ if __name__ == '__main__':
 
     if args.introns:
 
+        intronEvalFile = open(os.path.join(outdir, "eval_intron.txt"), "w")
+
         # TODO: Duplicated code from splicing_simulator.py
 
         # read transcript data from external file if not in config
@@ -697,7 +699,7 @@ if __name__ == '__main__':
 
         chunks = partitionDict(model.transcripts, args.threads)
 
-        print("\t".join(["Transcript", "tp-exon-exon", "fp-exon-exon", "fn-exon-exon", "tp-exon-intron", "fp-exon-intron", "fn-exon-intron", "tp-intron", "fp-intron", "fn-intron"]))
+        print("\t".join(["Transcript", "tp-exon-exon", "fp-exon-exon", "fn-exon-exon", "tp-exon-intron", "fp-exon-intron", "fn-exon-intron", "tp-intron", "fp-intron", "fn-intron"]), file = intronEvalFile)
 
         results = Parallel(n_jobs=args.threads, verbose = 30)(delayed(classifyIntron)(chunks[chunk], truthCollection, args.bamFile, os.path.join(outdir, "tmp"), chunk) for chunk in range(len(chunks)))
 
@@ -723,7 +725,9 @@ if __name__ == '__main__':
         for tid in model.transcripts:
             if tid in mergedResults:
                 for quantification in mergedResults[tid]:
-                    print(quantification)
+                    print(quantification, file = intronEvalFile)
+
+        intronEvalFile.close()
 
     else :
 

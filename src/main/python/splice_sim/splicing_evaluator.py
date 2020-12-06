@@ -463,11 +463,11 @@ def classifyIntron(transcripts, truthCollection, bamFile, outdir, thread):
 
             truthReadSet = truthCollection.getTruthByInterval(chromosome, start, end)
 
-            iv = Interval(start - 1, end + 2)
+            iv = Interval(start - 1, end + 1)
             ivTree = IntervalTree()
             ivTree.add(iv)
 
-            readIterator = simFile.readsInInterval(chromosome, start - 1, end + 2)
+            readIterator = simFile.readsInInterval(chromosome, start - 1, end + 1)
 
             exonintron = 0
             exonexon = 0

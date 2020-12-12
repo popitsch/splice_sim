@@ -206,7 +206,7 @@ class TruthCollection:
 
     def readTruth(self):
 
-        self._truth = pd.read_csv(self._truthFile, delimiter='\t')
+        self._truth = pd.read_csv(self._truthFile, delimiter='\t', dtype={'read_name': "string", 'start_rel' : 'int64', 'end_rel' : 'int64', 'seq_err_pos_rel' : "string", "chr_abs" : "string", "start_abs" : "int64", "end_abs" : "int64", "read_spliced" : 'bool', "seq_err_pos_abs" : "string"})
         self._truth.index = self._truth.read_name
 
     def getTruth(self, name):
@@ -220,7 +220,7 @@ class TruthCollection:
 
     def getTruthByInterval(self, chromosome, start, end) :
 
-        subset = self._truth[self._truth.chr_abs.eq(int(chromosome)) &
+        subset = self._truth[self._truth.chr_abs.eq(chromosome) &
         (
         ((self._truth.start_abs < start) & (self._truth.end_abs >= start)) |
         ((self._truth.start_abs <= end) & (self._truth.end_abs > end)) |
@@ -286,7 +286,7 @@ class SimulatedRead:
         seqErrorMeasured = self.absSeqError
         seqErrorTruth = truth.absSeqError
 
-        if type(seqErrorTruth) is float:
+        if pd.isna(seqErrorTruth):
             seqErrorTruth = list()
         else :
             seqErrorTruth = seqErrorTruth.split(",")
@@ -597,7 +597,7 @@ def classifyIntron(transcripts, truthCollection, bamFile, outdir, thread):
 
                     readTruth = truthCollection.getTruth(truthRead)
 
-                    if readTruth.splicing == 1:
+                    if readTruth.splicing:
                         intronDict["fnspliced"][truthRead] = 0
                     elif readTruth.absStart >= (iv.begin + 1) and readTruth.absEnd <= (iv.end - 2):
                         intronDict["fnintron"][truthRead] = 0
@@ -701,7 +701,7 @@ if __name__ == '__main__':
 
         print("\t".join(["Transcript", "tp-exon-exon", "fp-exon-exon", "fn-exon-exon", "tp-exon-intron", "fp-exon-intron", "fn-exon-intron", "tp-intron", "fp-intron", "fn-intron"]), file = intronEvalFile)
 
-        results = Parallel(n_jobs=args.threads, verbose = 30)(delayed(classifyIntron)(chunks[chunk], truthCollection, args.bamFile, os.path.join(outdir, "tmp"), chunk) for chunk in range(len(chunks)))
+        results = Parallel(backend = "multiprocessing", n_jobs=args.threads, verbose = 30)(delayed(classifyIntron)(chunks[chunk], truthCollection, args.bamFile, os.path.join(outdir, "tmp"), chunk) for chunk in range(len(chunks)))
 
         mergedResults = dict()
 

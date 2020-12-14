@@ -153,14 +153,14 @@ class ReadTruth:
         # Absolute position of a sequencing error
         self.absSeqError = absSeqError
         # Splicing status
-        self.splicing = splicing
+        self.splicing = splicing == "1"
 
     def __repr__(self):
         return "\t".join([self.name, str(self.chromosome), str(self.absStart), str(self.absEnd), str(self.absSeqError), str(self.splicing)])
 
 class ReadEvaluation:
 
-    def __init__(self, name, trueChromosome, measuredChromosome, trueStart, measuredStart, trueEnd, measuredEnd, trueSeqErrors, measuredSeqErrors, errorMatches, trueSplicing, measuredSplicing, knownSpliceSites, novelSpliceSites):
+    def __init__(self, name = None, trueChromosome = None, measuredChromosome = None, trueStart = None, measuredStart = None, trueEnd = None, measuredEnd = None, trueSeqErrors = None, measuredSeqErrors = None, errorMatches = None, trueSplicing = None, measuredSplicing = None, knownSpliceSites = None, novelSpliceSites = None):
         # Name of the read
         self.name = name
         # True chromosome
@@ -198,16 +198,11 @@ class ReadEvaluation:
         str(self.trueEnd), str(self.measuredSeqErrors), str(self.trueSeqErrors),str(self.errorMatches),str(self.measuredSplicing),str(self.trueSplicing),
         str(self.knownSpliceSites), str(self.novelSpliceSites)])
 
-class TruthCollection:
+class TruthCollector:
 
     def __init__(self, truthFile):
-        self._truthFile = truthFile
+        self._truthFile = pysam.TabixFile(truthFile)
         self._truth = None
-
-    def readTruth(self):
-
-        self._truth = pd.read_csv(self._truthFile, delimiter='\t', dtype={'read_name': "string", 'start_rel' : 'int64', 'end_rel' : 'int64', 'seq_err_pos_rel' : "string", "chr_abs" : "string", "start_abs" : "int64", "end_abs" : "int64", "read_spliced" : 'bool', "seq_err_pos_abs" : "string"})
-        self._truth.index = self._truth.read_name
 
     def getTruth(self, name):
 
@@ -220,25 +215,14 @@ class TruthCollection:
 
     def getTruthByInterval(self, chromosome, start, end) :
 
-        subset = self._truth[self._truth.chr_abs.eq(chromosome) &
-        (
-        ((self._truth.start_abs < start) & (self._truth.end_abs >= start)) |
-        ((self._truth.start_abs <= end) & (self._truth.end_abs > end)) |
-        ((self._truth.start_abs >= start) & (self._truth.end_abs <= end))
-        )
-        ]
+        intervaltruth = dict()
+        for row in self._truthFile.fetch(chromosome, start, end):
+            fields = row.split('\t')
 
-        #print(start)
-        #print(end)
-        #print(subset)
-        #print(subset["read_name"].tolist())
-        #print("ENSMUST00000112580.7_+_pre_4-1258" in subset["read_name"].tolist())
-        #print("ENSMUST00000112580.7_+_pre_4-1258" in self._truth["read_name"].tolist())
-        #print(self._truth[self._truth.read_name == "ENSMUST00000112580.7_+_pre_4-1258"])
-        #print(self._truth[(self._truth.read_name == "ENSMUST00000112580.7_+_pre_4-1258") & ((self._truth.end_abs >= end))])
-        #sys.stdin.readline()
+            intervaltruth[fields[0]] = ReadTruth(fields[0], fields[4], int(fields[1]), int(fields[2]), fields[3], int(fields[5]),
+                      int(fields[6]), fields[8], fields[7])
 
-        return subset["read_name"].tolist()
+        return intervaltruth
 
 class SimulatedRead:
 
@@ -283,10 +267,13 @@ class SimulatedRead:
 
     def evaluate(self, truth, junctions):
 
+        if not truth:
+            return ReadEvaluation()
+
         seqErrorMeasured = self.absSeqError
         seqErrorTruth = truth.absSeqError
 
-        if pd.isna(seqErrorTruth):
+        if seqErrorTruth == "NA":
             seqErrorTruth = list()
         else :
             seqErrorTruth = seqErrorTruth.split(",")
@@ -438,7 +425,9 @@ def partitionDict(dictionary, chunks=2):
             idx = 0
     return partition
 
-def classifyIntron(transcripts, truthCollection, bamFile, outdir, thread):
+def classifyIntron(transcripts, truthFile, bamFile, outdir, thread):
+
+    truthCollector = TruthCollector(truthFile)
 
     simFile = SpliceSimFile(bamFile)
 
@@ -461,7 +450,8 @@ def classifyIntron(transcripts, truthCollection, bamFile, outdir, thread):
             start = t.introns.iloc[i]['Start']
             end = t.introns.iloc[i]['End']
 
-            truthReadSet = truthCollection.getTruthByInterval(chromosome, start, end)
+            # Was checked: Start = IGV position - 1 (one based), end = IGV position (so weirdly 1-based no open left end)
+            truthReadSet = truthCollector.getTruthByInterval(chromosome, start - 1, end)
 
             iv = Interval(start - 1, end + 1)
             ivTree = IntervalTree()
@@ -490,7 +480,10 @@ def classifyIntron(transcripts, truthCollection, bamFile, outdir, thread):
 
             for read in readIterator:
 
-                truth = truthCollection.getTruth(read.name)
+                if read.name in truthReadSet:
+                    truth = truthReadSet[read.name]
+                else:
+                    truth = None
                 evaluation = read.evaluate(truth, {chromosome: ivTree})
 
                 start = read.absStart
@@ -595,11 +588,11 @@ def classifyIntron(transcripts, truthCollection, bamFile, outdir, thread):
                     "fnexonintron"] and not truthRead in intronDict["tpintron"] and not truthRead in intronDict[
                     "fpintron"] and not truthRead in intronDict["fnintron"]:
 
-                    readTruth = truthCollection.getTruth(truthRead)
+                    readTruth = truthReadSet[truthRead]
 
                     if readTruth.splicing:
                         intronDict["fnspliced"][truthRead] = 0
-                    elif readTruth.absStart >= (iv.begin + 1) and readTruth.absEnd <= (iv.end - 2):
+                    elif readTruth.absStart >= (iv.begin + 1) and readTruth.absEnd <= (iv.end - 1):
                         intronDict["fnintron"][truthRead] = 0
                     else:
                         intronDict["fnexonintron"][truthRead] = 0
@@ -617,7 +610,7 @@ def classifyIntron(transcripts, truthCollection, bamFile, outdir, thread):
             for read in intronDict["tpexonintron"]:
                 bamRead = intronDict["tpexonintron"][read]
                 bamRead.setTag('YC', colors["exonintron"])
-                classifiedReads.write(bamRead)
+                classifiedReads.write(bamRead),
 
             for read in intronDict["fpexonintron"]:
                 bamRead = intronDict["fpexonintron"][read]
@@ -672,10 +665,6 @@ if __name__ == '__main__':
     # load + check config
     config = json.load(open(args.confF), object_pairs_hook=OrderedDict)
 
-    truthCollection = TruthCollection(args.truthFile)
-
-    truthCollection.readTruth()
-
     print("Done reading truth collection", file = sys.stderr)
 
     if args.introns:
@@ -701,7 +690,7 @@ if __name__ == '__main__':
 
         print("\t".join(["Transcript", "tp-exon-exon", "fp-exon-exon", "fn-exon-exon", "tp-exon-intron", "fp-exon-intron", "fn-exon-intron", "tp-intron", "fp-intron", "fn-intron"]), file = intronEvalFile)
 
-        results = Parallel(backend = "multiprocessing", n_jobs=args.threads, verbose = 30)(delayed(classifyIntron)(chunks[chunk], truthCollection, args.bamFile, os.path.join(outdir, "tmp"), chunk) for chunk in range(len(chunks)))
+        results = Parallel(backend = "multiprocessing", n_jobs=args.threads, verbose = 30)(delayed(classifyIntron)(chunks[chunk], args.truthFile, args.bamFile, os.path.join(outdir, "tmp"), chunk) for chunk in range(len(chunks)))
 
         mergedResults = dict()
 
@@ -730,6 +719,8 @@ if __name__ == '__main__':
         intronEvalFile.close()
 
     else :
+
+        truthCollection = TruthCollector(args.truthFile)
 
         junctions = extract_splice_sites(config["gene_gff"])
 

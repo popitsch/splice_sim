@@ -684,18 +684,32 @@ if __name__ == '__main__':
 
         model = Model(config)
 
+        # print("Transcript\tLength")
+        # for tid in model.transcripts:
+        #     t = model.transcripts[tid]
+        #     print(tid + "\t" + str(len(t.introns)))
+        #
+        # sys.exit(0)
+
         print("Evaluating introns", file = sys.stderr)
 
         chunks = partitionDict(model.transcripts, args.threads)
 
         print("\t".join(["Transcript", "tp-exon-exon", "fp-exon-exon", "fn-exon-exon", "tp-exon-intron", "fp-exon-intron", "fn-exon-intron", "tp-intron", "fp-intron", "fn-intron"]), file = intronEvalFile)
 
-        results = Parallel(backend = "multiprocessing", n_jobs=args.threads, verbose = 30)(delayed(classifyIntron)(chunks[chunk], args.truthFile, args.bamFile, os.path.join(outdir, "tmp"), chunk) for chunk in range(len(chunks)))
+        results = Parallel(n_jobs=args.threads, verbose = 30)(delayed(classifyIntron)(chunks[chunk], args.truthFile, args.bamFile, os.path.join(outdir, "tmp"), chunk) for chunk in range(len(chunks)))
 
         mergedResults = dict()
 
         for result in results:
             mergedResults.update(result)
+
+        for tid in model.transcripts:
+            if tid in mergedResults:
+                for quantification in mergedResults[tid]:
+                    print(quantification, file = intronEvalFile)
+
+        intronEvalFile.close()
 
         mergeBams = list()
         for chunk in range(len(chunks)):
@@ -711,14 +725,9 @@ if __name__ == '__main__':
 
         shutil.rmtree(tmpdir)
 
-        for tid in model.transcripts:
-            if tid in mergedResults:
-                for quantification in mergedResults[tid]:
-                    print(quantification, file = intronEvalFile)
-
-        intronEvalFile.close()
-
     else :
+
+        # TODO: change global truth collection to tabix
 
         truthCollection = TruthCollector(args.truthFile)
 

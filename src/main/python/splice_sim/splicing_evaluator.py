@@ -371,11 +371,25 @@ class SimulatedReadIterator:
 
         refPositions = read.get_aligned_pairs(matches_only=False, with_seq=False)
         offset = 0
+
         for operation in read.cigartuples:
             if operation[0] == 3:
                 spliced = True
-                spliceSite = (refPositions[offset - 1][1] + 1,refPositions[offset + operation[1]][1] + 1)
-                spliceSites.append(spliceSite)
+                if not refPositions[offset + operation[1]][1]:
+                    if not refPositions[offset + operation[1] - 1][1]:
+                        if not refPositions[offset + operation[1] + 1][1]:
+                            continue
+                        else :
+                            spliceSite = (
+                            refPositions[offset - 1][1] + 1, refPositions[offset + operation[1] + 1][1] + 1)
+                            spliceSites.append(spliceSite)
+                    else :
+                        spliceSite = (refPositions[offset - 1][1] + 1, refPositions[offset + operation[1] - 1][1] + 1)
+                        spliceSites.append(spliceSite)
+                else :
+                    spliceSite = (refPositions[offset - 1][1] + 1, refPositions[offset + operation[1]][1] + 1)
+                    spliceSites.append(spliceSite)
+
             offset += operation[1]
 
         simulatedRead = SimulatedRead(name, chromosome, 0, 0, list(), list(),
@@ -688,7 +702,7 @@ if __name__ == '__main__':
         # for tid in model.transcripts:
         #     t = model.transcripts[tid]
         #     print(tid + "\t" + str(len(t.introns)))
-        #
+        #spliceSite
         # sys.exit(0)
 
         print("Evaluating introns", file = sys.stderr)

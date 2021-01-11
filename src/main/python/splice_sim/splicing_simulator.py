@@ -286,13 +286,11 @@ if __name__ == '__main__':
     write_uncoverted=config["write_uncoverted"] if "write_uncoverted" in config else True
     
     # executables
-    art_cmd =      config["executable"]["art_cmd"] if "executable" in config and "art_cmd" in config["executable"] else 'art_illumina'
-    sambamba_cmd = config["executable"]["sambamba_cmd"] if "executable" in config and "sambamba_cmd" in config["executable"] else 'sambamba'
-    igvtools_cmd = config["executable"]["igvtools_cmd"] if "executable" in config and "igvtools_cmd" in config["executable"] else 'igvtools'
+    art_cmd =      config["executables"]["art_cmd"] if "executables" in config and "art_cmd" in config["executables"] else 'art_illumina'
+    sambamba_cmd = config["executables"]["sambamba_cmd"] if "executables" in config and "sambamba_cmd" in config["executables"] else 'sambamba'
+    igvtools_cmd = config["executables"]["igvtools_cmd"] if "executables" in config and "igvtools_cmd" in config["executables"] else 'igvtools'
     threads=config["threads"] if "threads" in config else 1
-    
-    
-    
+        
     if args.force:
         print("NOTE: existing result files will be overwritten!")
     
@@ -350,6 +348,7 @@ if __name__ == '__main__':
         f_sam_both =  art_out_prefix + ".sam"
         # filtered final output
         f_truth = tmpdir + config['dataset_name'] + "." + cond.id + ".truth_tsv"
+        f_truth_tmp = f_truth + ".tmp"
         f_fq =  tmpdir + config['dataset_name'] + "." + cond.id + ".fq"
         if args.force or not files_exist([f_fq+".gz", f_truth+".gz" ]):
             # NOTE: use 2x coverage as ~50% of reads will be simulated for wrong strand and will be dropped in postprocessing
@@ -364,9 +363,8 @@ if __name__ == '__main__':
             # get alignment positions from art aln file. Note that seq-read errors are encoded in the 
             # CIGAR string (e.g., '16=1X4=1X78=') means that bases 17 and 22 are mismatches wrt. reference.
             # Q: why are there no D/I entries in the cigarstrings? How to find seqerr INDELs?
-            with open(f_truth, 'w') as out_truth:
+            with open(f_truth_tmp, 'w') as out_truth:
                 with open(f_fq, 'w') as out_fq:
-                    print("read_name\tstart_rel\tend_rel\tseq_err_pos_rel\tchr_abs\tstart_abs\tend_abs\tread_spliced\tseq_err_pos_abs", file=out_truth)
                     sam = pysam.AlignmentFile(f_sam_both, "rb")
                     read_stats={}
                     for r in sam.fetch():
@@ -397,9 +395,15 @@ if __name__ == '__main__':
                             print("@%s\n%s\n+\n%s" % ( r.query_name, r.query_sequence, qstr), file=out_fq )
                         else:
                             read_stats['dropped_'+read_strand]=read_stats['dropped_'+read_strand]+1 if 'dropped_'+read_strand in read_stats else 1
+            # sort truth file
+            with open(f_truth, 'w') as out_truth:
+                print("read_name\tstart_rel\tend_rel\tseq_err_pos_rel\tchr_abs\tstart_abs\tend_abs\tread_spliced\tseq_err_pos_abs", file=out_truth)
+            success = success and pipelineStep(out_truth_tmp, out_truth, ["sort", "--parallel="+str(threads), "-k5,5", "-k6,6n", f_truth_tmp], shell=True, stdout=out_truth, append=True)
             if success:
                 bgzip(f_truth, override=True, delinFile=True, threads=threads)
-                removeFile([f_fq_both, f_sam_both])
+                f_truth+='.gz'
+                tabix(f_truth, additionalParameters=["-S 1 -s 5 -b 6 -e 7"])
+                removeFile([f_fq_both, f_sam_both,f_truth_tmp])
             print(read_stats)
     
         else:

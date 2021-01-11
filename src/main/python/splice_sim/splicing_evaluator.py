@@ -321,6 +321,10 @@ class SimulatedReadIterator:
 
         read = self._readIterator.__next__()
 
+        # TODO: Make this optional with parameter
+        while read.is_secondary:
+            read = self._readIterator.__next__()
+
         name = read.query_name
 
         chromosome = read.reference_name

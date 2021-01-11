@@ -398,7 +398,7 @@ if __name__ == '__main__':
             # sort truth file
             with open(f_truth, 'w') as out_truth:
                 print("read_name\tstart_rel\tend_rel\tseq_err_pos_rel\tchr_abs\tstart_abs\tend_abs\tread_spliced\tseq_err_pos_abs", file=out_truth)
-            success = success and pipelineStep(out_truth_tmp, out_truth, ["sort", "--parallel="+str(threads), "-k5,5", "-k6,6n", f_truth_tmp], shell=True, stdout=out_truth, append=True)
+            success = success and pipelineStep(f_truth_tmp, f_truth, ["sort", "--parallel="+str(threads), "-k5,5", "-k6,6n", f_truth_tmp], shell=True, stdout=out_truth, append=True)
             if success:
                 bgzip(f_truth, override=True, delinFile=True, threads=threads)
                 f_truth+='.gz'

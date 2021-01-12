@@ -386,10 +386,12 @@ if __name__ == '__main__':
                             iso = m.transcripts[tid].isoforms[iso_id]
                             start_abs, bid_start = iso.rel2abs_pos(r.reference_start)
                             end_abs, bid_end = iso.rel2abs_pos(r.reference_end-1)
+                            read_cigar = iso.calc_cigar()
                             if read_strand == '-': # swap start/end coords
                                 start_abs, bid_start, end_abs, bid_end = end_abs, bid_end, start_abs, bid_start 
                             read_spliced = 1 if bid_start != bid_end else 0
                             rel_pos = cigar_to_rel_pos(r)
+                            read_name = "%s_%s_%i_%s_%s" % (r.query_name, iso.t.transcript.Chromosome, start_abs, read_cigar.to_string(), (",".join(str(iso.rel2abs_pos(p)[0]) for p in rel_pos) )  if len(rel_pos)>0 else 'NA' )
                             print("%s\t%i\t%i\t%s\t%s\t%i\t%i\t%i\t%s" % (r.query_name, 
                                                                           r.reference_start,
                                                                           r.reference_end, 
@@ -588,28 +590,28 @@ if __name__ == '__main__':
         for s in stats:
             print(s, file=out)
     
-    # write slamstr config
-    if 'slamstr_config_template' in config and 'mappers' in config:
-        logging.info("Writing slamstr config files")
-        with open(config['slamstr_config_template'], 'r') as f:
-            x = f.read().splitlines()
-        for mapper in config['mappers'].keys():
-            modi=['tc','ori'] if write_uncoverted else ['tc']
-            for mode in modi:
-                id = "slamstr."+mapper+"."+mode
-                f_config = outdir + id+".json"
-                with open(f_config, 'w') as out:
-                    tokens={}
-                    tokens["ID"]=id
-                    tokens["genome_fa"]=os.path.abspath(config['genome_fa'])
-                    tokens["gff"]=os.path.abspath(f_anno)
-                    tokens["datasets"]="\n"
-                    tokens["timepoints"]="\n"
-                    for idx, cond in enumerate(m.conditions):
-                        tokens["datasets"]+='\t"' + cond.id + '": "' + bams[cond.id + "."+mapper] + '"' + ("," if idx < len(m.conditions)-1 else "") + "\n"
-                        tokens["timepoints"]+='\t"' + cond.id + '": "' + str(cond.timepoint)+ '"' + ("," if idx < len(m.conditions)-1 else "")+ "\n"
-                    for l in x:
-                        print(replace_tokens(l, tokens), file=out)
+#     # write slamstr config
+#     if 'slamstr_config_template' in config and 'mappers' in config:
+#         logging.info("Writing slamstr config files")
+#         with open(config['slamstr_config_template'], 'r') as f:
+#             x = f.read().splitlines()
+#         for mapper in config['mappers'].keys():
+#             modi=['tc','ori'] if write_uncoverted else ['tc']
+#             for mode in modi:
+#                 id = "slamstr."+mapper+"."+mode
+#                 f_config = outdir + id+".json"
+#                 with open(f_config, 'w') as out:
+#                     tokens={}
+#                     tokens["ID"]=id
+#                     tokens["genome_fa"]=os.path.abspath(config['genome_fa'])
+#                     tokens["gff"]=os.path.abspath(f_anno)
+#                     tokens["datasets"]="\n"
+#                     tokens["timepoints"]="\n"
+#                     for idx, cond in enumerate(m.conditions):
+#                         tokens["datasets"]+='\t"' + cond.id + '": "' + bams[cond.id + "."+mapper] + '"' + ("," if idx < len(m.conditions)-1 else "") + "\n"
+#                         tokens["timepoints"]+='\t"' + cond.id + '": "' + str(cond.timepoint)+ '"' + ("," if idx < len(m.conditions)-1 else "")+ "\n"
+#                     for l in x:
+#                         print(replace_tokens(l, tokens), file=out)
                         
     # create TDF files
     if 'create_tdf' in config and config['create_tdf']:

@@ -43,9 +43,9 @@ class Isoform():
         self.aln_blocks+=[(bstart, bend)]
         #print("alignment blocks: %s" % (self.aln_blocks))
         
-    # convert isoform-relative coordinates to genomic coordinates.
-    # E.g., a rel_pos==0 will return the 1st position of the transcript in genomic coordinates (1-based)
     def rel2abs_pos(self, rel_pos):
+        """ convert isoform-relative coordinates to genomic coordinates.
+            E.g., a rel_pos==0 will return the 1st position of the transcript in genomic coordinates (1-based) """
         ablocks = self.aln_blocks if self.strand == '+' else reversed(self.aln_blocks)
         abs_pos=None
         off = rel_pos
@@ -63,7 +63,27 @@ class Isoform():
             logging.warn("Invalid relative position %i / %i in isoform %s: %i" % (rel_pos, abs_pos, self, off))
         ret = abs_pos+off if self.strand == '+' else abs_pos-off
         return (ret, block_id)
-    
+    def block_contains(self, bstart, bend, abs_pos):
+        return abs_pos>=bstart and abs_pos<=bend
+    def calc_cigar(self, abs_start, abs_end):
+        """ calculate cigar """
+        cigar=""
+        gap_start=None
+        for bstart,bend in ablocks:
+            if gap_start is not None:
+                cigar+="%iN" % (abs_start-gap_start) # gap
+                gap_start=None
+            bwidth = bend-bstart+1
+            if block_contains(bstart, bend, abs_start):
+                if block_contains(bstart, bend, abs_end): # start and stop in same block
+                    return "%iM" % (abs_end-abs_start+1)
+                cigar+="%iM" % (bend-abs_start+1)
+                gap_start=bend+1
+            if block_contains(bstart, bend, abs_end):
+                cigar+="%iM" % (abs_end-bstart+1)
+                return cigar
+        return cigar
+        
     def __repr__(self):
         return self.__str__()  
     

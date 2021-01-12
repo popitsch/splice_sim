@@ -392,7 +392,7 @@ if __name__ == '__main__':
                             read_spliced = 1 if bid_start != bid_end else 0
                             rel_pos = cigar_to_rel_pos(r)
                             read_name = "%s_%s_%i_%s_%s" % (r.query_name, iso.t.transcript.Chromosome, start_abs, read_cigar, (",".join(str(iso.rel2abs_pos(p)[0]) for p in rel_pos) )  if len(rel_pos)>0 else 'NA' )
-                            print("%s\t%i\t%i\t%s\t%s\t%i\t%i\t%i\t%s" % (r.query_name, 
+                            print("%s\t%i\t%i\t%s\t%s\t%i\t%i\t%i\t%s" % (read_name, 
                                                                           r.reference_start,
                                                                           r.reference_end, 
                                                                           (",".join(str(p) for p in rel_pos) ) if len(rel_pos)>0 else 'NA',
@@ -403,7 +403,7 @@ if __name__ == '__main__':
                                                                           (",".join(str(iso.rel2abs_pos(p)[0]) for p in rel_pos) )  if len(rel_pos)>0 else 'NA'  
                                                                           ), file=out_truth )
                             qstr = ''.join(map(lambda x: chr( x+33 ), r.query_qualities))
-                            print("@%s\n%s\n+\n%s" % ( r.query_name, r.query_sequence, qstr), file=out_fq )
+                            print("@%s\n%s\n+\n%s" % ( read_name, r.query_sequence, qstr), file=out_fq )
                         else:
                             read_stats['dropped_'+read_strand]=read_stats['dropped_'+read_strand]+1 if 'dropped_'+read_strand in read_stats else 1
             # sort truth file
@@ -621,5 +621,5 @@ if __name__ == '__main__':
             if args.force or not files_exist(b+".tdf"):
                 create_tdf(b, b+".tdf", m.chrom_sizes, igvtools_cmd=igvtools_cmd, logfile=igvtools_log)
     
-    logging.info("All done in", datetime.timedelta(seconds=time.time()-startTime))
+    logging.info("All done in %s" % str(datetime.timedelta(seconds=time.time()-startTime)))
     print("All done in", datetime.timedelta(seconds=time.time()-startTime))

@@ -44,11 +44,11 @@ def runSTAR(bam, ref, reads1=[], reads2=None,  gtf=None, force=True, run_flagsta
     """ Run STAR, supports SE+PE and can merge multiple files (needs sambamba access). Can create samtools flagstats """
     success = True
     if files_exist(bam) and not force:
-        print("BAM file " + bam + " already exists! use -f to recreate.")
+        logging.warn("BAM file " + bam + " already exists! use -f to recreate.")
         return True
     # check input params
     if len(reads1)==0 or (reads2 is not None and len(reads1)!=len(reads2)):
-        print("ERROR")
+        logging.error("ERROR")
         return False
     iscompressed=reads1[0].endswith('.gz')
     if (type(reads1) is not list):
@@ -83,9 +83,9 @@ def runSTAR(bam, ref, reads1=[], reads2=None,  gtf=None, force=True, run_flagsta
         if gtf:
             cmd+=["--sjdbGTFfile", gtf]
         cmd += additionalParameters
-        print(cmd)
+        logging.info(cmd)
         success = success and pipelineStep([reads1,reads2], starout, cmd, shell=True) 
-        print(starout)
+        logging.info(starout)
         success = success and sambamba2bam(starout, sorted,     
                                           sort=doSort, 
                                           index=True, 
@@ -100,7 +100,7 @@ def runSTAR(bam, ref, reads1=[], reads2=None,  gtf=None, force=True, run_flagsta
                                           delinFile=True,
                                           ncpu=threads, EXE=sambamba_cmd) 
             tomerge_chimeric+=[sorted_chimeric]
-    print(tomerge)
+    #print(tomerge)
     # merge files
     if len(tomerge)==1:
         os.rename(tomerge[0], bam)
@@ -127,7 +127,7 @@ def runHISAT2_TLA(bam, ref, fq, idx1, idx2, known_splicesites=None, force=True, 
     """ Run HISAT2_TLA """
     success = True
     if files_exist(bam) and not force:
-        print("BAM file " + bam + " already exists! use -f to recreate.")
+        logging.warn("BAM file " + bam + " already exists! use -f to recreate.")
         return True
     
     todel=[]
@@ -153,7 +153,7 @@ def runHISAT2_TLA(bam, ref, fq, idx1, idx2, known_splicesites=None, force=True, 
         ]
     if known_splicesites is not None:
         cmd+=[ "--known-splicesite-infile", known_splicesites ]
-    print(cmd)
+    logging.info(cmd)
     success = success and pipelineStep([fq], sam, cmd, shell=True)
     
     # sort + index

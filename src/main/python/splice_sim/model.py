@@ -5,7 +5,7 @@ import math
 import pysam
 from collections import *
 from utils import *
-
+import logging
 
 
 class Condition():
@@ -60,7 +60,7 @@ class Isoform():
             off -= bwidth
             block_id+=1
         if off != 0:
-            print("WARN: Invalid relative position %i / %i in isoform %s: %i" % (rel_pos, abs_pos, self, off))
+            logging.warn("Invalid relative position %i / %i in isoform %s: %i" % (rel_pos, abs_pos, self, off))
         ret = abs_pos+off if self.strand == '+' else abs_pos-off
         return (ret, block_id)
     
@@ -98,7 +98,7 @@ class Transcript():
                 intron = pd.DataFrame(data=dat, columns=self.df.columns, index=[0])
                 ilen = (ex.Start-1) - (last_end+1) + 1
                 if (max_ilen is not None) and (ilen > max_ilen):
-                    print("Skipping transcript %s due to too long intron (%i vs %i). Skipping transcript..." % ( self.tid, ilen, max_ilen))
+                    logging.warn("Skipping transcript %s due to too long intron (%i vs %i). Skipping transcript..." % ( self.tid, ilen, max_ilen))
                     self.is_valid = False
                     return
                 idata.append(intron)
@@ -119,7 +119,7 @@ class Transcript():
                 splicing_status = list(reversed(splicing_status)) # so 1st entry in config refers to 1st intron.
             # assert len(splicing_status)==len(self.introns), "misconfigured splicing status for some isoform/conditions: %s (%i vs %i)" % ( self.tid, len(splicing_status), len(self.introns))
             if len(splicing_status)!=len(self.introns):
-                print("Misconfigured splicing status for some isoform/conditions of transcript %s (%i vs %i). Skipping transcript..." % ( self.tid, len(splicing_status), len(self.introns)))
+                logging.error("Misconfigured splicing status for some isoform/conditions of transcript %s (%i vs %i). Skipping transcript..." % ( self.tid, len(splicing_status), len(self.introns)))
                 self.is_valid = False
                 return
             self.isoforms[iso] = Isoform(iso, frac, splicing_status, self)    
@@ -165,7 +165,7 @@ class Transcript():
             toadd = self.abundance - total_count
             #assert toadd==0 | toadd==1 , "rounding error"
             if toadd > 0: # add 1 to last isoform
-                print("corrected counts by %i" % (toadd))
+                logging.debug("corrected counts by %i" % (toadd))
                 id = list(self.isoforms.keys())[-1]
                 ret[cond][id]=[ret[cond][id][0], ret[cond][id][1] + toadd]
         return (ret)
@@ -204,14 +204,14 @@ class Model():
             self.conditions+=[Condition(id, config["conditions"][id][0], config["conditions"][id][1], config["conditions"][id][2] )]
         
         # load + filter gene gff
-        print("Loading gene GFF")
+        logging.info("Loading gene GFF")
         self.gff = pr.read_gff3(config["gene_gff"])
         self.gff_df = self.gff.df
         self.gff_df.Start = self.gff_df.Start + 1 # correct for pyranges bug?
         self.df = self.gff_df[self.gff_df['transcript_id'].isin(list(config['transcripts'].keys()))] # reduce to contain only configured transcripts
         
         # load genome
-        print("Loading genome")
+        logging.info("Loading genome")
         self.genome = pysam.FastaFile(config["genome_fa"])
         self.chrom_sizes = config["chrom_sizes"] if 'chrom_sizes' in config else config["genome_fa"]+".chrom.sizes"
 
@@ -222,16 +222,16 @@ class Model():
         for tid in list(config['transcripts'].keys()):
             tid_df = self.df[self.df['transcript_id']==tid] # extract data for this transcript only
             if tid_df.empty:
-                print("No annotation data found for configured tid %s, skipping..." % (tid))
+                logging.warn("No annotation data found for configured tid %s, skipping..." % (tid))
             else:
                 t = Transcript(config, tid, tid_df, self.genome, self.conditions, max_ilen=self.max_ilen) 
                 if t.is_valid:
                     self.transcripts[tid] = t
-        print("Instantiated %i transcripts" % len(self.transcripts))
+        logging.info("Instantiated %i transcripts" % len(self.transcripts))
         
     def write_gff(self, outdir):
         """ Write a filtered GFF file containing all kept/simulated transcripts """
-        print("Writing filtered gene GFF")
+        logging.info("Writing filtered gene GFF")
         out_file=outdir+"gene_anno.gff3"
         d=pd.read_csv(self.config["gene_gff"],delimiter='\t',encoding='utf-8')
         if not files_exist(out_file+".gz"):

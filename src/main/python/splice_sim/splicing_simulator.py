@@ -322,7 +322,7 @@ if __name__ == '__main__':
     stats=[Stat("transcripts", len(m.transcripts))]
     
     # now write one fasta file per transcript/cond
-    long.info("Calculating isoform data")
+    log.info("Calculating isoform data")
     for cond in m.conditions:
         fout = tmpdir + config['dataset_name'] + "." + cond.id + ".fa"
         if args.force or (not files_exist(fout) and not files_exist(fout+".gz")):

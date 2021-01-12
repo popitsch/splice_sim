@@ -391,7 +391,7 @@ if __name__ == '__main__':
                             read_cigar = iso.calc_cigar(start_abs, end_abs)
                             read_spliced = 1 if bid_start != bid_end else 0
                             rel_pos = cigar_to_rel_pos(r)
-                            read_name = "%s_%s_%i_%s_%s" % (r.query_name, iso.t.transcript.Chromosome, start_abs, read_cigar.to_string(), (",".join(str(iso.rel2abs_pos(p)[0]) for p in rel_pos) )  if len(rel_pos)>0 else 'NA' )
+                            read_name = "%s_%s_%i_%s_%s" % (r.query_name, iso.t.transcript.Chromosome, start_abs, read_cigar, (",".join(str(iso.rel2abs_pos(p)[0]) for p in rel_pos) )  if len(rel_pos)>0 else 'NA' )
                             print("%s\t%i\t%i\t%s\t%s\t%i\t%i\t%i\t%s" % (r.query_name, 
                                                                           r.reference_start,
                                                                           r.reference_end, 

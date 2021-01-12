@@ -70,19 +70,22 @@ class Isoform():
         ablocks = self.aln_blocks if self.strand == '+' else reversed(self.aln_blocks)
         cigar=""
         gap_start=None
+        started=False
         for bstart,bend in ablocks:
-            if gap_start is not None:
-                cigar+="%iN" % (abs_start-gap_start) # gap
-                gap_start=None
             bwidth = bend-bstart+1
             if self.block_contains(bstart, bend, abs_start):
                 if self.block_contains(bstart, bend, abs_end): # start and stop in same block
                     return "%iM" % (abs_end-abs_start+1)
                 cigar+="%iM" % (bend-abs_start+1)
                 gap_start=bend+1
-            if self.block_contains(bstart, bend, abs_end):
-                cigar+="%iM" % (abs_end-bstart+1)
+                started=True
+            elif self.block_contains(bstart, bend, abs_end):
+                cigar+="%iN%iM" % (bstart-gap_start, abs_end-bstart+1)
                 return cigar
+            elif started:
+                cigar+="%iN%iM" % (bstart-gap_start, bwidth) # gap
+                gap_start=bend+1
+                
         return cigar
         
     def __repr__(self):

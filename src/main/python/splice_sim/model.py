@@ -67,6 +67,7 @@ class Isoform():
         return abs_pos>=bstart and abs_pos<=bend
     def calc_cigar(self, abs_start, abs_end):
         """ calculate cigar """
+        assert(abs_start<abs_end)
         ablocks = self.aln_blocks if self.strand == '+' else reversed(self.aln_blocks)
         cigar=""
         gap_start=None
@@ -80,7 +81,9 @@ class Isoform():
                 gap_start=bend+1
                 started=True
             elif self.block_contains(bstart, bend, abs_end):
-                cigar+="%iN%iM" % (bstart-gap_start, abs_end-bstart+1)
+                if gap_start is not None:
+                    cigar+="%iN" % bstart-gap_start
+                cigar+="%iM" % (abs_end-bstart+1)
                 return cigar
             elif started:
                 cigar+="%iN%iM" % (bstart-gap_start, bwidth) # gap

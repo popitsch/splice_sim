@@ -288,7 +288,7 @@ if __name__ == '__main__':
     #config = json.load(open('/Users/niko.popitsch/eclipse-workspace/slamstr/src/test/splicing_simulator/testconfig.json'), object_pairs_hook=OrderedDict)
     config = json.load(open(args.confF), object_pairs_hook=OrderedDict)
     with open(outdir+'/splicing_simulator.effective_conf.json', 'w') as out:
-        print(commentjson.dumps(config, indent=4, sort_keys=True), file=out)
+        print(json.dumps(config, indent=4, sort_keys=True), file=out)
     if "random_seed" in config:
         random.seed(config["random_seed"])
     write_uncoverted=config["write_uncoverted"] if "write_uncoverted" in config else True

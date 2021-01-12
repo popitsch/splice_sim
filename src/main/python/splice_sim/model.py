@@ -75,12 +75,12 @@ class Isoform():
                 cigar+="%iN" % (abs_start-gap_start) # gap
                 gap_start=None
             bwidth = bend-bstart+1
-            if block_contains(bstart, bend, abs_start):
-                if block_contains(bstart, bend, abs_end): # start and stop in same block
+            if self.block_contains(bstart, bend, abs_start):
+                if self.block_contains(bstart, bend, abs_end): # start and stop in same block
                     return "%iM" % (abs_end-abs_start+1)
                 cigar+="%iM" % (bend-abs_start+1)
                 gap_start=bend+1
-            if block_contains(bstart, bend, abs_end):
+            if self.block_contains(bstart, bend, abs_end):
                 cigar+="%iM" % (abs_end-bstart+1)
                 return cigar
         return cigar

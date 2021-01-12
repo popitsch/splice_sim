@@ -386,9 +386,9 @@ if __name__ == '__main__':
                             iso = m.transcripts[tid].isoforms[iso_id]
                             start_abs, bid_start = iso.rel2abs_pos(r.reference_start)
                             end_abs, bid_end = iso.rel2abs_pos(r.reference_end-1)
-                            read_cigar = iso.calc_cigar()
                             if read_strand == '-': # swap start/end coords
                                 start_abs, bid_start, end_abs, bid_end = end_abs, bid_end, start_abs, bid_start 
+                            read_cigar = iso.calc_cigar(start_abs, end_abs)
                             read_spliced = 1 if bid_start != bid_end else 0
                             rel_pos = cigar_to_rel_pos(r)
                             read_name = "%s_%s_%i_%s_%s" % (r.query_name, iso.t.transcript.Chromosome, start_abs, read_cigar.to_string(), (",".join(str(iso.rel2abs_pos(p)[0]) for p in rel_pos) )  if len(rel_pos)>0 else 'NA' )

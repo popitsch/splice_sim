@@ -67,6 +67,7 @@ class Isoform():
         return abs_pos>=bstart and abs_pos<=bend
     def calc_cigar(self, abs_start, abs_end):
         """ calculate cigar """
+        ablocks = self.aln_blocks if self.strand == '+' else reversed(self.aln_blocks)
         cigar=""
         gap_start=None
         for bstart,bend in ablocks:

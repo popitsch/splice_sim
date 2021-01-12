@@ -15,10 +15,8 @@ class Condition():
         self.conversion_rate=conversion_rate
         self.coverage = coverage
         self.bam="?"
-        
     def __repr__(self):
         return self.__str__()  
-    
     def __str__(self):
         ret = ("%s: [tp=%i, cr=%f, cv=%f]" % (self.id, self.timepoint, self.conversion_rate, self.coverage ) )
         return (ret)  
@@ -41,8 +39,7 @@ class Isoform():
                 bstart=self.t.introns.iloc[idx].End+1 # 1st exonic 1-based pos
         bend=self.t.transcript.End
         self.aln_blocks+=[(bstart, bend)]
-        #print("alignment blocks: %s" % (self.aln_blocks))
-        
+        #print("alignment blocks: %s" % (self.aln_blocks))       
     def rel2abs_pos(self, rel_pos):
         """ convert isoform-relative coordinates to genomic coordinates.
             E.g., a rel_pos==0 will return the 1st position of the transcript in genomic coordinates (1-based) """
@@ -68,7 +65,7 @@ class Isoform():
     def calc_cigar(self, abs_start, abs_end):
         """ calculate cigar """
         assert(abs_start<abs_end)
-        ablocks = self.aln_blocks if self.strand == '+' else reversed(self.aln_blocks)
+        ablocks = self.aln_blocks
         cigar=""
         gap_start=None
         started=False
@@ -82,18 +79,15 @@ class Isoform():
                 started=True
             elif self.block_contains(bstart, bend, abs_end):
                 if gap_start is not None:
-                    cigar+="%iN" % bstart-gap_start
+                    cigar+="%iN" % (bstart-gap_start)
                 cigar+="%iM" % (abs_end-bstart+1)
                 return cigar
             elif started:
                 cigar+="%iN%iM" % (bstart-gap_start, bwidth) # gap
-                gap_start=bend+1
-                
-        return cigar
-        
+                gap_start=bend+1                
+        return cigar       
     def __repr__(self):
         return self.__str__()  
-    
     def __str__(self):
         ret = ("%s_%s @ %s, [%s], [%s]" % (self.t.tid, self.id, self.t.region, ",".join(str(x) for x in self.fractions), ",".join(str(x) for x in self.splicing_status)) )
         return (ret)   
@@ -160,8 +154,7 @@ class Transcript():
             iso='mat'
             splicing_status=[1] * len(self.introns)
             self.isoforms[iso] = Isoform(iso, frac, splicing_status, self)    
-        #print('added mature isoform for %s: %s' % (tid, self.isoforms[iso]) )
-        
+        #print('added mature isoform for %s: %s' % (tid, self.isoforms[iso]) )  
     def get_dna_seq(self, splicing_status):
         seq = self.transcript_seq
         for idx, splicing in reversed(list(enumerate(splicing_status))):
@@ -170,13 +163,11 @@ class Transcript():
                 pos2=self.introns.iloc[idx].End - self.transcript.Start + 1
                 seq = seq[:pos1]+seq[pos2:]
         return (seq)
-    
     def get_rna_seq(self, iso):
         seq = self.get_dna_seq(self.isoforms[iso].splicing_status)
         if self.transcript.Strand == '-':
             seq = reverse_complement(seq)
         return (seq)
-    
     def get_sequences(self):
         ret=OrderedDict()
         for cond_idx, cond in enumerate(self.cond):
@@ -196,14 +187,11 @@ class Transcript():
                 id = list(self.isoforms.keys())[-1]
                 ret[cond][id]=[ret[cond][id][0], ret[cond][id][1] + toadd]
         return (ret)
-    
     def to_bed(self):
         t=self.transcript
         return ("%s\t%i\t%i\t%s\t%i\t%s" % (t.Chromosome, t.Start, t.End, t.ID, 1000, t.Strand) )
-    
     def __repr__(self):
         return self.__str__()  
-    
     def __str__(self):
         ret = ("%s" % (self.transcript.transcript_id) )
         return (ret)   
@@ -224,24 +212,20 @@ class Model():
     def __init__(self, config):
         self.config = config
         self.threads=config["threads"] if "threads" in config else 1
-        
         # init conditions
         self.conditions=[]
         for id in config["conditions"].keys():
             self.conditions+=[Condition(id, config["conditions"][id][0], config["conditions"][id][1], config["conditions"][id][2] )]
-        
         # load + filter gene gff
         logging.info("Loading gene GFF")
         self.gff = pr.read_gff3(config["gene_gff"])
         self.gff_df = self.gff.df
         self.gff_df.Start = self.gff_df.Start + 1 # correct for pyranges bug?
         self.df = self.gff_df[self.gff_df['transcript_id'].isin(list(config['transcripts'].keys()))] # reduce to contain only configured transcripts
-        
         # load genome
         logging.info("Loading genome")
         self.genome = pysam.FastaFile(config["genome_fa"])
         self.chrom_sizes = config["chrom_sizes"] if 'chrom_sizes' in config else config["genome_fa"]+".chrom.sizes"
-
         # instantiate transcripts
         self.transcripts=OrderedDict()
         self.max_ilen = config["max_ilen"] if 'max_ilen' in config else None
@@ -254,8 +238,7 @@ class Model():
                 t = Transcript(config, tid, tid_df, self.genome, self.conditions, max_ilen=self.max_ilen) 
                 if t.is_valid:
                     self.transcripts[tid] = t
-        logging.info("Instantiated %i transcripts" % len(self.transcripts))
-        
+        logging.info("Instantiated %i transcripts" % len(self.transcripts))      
     def write_gff(self, outdir):
         """ Write a filtered GFF file containing all kept/simulated transcripts """
         logging.info("Writing filtered gene GFF")

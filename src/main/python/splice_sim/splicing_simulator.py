@@ -216,7 +216,7 @@ def postfilter_bam( bam_in, bam_out, tag_tc=None, tag_mp=None):
         read_name = read.query_name
         # example    : ENSMUST00000100497.10_-_mat_2-151_5_142905417_60M87N40M_142905567,142905452
         # example (tc): ENSMUST00000100497.10_-_mat_3-253_5_142905603_90M959N10M_142905629_tc:72,58,9
-        is_tc_read = query_name.count('_')==9
+        is_tc_read = read_name.count('_')==9
         if not is_tc_read:
             read_name+='_NA'
         true_tid,true_strand,true_isoform,tag,true_chrom,true_start_abs,true_read_cigar,true_seqerr,tc_pos = read.query_name.split("_")

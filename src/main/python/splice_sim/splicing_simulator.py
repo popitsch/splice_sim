@@ -300,7 +300,7 @@ if __name__ == '__main__':
     threads=config["threads"] if "threads" in config else 1
         
     if args.force:
-        log.info("NOTE: existing result files will be overwritten!")
+        logging.info("NOTE: existing result files will be overwritten!")
     
     # read transcript data from external file if not in config
     if 'transcripts' not in config:
@@ -314,6 +314,7 @@ if __name__ == '__main__':
     
     # instantiate model
     m = Model( config )
+    logging.info("Configured conditions: %s" % (", ".join(str(x) for x in m.conditions)) )
     
     # write considered transcripts to GFF
     m.write_gff(outdir)
@@ -322,7 +323,7 @@ if __name__ == '__main__':
     stats=[Stat("transcripts", len(m.transcripts))]
     
     # now write one fasta file per transcript/cond
-    log.info("Calculating isoform data")
+    logging.info("Calculating isoform data")
     for cond in m.conditions:
         fout = tmpdir + config['dataset_name'] + "." + cond.id + ".fa"
         if args.force or (not files_exist(fout) and not files_exist(fout+".gz")):
@@ -341,10 +342,10 @@ if __name__ == '__main__':
                 if len(buf)>0:
                     out.writelines(buf)
         else:
-            log.info("Will not re-create existing file %s" % (fout))
+            logging.info("Will not re-create existing file %s" % (fout))
     
     # run art simulator 
-    log.info("Running read simulator")
+    logging.info("Running read simulator")
     artlog=tmpdir + config['dataset_name'] + ".art.log" 
     valid_reads={}
     for cond in m.conditions:
@@ -365,7 +366,7 @@ if __name__ == '__main__':
                 cmd+=["-rs", str(config["random_seed"])]
             success = pipelineStep(f, [f_fq_both, f_sam_both], cmd, shell=True, stdout=artlog, append=True)    
             if not success:
-                log.error('error simulating %s' % (f_fq_both))
+                logging.error('error simulating %s' % (f_fq_both))
     
             # filter reads that map to wrong strand and write truth file
             # get alignment positions from art aln file. Note that seq-read errors are encoded in the 
@@ -412,10 +413,10 @@ if __name__ == '__main__':
                 f_truth+='.gz'
                 tabix(f_truth, additionalParameters=["-S 1 -s 5 -b 6 -e 7"])
                 removeFile([f_fq_both, f_sam_both,f_truth_tmp])
-            log.debug(read_stats)
+            logging.debug(read_stats)
     
         else:
-            log.warn("Will not re-create existing file %s" % (f_fq+".gz"))
+            logging.warn("Will not re-create existing file %s" % (f_fq+".gz"))
     
                    
     # concat files per condition, introduce T/C conversions and bgzip
@@ -450,13 +451,13 @@ if __name__ == '__main__':
                 bgzip(f_all, override=True, delinFile=True, threads=threads)
             bgzip(f_tc, override=True, delinFile=True, threads=threads)
         else:
-            log.warn("Will not re-create existing file %s" % (f_tc+".gz"))
+            logging.warn("Will not re-create existing file %s" % (f_tc+".gz"))
         stats+=[Stat("mean_tc", np.mean(hist_tc),cond=cond)]
         stats+=[Stat("median_tc", np.median(hist_tc),cond=cond)]
         stats+=[Stat("hist_tc", ",".join(str(x) for x in Counter(hist_tc).keys()) + ":" + ",".join(str(x) for x in Counter(hist_tc).values()),cond=cond)]
             
     # write ROIs 
-    log.info("Writing ROI bed")
+    logging.info("Writing ROI bed")
     f_roi = outdir + "roi.bed"
     with open(f_roi, 'w') as out:
         for t in m.transcripts.values():
@@ -466,14 +467,14 @@ if __name__ == '__main__':
     # map reads if mappers configured
     bams={}
     if 'mappers' in config:
-        log.info("Mapping reads")
+        logging.info("Mapping reads")
         # print version info
         for mapper in config['mappers'].keys():
             if mapper == "STAR":
                 EXE=config['mappers'][mapper]['star_cmd'] if 'star_cmd' in config['mappers'][mapper] else 'STAR'
             elif mapper == "HISAT2_TLA":
                 EXE=config['mappers'][mapper]['hisat2_cmd'] if 'hisat2_cmd' in config['mappers'][mapper] else 'hisat2'
-            log.info("%s version: %s" % ( mapper, get_version(EXE)) )
+            logging.info("%s version: %s" % ( mapper, get_version(EXE)) )
 
         for cond in m.conditions:
             for mapper in config['mappers'].keys():
@@ -492,7 +493,7 @@ if __name__ == '__main__':
                 tag_tc = config['mappers'][mapper]['tag_tc'] if 'tag_tc' in config['mappers'][mapper] else None
                 tag_mp = config['mappers'][mapper]['tag_mp'] if 'tag_mp' in config['mappers'][mapper] else None
                 
-                log.info("Mapping %s reads with %s" % (cond.id, mapper))
+                logging.info("Mapping %s reads with %s" % (cond.id, mapper))
                 if mapper == "STAR":
                     # run STAR mapper 
                     STAR_EXE=config['mappers'][mapper]['star_cmd'] if 'star_cmd' in config['mappers'][mapper] else 'STAR'
@@ -508,7 +509,7 @@ if __name__ == '__main__':
                                     STAR_EXE=STAR_EXE,
                                     force=args.force )
                         else:
-                            log.warn("Will not re-create existing file %s" % (b_all))
+                            logging.warn("Will not re-create existing file %s" % (b_all))
                     if args.force or not files_exist(final_tc):
                         runSTAR(b_tc, 
                             star_genome_idx, 
@@ -518,7 +519,7 @@ if __name__ == '__main__':
                             STAR_EXE=STAR_EXE,
                             force=args.force )   
                     else:
-                        log.warn("Will not re-create existing file %s" % (b_tc))            
+                        logging.warn("Will not re-create existing file %s" % (b_tc))            
                 elif mapper == "HISAT2_TLA":
                     HISAT2_EXE=config['mappers'][mapper]['hisat2_cmd'] if 'hisat2_cmd' in config['mappers'][mapper] else 'hisat2'
                     hisat2_idx1=config['mappers'][mapper]['hisat2_idx1']
@@ -536,7 +537,7 @@ if __name__ == '__main__':
                                     HISAT2_EXE=HISAT2_EXE,
                                     force=args.force )
                         else:
-                            log.warn("Will not re-create existing file %s" % (b_all))
+                            logging.warn("Will not re-create existing file %s" % (b_all))
                     if args.force or not files_exist(final_tc):
                         runHISAT2_TLA(b_tc, 
                             config["genome_fa"], 
@@ -548,9 +549,9 @@ if __name__ == '__main__':
                             HISAT2_EXE=HISAT2_EXE,
                             force=args.force )
                     else:
-                        log.warn("Will not re-create existing file %s" % (b_tc))
+                        logging.warn("Will not re-create existing file %s" % (b_tc))
                 else:
-                    log.warn("Unknown mapper %s configured" % (mapper))
+                    logging.warn("Unknown mapper %s configured" % (mapper))
                     
                 # Now filter all reads that mapped to the wrong strand as ART has no strand support and write all TC mutation
                 if files_exist([b_all]):
@@ -573,7 +574,7 @@ if __name__ == '__main__':
     
     
     # write stats. FIXME: stats are not complete if pipeline was restarted with 
-    log.info("Writing stats")
+    logging.info("Writing stats")
     f_roi = outdir + "stats.tsv"
     with open(f_roi, 'w') as out:
         print(Stat("",1).get_header(), file=out)
@@ -589,7 +590,7 @@ if __name__ == '__main__':
     
     # write slamstr config
     if 'slamstr_config_template' in config and 'mappers' in config:
-        log.info("Writing slamstr config files")
+        logging.info("Writing slamstr config files")
         with open(config['slamstr_config_template'], 'r') as f:
             x = f.read().splitlines()
         for mapper in config['mappers'].keys():
@@ -612,11 +613,11 @@ if __name__ == '__main__':
                         
     # create TDF files
     if 'create_tdf' in config and config['create_tdf']:
-        log.info("Creating TDF files for %i bams" % (len(bams)))
+        logging.info("Creating TDF files for %i bams" % (len(bams)))
         igvtools_log=tmpdir + config['dataset_name'] + ".igvtools.log" 
         for b in list(bams.values()):
             if args.force or not files_exist(b+".tdf"):
                 create_tdf(b, b+".tdf", m.chrom_sizes, igvtools_cmd=igvtools_cmd, logfile=igvtools_log)
     
-    log.info("All done in", datetime.timedelta(seconds=time.time()-startTime))
+    logging.info("All done in", datetime.timedelta(seconds=time.time()-startTime))
     print("All done in", datetime.timedelta(seconds=time.time()-startTime))

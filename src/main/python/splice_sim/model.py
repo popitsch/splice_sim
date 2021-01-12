@@ -202,7 +202,6 @@ class Model():
         self.conditions=[]
         for id in config["conditions"].keys():
             self.conditions+=[Condition(id, config["conditions"][id][0], config["conditions"][id][1], config["conditions"][id][2] )]
-        print("Configured conditions: %s" % (", ".join(str(x) for x in self.conditions)) )
         
         # load + filter gene gff
         print("Loading gene GFF")

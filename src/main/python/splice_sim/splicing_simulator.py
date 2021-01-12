@@ -202,7 +202,7 @@ class Stat():
 
 def postfilter_bam( bam_in, bam_out, tag_tc=None, tag_mp=None):
     """ Filters reads by correct read strand (i.e., removes all reads that were simulated on the wrong read strand by by ART) and adds 
-        XC/XP/YC bam tags """  
+        XC/XP/YC/YT bam tags """  
     samin = pysam.AlignmentFile(bam_in, "rb")
     samout = pysam.AlignmentFile(bam_out, "wb", template=samin, )
     if tag_tc is None:
@@ -212,11 +212,19 @@ def postfilter_bam( bam_in, bam_out, tag_tc=None, tag_mp=None):
     n_reads=0
     for read in samin.fetch():
         #print(read.is_reverse)
-        comp=read.query_name.split("_")
-        is_correct_strand = ( read.is_reverse and comp[1]=='-' ) or ((not read.is_reverse) and comp[1]=='+') 
-        read.query_name = "_".join(comp[0:4]) # cut of _tc section from read name.
-        if len(comp)>4:
-            tc_pos = comp[4][3:].split(",")
+        # parse from read name
+        read_name = read.query_name
+        # example    : ENSMUST00000100497.10_-_mat_2-151_5_142905417_60M87N40M_142905567,142905452
+        # example (tc): ENSMUST00000100497.10_-_mat_3-253_5_142905603_90M959N10M_142905629_tc:72,58,9
+        is_tc_read = query_name.count('_')==9
+        if not is_tc_read:
+            read_name+='_NA'
+        true_tid,true_strand,true_isoform,tag,true_chrom,true_start_abs,true_read_cigar,true_seqerr,tc_pos = read.query_name.split("_")
+        true_seqerr=true_seqerr.split(',') if true_seqerr != 'NA' else None        
+        tc_pos=tc_pos.split(',') if tc_pos != 'NA' else None
+        is_correct_strand = ( read.is_reverse and true_strand=='-' ) or ((not read.is_reverse) and true_strand=='+') 
+        read.query_name = query_name 
+        if is_tc_read:
             if not tc_pos[0]: # no TC conversion
                 read.set_tag(tag=tag_tc, value=0, value_type="i")
                 # set read color to light grey!
@@ -235,12 +243,10 @@ def postfilter_bam( bam_in, bam_out, tag_tc=None, tag_mp=None):
                 # set blue read color intensity relative to number of tc conversions!
                 intensity = 255/min(valid_tc, 25) if valid_tc > 0 else 255
                 read.set_tag(tag='YC', value='%i,%i,255' % (intensity,intensity) if is_correct_strand else '255,0,0', value_type="Z")
-
                 if valid_tc>0:
                     read.set_tag(tag=tag_mp, value=",".join(mp_str), value_type="Z")
         samout.write(read)  
         n_reads=n_reads+1
-
     samin.close()
     samout.close()
     pysam.index(bam_out)
@@ -260,8 +266,6 @@ if __name__ == '__main__':
     
     USAGE
     '''
-    
-    
     parser = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
     parser.add_argument("-c","--config", type=existing_file, required=True, dest="confF", help="JSON config file")
     parser.add_argument("-f","--force", required=False, action='store_true', dest="force", help="If set, existing results files will be overwritten")

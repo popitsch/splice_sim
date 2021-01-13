@@ -72,8 +72,8 @@ def evaluate_dataset(config, config_dir, outdir, overwrite=False):
                 bamdir_tc  = outdir + "bam_tc/" + mapper + "/"
                 final_all  = bamdir_all + config['dataset_name'] + "." + cond.id + "."+mapper+".bam"
                 final_tc   = bamdir_tc  + config['dataset_name'] + "." + cond.id + "."+mapper+".TC.bam"
-                evaluate(final_all,'all',mapper,cond.id, out)    
-                evaluate(final_tc, 'tc', mapper,cond.id, out)    
+                evaluate_bam(final_all,'all',mapper,cond.id, out)    
+                evaluate_bam(final_tc, 'tc', mapper,cond.id, out)    
 
     logging.info("All done in %s" % str(datetime.timedelta(seconds=time.time()-startTime)))
     print("All done in", datetime.timedelta(seconds=time.time()-startTime))

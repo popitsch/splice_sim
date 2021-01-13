@@ -14,6 +14,7 @@ import random
 import math
 import gzip
 import logging
+from model import Model, Condition, Isoform, Transcript
 
 
 def evaluate_bam(bam_file, category, mapper, condition, out):

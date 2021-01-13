@@ -33,7 +33,7 @@ def evaluate_bam(bam_file, category, mapper, condition, out):
 # bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/HISAT2_TLA/small4.5min.HISAT2_TLA.TC.bam'
 # evaluate_bam(bam, 'test', 'map', 'cond', None)
      
-def evaluate_dataset(conf_file, config_dir, outdir, overwrite=False):
+def evaluate_dataset(config, config_dir, outdir, overwrite=False):
     """ Evaluates a dataset. """
     startTime = time.time()
 

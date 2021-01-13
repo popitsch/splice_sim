@@ -33,7 +33,7 @@ def get_version(exe):
     return check_output(" ".join(cmd), shell=True)
 
 
-def runSTAR(bam, ref, reads1=[], reads2=None,  gtf=None, force=True, run_flagstat=False, threads=1, chimeric=0, writeUnmapped=True, doSort=True, additionalParameters=[], STAR_EXE='STAR'):
+def runSTAR(bam, ref, reads1=[], reads2=None,  gtf=None, force=True, run_flagstat=False, threads=1, chimeric=0, writeUnmapped=True, doSort=True, additionalParameters=[], STAR_EXE='STAR', SAMBAMBA_EXE='sambamba'):
     """ Run STAR, supports SE+PE and can merge multiple files (needs sambamba access). Can create samtools flagstats """
     success = True
     if files_exist(bam) and not force:
@@ -84,7 +84,7 @@ def runSTAR(bam, ref, reads1=[], reads2=None,  gtf=None, force=True, run_flagsta
                                           sort=doSort, 
                                           index=True, 
                                           delinFile=True,
-                                          ncpu=threads, EXE=sambamba_cmd) 
+                                          ncpu=threads, EXE=SAMBAMBA_EXE) 
         tomerge+=[sorted]
         # handle chimeric reads if configured
         if files_exist(starout_chimeric):
@@ -92,7 +92,7 @@ def runSTAR(bam, ref, reads1=[], reads2=None,  gtf=None, force=True, run_flagsta
                                           sort=doSort, 
                                           index=True, 
                                           delinFile=True,
-                                          ncpu=threads, EXE=sambamba_cmd) 
+                                          ncpu=threads, EXE=SAMBAMBA_EXE) 
             tomerge_chimeric+=[sorted_chimeric]
     #print(tomerge)
     # merge files
@@ -101,7 +101,7 @@ def runSTAR(bam, ref, reads1=[], reads2=None,  gtf=None, force=True, run_flagsta
         os.rename(tomerge[0]+".bai", bam+".bai")
     else:
         logging.info("Merging from multiple input files")
-        success = success and sambambamerge(bam, tomerge, ncpu=threads, EXE=sambamba_cmd)
+        success = success and sambambamerge(bam, tomerge, ncpu=threads, EXE=SAMBAMBA_EXE)
     if len(tomerge_chimeric)==0:
         logging.info("NOTE: no chimeric read output configured!")
     else:
@@ -110,14 +110,14 @@ def runSTAR(bam, ref, reads1=[], reads2=None,  gtf=None, force=True, run_flagsta
             os.rename(tomerge_chimeric[0]+".bai", bam_chimeric+".bai")
         else:
             logging.info("Merging from multiple input files")
-            success = success and sambambamerge(bam_chimeric, tomerge_chimeric, ncpu=threads, EXE=sambamba_cmd)
+            success = success and sambambamerge(bam_chimeric, tomerge_chimeric, ncpu=threads, EXE=SAMBAMBA_EXE)
         flagstat( bam_chimeric )
     if run_flagstat:            
         flagstat( bam )        
     return success
 
 
-def runHISAT2_TLA(bam, ref, fq, idx1, idx2, known_splicesites=None, force=True, run_flagstat=False, threads=1, doSort=True, additionalParameters=[], HISAT2_EXE='hisat2'):
+def runHISAT2_TLA(bam, ref, fq, idx1, idx2, known_splicesites=None, force=True, run_flagstat=False, threads=1, doSort=True, additionalParameters=[], HISAT2_EXE='hisat2', SAMBAMBA_EXE='sambamba'):
     """ Run HISAT2_TLA """
     success = True
     if files_exist(bam) and not force:
@@ -155,7 +155,8 @@ def runHISAT2_TLA(bam, ref, fq, idx1, idx2, known_splicesites=None, force=True, 
                               sort=doSort, 
                               index=True, 
                               delinFile=True,
-                              ncpu=threads) 
+                              ncpu=threads, 
+                              EXE=SAMBAMBA_EXE) 
     
     removeFile(todel)
     if run_flagstat:            
@@ -204,7 +205,11 @@ def postfilter_bam( bam_in, bam_out, tag_tc=None, tag_mp=None):
     if tag_mp is None:
         tag_mp="xp" 
     n_reads=0
+    f_reads=0
     for read in samin.fetch():
+        if read.is_secondary() or read.is_supplementary():
+            f_reads+=1
+            continue
         #print(read.is_reverse)
         # parse from read name
         read_name = read.query_name
@@ -244,7 +249,7 @@ def postfilter_bam( bam_in, bam_out, tag_tc=None, tag_mp=None):
     samin.close()
     samout.close()
     pysam.index(bam_out)
-    return True, n_reads
+    return True, n_reads, f_reads
 
 
 def simulate_dataset(config, config_dir, outdir, overwrite=False):
@@ -490,6 +495,7 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                                     gtf=star_splice_gtf,
                                     threads=threads, 
                                     STAR_EXE=STAR_EXE,
+                                    SAMBAMBA_EXE=sambamba_cmd,
                                     force=overwrite )
                         else:
                             logging.warn("Will not re-create existing file %s" % (b_all))
@@ -500,6 +506,7 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                             gtf=star_splice_gtf,
                             threads=threads, 
                             STAR_EXE=STAR_EXE,
+                            SAMBAMBA_EXE=sambamba_cmd,
                             force=overwrite )   
                     else:
                         logging.warn("Will not re-create existing file %s" % (b_tc))            
@@ -518,6 +525,7 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                                     known_splicesites=hisat2_kss,
                                     threads=threads, 
                                     HISAT2_EXE=HISAT2_EXE,
+                                    SAMBAMBA_EXE=sambamba_cmd,
                                     force=overwrite )
                         else:
                             logging.warn("Will not re-create existing file %s" % (b_all))
@@ -530,6 +538,7 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                             known_splicesites=hisat2_kss,
                             threads=threads, 
                             HISAT2_EXE=HISAT2_EXE,
+                            SAMBAMBA_EXE=sambamba_cmd,
                             force=overwrite )
                     else:
                         logging.warn("Will not re-create existing file %s" % (b_tc))
@@ -538,16 +547,18 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                     
                 # Now filter all reads that mapped to the wrong strand as ART has no strand support and write all TC mutation
                 if files_exist([b_all]):
-                    success,n_reads = postfilter_bam( b_all, final_all, tag_tc, tag_mp)
+                    success,n_reads, f_reads = postfilter_bam( b_all, final_all, tag_tc, tag_mp)
                     if success:
                         removeFile([b_all, b_all+".bai"])
                         stats+=[Stat("all_reads", n_reads,cond=cond, mapper=mapper)]
+                        stats+=[Stat("all_filtered_secondary_alignments", f_reads,cond=cond, mapper=mapper)]
     
                 if files_exist([b_tc]):
-                    success,n_reads = postfilter_bam( b_tc, final_tc, tag_tc, tag_mp)
+                    success,n_reads,f_reads = postfilter_bam( b_tc, final_tc, tag_tc, tag_mp)
                     if success:
                         removeFile([b_tc, b_tc+".bai"])
                         stats+=[Stat("tc_reads", n_reads,cond=cond, mapper=mapper)]
+                        stats+=[Stat("tc_filtered_secondary_alignments", f_reads,cond=cond, mapper=mapper)]
     
                 # store bams for tdf creation
                 if files_exist([final_all]):

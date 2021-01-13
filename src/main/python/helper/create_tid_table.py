@@ -2,6 +2,15 @@ from argparse import ArgumentParser, RawDescriptionHelpFormatter
 import os, sys
 import pandas as pd
 
+usage = '''                           
+
+  Copyright (C) 2021 XXX.  All rights reserved.
+
+  Distributed on an "AS IS" basis without warranties
+  or conditions of any kind, either express or implied.
+
+USAGE
+'''
 if __name__ == '__main__':
     parser = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
     parser.add_argument("-i", "--slamstr_transcript_file", type=existing_file, required=True, dest="slamstr_transcript_file", metavar="slamstr_transcript_file", help="slamstr_transcript_file")

@@ -242,8 +242,6 @@ def postfilter_bam( bam_in, bam_out, tag_tc=None, tag_mp=None):
                 # set blue read color intensity relative to number of tc conversions!
                 intensity = 255/min(valid_tc, 25) if valid_tc > 0 else 255
                 read.set_tag(tag='YC', value='%i,%i,255' % (intensity,intensity) if is_correct_strand else '255,0,0', value_type="Z")
-                if valid_tc>0:
-                    read.set_tag(tag=tag_mp, value=",".join(mp_str), value_type="Z")
         samout.write(read)  
         n_reads=n_reads+1
     samin.close()

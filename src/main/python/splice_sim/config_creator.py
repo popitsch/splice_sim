@@ -15,64 +15,22 @@ from Bio.Seq import Seq
 from utils import *
 import random
 import math
+from model import Isoform
 
 
 #============================================================================
-# Creates config files from real data
-#============================================================================
-VERSION = "0.1"
-logo = '''
-===================================
-Slamstr splice_sim config creator v%s
-===================================
-''' % VERSION
 
-#============================================================================
-usage = '''                           
-
-  Copyright 2019 Niko Popitsch. All rights reserved.
-  
-  Licensed under the Apache License 2.0
-  http://www.apache.org/licenses/LICENSE-2.0
-  
-  Distributed on an "AS IS" basis without warranties
-  or conditions of any kind, either express or implied.
-
-USAGE
-'''
-class Config(object):
-    ODICT = "odict"
-    def __init__(self):
-        self.__dict__[self.ODICT] = OrderedDict()
-    def __getattr__(self, item):
-        return self.__dict__[self.ODICT][item]
-    def __setattr__(self, key, value):
-        self.__dict__[self.ODICT][key] = value
-        
-class Isoform():
-    def __init__(self, id, fractions, splicing_status ):
-        self.id = id
-        self.fractions = fractions
-        self.splicing_status = splicing_status
-    def __repr__(self):
-        return self.__str__()  
-    def __str__(self):
-        ret = ("%s, [%s], [%s]" % (self.id, ",".join(str(x) for x in self.fractions), ",".join(str(x) for x in self.splicing_status)) )
-        return (ret)   
- 
-
-#
-# This method tries to select the isoform from 'isoforms' that best supports the input read counts ('pre','mat').
-# It then calculates the remaining (theoretical) read counts by subtracting the 'used' reads from the input read couts.
-# for this, it first calculates which intron provides the min. fraction ('min__frac') and then subtracts relative read counts,
-# so the intron with 'min_frac' will get 0 remaining pre or mat reads (depending on the splice status of the selected isoform) and 
-# all other intros will keep some positive read counts depending on 'min_frac'. 
-#
-# Finally, min_frac is used to calculate a fraction using the 'remaining_frac' value which is at the beginning of the recursion 1.0
-# but is gradually reduced as introns are selected. In theory, 'remaining_frac' should shrink to zero if all reads can be explained by 
-# the given isoforms but often its not. So the final fractions are then calculated relative to 'remaining_frac'.
-#
 def pick_iso_with_max_support(isoforms, mat, pre, remaining_frac, informative_intron_mask, debug=False):
+    """ This method tries to select the isoform from 'isoforms' that best supports the input read counts ('pre','mat').
+    It then calculates the remaining (theoretical) read counts by subtracting the 'used' reads from the input read couts.
+    for this, it first calculates which intron provides the min. fraction ('min__frac') and then subtracts relative read counts,
+    so the intron with 'min_frac' will get 0 remaining pre or mat reads (depending on the splice status of the selected isoform) and 
+    all other intros will keep some positive read counts depending on 'min_frac'. 
+    
+    Finally, min_frac is used to calculate a fraction using the 'remaining_frac' value which is at the beginning of the recursion 1.0
+    but is gradually reduced as introns are selected. In theory, 'remaining_frac' should shrink to zero if all reads can be explained by 
+    the given isoforms but often its not. So the final fractions are then calculated relative to 'remaining_frac'. """
+
     if debug:
         print('mat: [%s]' % ', '.join(map(str, mat)))
         print('pre: [%s]' % ', '.join(map(str, pre)))
@@ -106,12 +64,12 @@ def pick_iso_with_max_support(isoforms, mat, pre, remaining_frac, informative_in
         new_pre=[p if s==1 else p-min_frac*(m+p) for s,m,p in zip(picked_iso.splicing_status, mat, pre)]
     frac = remaining_frac * min_frac
     if debug:
-        print('picked: [%s] frac=%f' % (picked_iso.id if picked_iso else "None", frac) )
-        
+        print('picked: [%s] frac=%f' % (picked_iso.id if picked_iso else "None", frac) )        
     return (picked_iso, frac, new_mat, new_pre)
-    
-# calc isoform data 
+
+#============================================================================
 def calc_iso(tid, transcript, introns, rnk, conditions, times):
+    """ Calculate isoform data"""
     #print(tid)
         
     # calculate isoforms
@@ -119,9 +77,8 @@ def calc_iso(tid, transcript, introns, rnk, conditions, times):
     for i in range(0,int(rnk)):
         splicing_status = [1] * int(i) + [0] * (int(rnk)-i)
         name = "in"+str(i) if i>0 else "pre"
-        isoforms+=[Isoform(name, [], splicing_status)]
-    isoforms+=[Isoform('mat', [], [1] * rnk)]
-    
+        isoforms+=[Isoform(name, [], splicing_status, None)]
+    isoforms+=[Isoform('mat', [], [1] * rnk, None)]
     # find uninformative introns (with low EE counts in all conditions)
     sum_informative_mat=None
     for cond in conditions:
@@ -134,7 +91,6 @@ def calc_iso(tid, transcript, introns, rnk, conditions, times):
     if sum(informative_intron_mask)==0:
         print("Not enough EE counts for any intron of %s." % (tid))
         return (OrderedDict())
-    
     for cond in conditions:
         EE = list(introns['EE_TC_'+cond])
         EI = list(introns['EI_TC_'+cond])
@@ -142,8 +98,7 @@ def calc_iso(tid, transcript, introns, rnk, conditions, times):
         # calc numbers of reads supporting premature/mature form per intron. 
         # add pseudocount of 1 to each intron
         mat=[x+1 for x in EE]
-        pre=list( (x+y)/2+1 for x,y in zip(EI,IE) )
-        
+        pre=list( (x+y)/2+1 for x,y in zip(EI,IE) )       
         # test (excel)
         # mat=[12 ,   3  ,  2]
         # pre=[4   , 15  ,  18]
@@ -176,7 +131,6 @@ def calc_iso(tid, transcript, introns, rnk, conditions, times):
             iso.fractions.append(frac)
             if debug:
              print("%s: %f" % (iso.id, frac))
-
     ret = OrderedDict()
     for iso in isoforms:
         ret[iso.id] = OrderedDict()
@@ -185,31 +139,15 @@ def calc_iso(tid, transcript, introns, rnk, conditions, times):
     return (ret)
 
 
-if __name__ == '__main__':
-    parser = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
-    parser.add_argument("-conf","--config", type=existing_file, required=True, dest="confF", help="JSON config file")
-    parser.add_argument("-m","--mode", type=str, required=True, dest="mode", help="mode: 'from_slamstr', '1:1_slamstr', '1:1'")
-    parser.add_argument("-o","--out", type=str, required=False, dest="outF", metavar="outF", help="Output file (otional). If not set, results will be written to file configured in 'transcript_data' config property.")
-    args = parser.parse_args()   
-    startTime = time.time()
-    print(logo)
-    
-        
-    # load + check config
-    #config = json.load(open('/Users/niko.popitsch/eclipse-workspace/slamstr/src/test/splicing_simulator/testconfig_data_creator.json'), object_pairs_hook=OrderedDict)
-    config = json.load(open(args.confF), object_pairs_hook=OrderedDict)
-    if "random_seed" in config:
-        random.seed(config["random_seed"])
-    
-    # outoput file
-    outF = args.outF if args.outF else config['transcript_data']
+def calculate_transcript_data(config, config_dir, outdir):
+    """ Calculate a data config file """
+    # output file
+    outF = config['transcript_data']
     if not os.path.isabs(outF):
-        outF = os.path.abspath(outF)      
-    outdir =  os.path.dirname(outF)                       
-    if not os.path.exists(outdir):
-        print("Creating dir " + outdir)
-        os.makedirs(outdir)
-    
+        outF = config_dir + outF
+        
+    mode = config['isoform_mode']      
+    logging.info("Calculating transcript configuration with mode %s" % mode)
     # get readlen (needed for abundance calc)
     readlen=config["readlen"]
     
@@ -221,7 +159,7 @@ if __name__ == '__main__':
     # ------------------------------------------------------------------------------------
     #    from slamstr data
     # ------------------------------------------------------------------------------------
-    if args.mode == 'from_slamstr':
+    if mode == 'from_slamstr':
         # get abundance data
         ab_table=pd.read_csv(config["slamstr_abundance_data_table"],delimiter='\t',encoding='utf-8')
         TAB_ALL=list(ab_table["TAB_ALL_"+conditions[-1]])
@@ -248,12 +186,12 @@ if __name__ == '__main__':
                     out[tid]["abundance"] = abundances[i]
                     out[tid]["isoforms"] = isoform_data
             else:
-                print("Skipped %s due to too-low abundance." % (tid) )
+                logging.warn("Skipped %s due to too-low abundance." % (tid) )
     # ------------------------------------------------------------------------------------
     #    1:1 mat/pre mix with fixed abundance for all transcripts.
     #    input: slamstr_transcript_table with columns transcript_id, gene_name, rnk (=#introns)
     # ------------------------------------------------------------------------------------
-    elif args.mode == '1:1_slamstr':
+    elif mode == '1:1_slamstr':
         # create output
         transcripts = pd.read_csv(config["slamstr_transcript_table"],delimiter='\t',encoding='utf-8')
         base_abundance = config["base_abundance"] if 'base_abundance' in config else 10
@@ -274,18 +212,23 @@ if __name__ == '__main__':
                 out[tid]["abundance"] = abundances[i]
                 out[tid]["isoforms"] = isoform_data
             else:
-                print("Skipped %s due to too-low abundance." % (tid) )
+                logging.warn("Skipped %s due to too-low abundance." % (tid) )
     # ------------------------------------------------------------------------------------
     #    1:1 mat/pre mix with fixed abundance for all transcripts.
     #    input: transcript_ids table with column transcript_id
     #    config: 
     # ------------------------------------------------------------------------------------
-    elif args.mode == '1:1':
+    elif mode == '1:1':
+        assert 'transcript_ids' in config, "For 1:1 mode, a list of transcript ids must be provided in a file referenced by the 'transcript_ids' config property"
         # load GFF
         gff = pr.read_gff3(config["gene_gff"])
         gff_df = gff.df
         # create output
-        transcripts = pd.read_csv(config["transcript_ids"],delimiter='\t',encoding='utf-8')
+        tfile = config["transcript_ids"]
+        if not os.path.isabs(tfile):
+            tfile = config_dir + tfile
+        transcripts = pd.read_csv(tfile,delimiter='\t',encoding='utf-8')
+        logging.info("read %i tids" % len(transcripts))
         base_abundance = config["base_abundance"] if 'base_abundance' in config else 10
         abundances = [base_abundance] * len ( transcripts.index )
         min_abundance = config["min_abundance"] if 'min_abundance' in config else 0.0
@@ -306,14 +249,10 @@ if __name__ == '__main__':
                 out[tid]["abundance"] = abundances[i]
                 out[tid]["isoforms"] = isoform_data
             else:
-                print("Skipped %s due to too-low abundance." % (tid) )
-        
+                logging.warn("Skipped %s due to too-low abundance." % (tid) )
     else:
-        print("Unknown mode %s " % (args.mode))  
-        sys.exit(1)
-        
+        logging.error("Unknown mode %s " % (args.mode))  
+        sys.exit(1)     
     with open(outF, 'w') as config_file:
         json.dump(out, config_file, indent=2)
-        
-    
-    print('Done. Results written to %s' % (outF))
+    logging.info('Done. Results written to %s' % (outF))

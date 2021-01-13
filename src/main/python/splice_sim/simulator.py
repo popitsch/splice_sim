@@ -18,21 +18,13 @@ import gzip
 import logging
 from subprocess import check_output
 from model import Model, Condition, Isoform, Transcript
+from config_creator import calculate_transcript_data
 
-#============================================================================
-# splice sim readme
-#
-# NOTE: splice_sim will not simulate reads for annotations that are shorter than the readlength (as this is 
-# not supported by ART.
-#============================================================================
-VERSION = "0.1"
-logo = '''
-===================================
-Slamstr splice_sim v%s
-===================================
-''' % VERSION
-
-
+def check_config(config):
+    for section in ['dataset_name','mappers','genome_fa','gene_gff','conditions','isoform_mode','transcript_data']:
+        assert section in config, "Missing configuration section %s" % section
+        
+        
 #============================================================================
 # Mapping methods
 #============================================================================
@@ -40,7 +32,8 @@ def get_version(exe):
     cmd = [exe, "--version"]
     return check_output(" ".join(cmd), shell=True)
 
-def runSTAR(bam, ref, reads1=[], reads2=None,  gtf=None, force=True, run_flagstat=False, threads=1, chimeric=0, writeUnmapped=False, doSort=True, additionalParameters=[], STAR_EXE='STAR'):
+
+def runSTAR(bam, ref, reads1=[], reads2=None,  gtf=None, force=True, run_flagstat=False, threads=1, chimeric=0, writeUnmapped=True, doSort=True, additionalParameters=[], STAR_EXE='STAR'):
     """ Run STAR, supports SE+PE and can merge multiple files (needs sambamba access). Can create samtools flagstats """
     success = True
     if files_exist(bam) and not force:
@@ -79,7 +72,8 @@ def runSTAR(bam, ref, reads1=[], reads2=None,  gtf=None, force=True, run_flagsta
             cmd+=["--chimSegmentMin", str(chimeric)]
             cmd+=["--chimOutType", "SeparateSAMold"]
         if writeUnmapped:
-            cmd+=["--outReadsUnmapped", "Fastx"]
+            #cmd+=["--outReadsUnmapped", "Fastx"]
+            cmd+=["--outSAMunmapped", "Within"]
         if gtf:
             cmd+=["--sjdbGTFfile", gtf]
         cmd += additionalParameters
@@ -214,12 +208,12 @@ def postfilter_bam( bam_in, bam_out, tag_tc=None, tag_mp=None):
         #print(read.is_reverse)
         # parse from read name
         read_name = read.query_name
-        # example    : ENSMUST00000100497.10_-_mat_2-151_5_142905417_60M87N40M_142905567,142905452
-        # example (tc): ENSMUST00000100497.10_-_mat_3-253_5_142905603_90M959N10M_142905629_tc:72,58,9
-        is_tc_read = read_name.count('_')==9
+        # example    : ENSMUST00000100497.10_-_mat_2-151_5_1-2,3-4,5-6_142905567,142905452
+        # example (tc): ENSMUST00000100497.10_-_mat_3-253_5_1-2,3-4,5-6_142905629_tc:72,58,9
+        is_tc_read = read_name.count('_')==8
         if not is_tc_read:
             read_name+='_NA'
-        true_tid,true_strand,true_isoform,tag,true_chrom,true_start_abs,true_read_cigar,true_seqerr,tc_pos = read_name.split("_")
+        true_tid,true_strand,true_isoform,tag,true_chrom,true_read_cigar,true_seqerr,tc_pos = read_name.split("_")
         true_seqerr=true_seqerr.split(',') if true_seqerr != 'NA' else None        
         tc_pos=tc_pos.split(',') if tc_pos != 'NA' else None
         is_correct_strand = ( read.is_reverse and true_strand=='-' ) or ((not read.is_reverse) and true_strand=='+') 
@@ -252,49 +246,21 @@ def postfilter_bam( bam_in, bam_out, tag_tc=None, tag_mp=None):
     pysam.index(bam_out)
     return True, n_reads
 
-if __name__ == '__main__':
-    #============================================================================
-    usage = '''                           
-    
-      Copyright 2019 Niko Popitsch. All rights reserved.
-      
-      Licensed under the Apache License 2.0
-      http://www.apache.org/licenses/LICENSE-2.0
-      
-      Distributed on an "AS IS" basis without warranties
-      or conditions of any kind, either express or implied.
-    
-    USAGE
-    '''
-    parser = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
-    parser.add_argument("-c","--config", type=existing_file, required=True, dest="confF", help="JSON config file")
-    parser.add_argument("-f","--force", required=False, action='store_true', dest="force", help="If set, existing results files will be overwritten")
-    parser.add_argument("-o","--out", type=str, required=False, dest="outdir", metavar="outdir", help="Output folder")
-    args = parser.parse_args()   
+
+def simulate_dataset(config, config_dir, outdir, overwrite=False):
+    """ Simulates a dataset. """
     startTime = time.time()
+    logging.info("Simulating dataset %s" % config['dataset_name'])
     
-    # output dir (current dir if none provided)
-    outdir = args.outdir if args.outdir else os.getcwd()
-    if not outdir.endswith("/"):
-        outdir += "/"
+    # output dirs
     if not os.path.exists(outdir):
         print("Creating dir " + outdir)
         os.makedirs(outdir)
     tmpdir = outdir + "/tmp/"
     if not os.path.exists(tmpdir):
         os.makedirs(tmpdir)
-
-    print("Logging to %s" % outdir+'/splicing_simulator.log')
-    logging.basicConfig(filename=outdir+'/splicing_simulator.log', level=logging.DEBUG)
-    logging.info(logo)
     
-    # load + check config
-    #config = json.load(open('/Users/niko.popitsch/eclipse-workspace/slamstr/src/test/splicing_simulator/testconfig.json'), object_pairs_hook=OrderedDict)
-    config = json.load(open(args.confF), object_pairs_hook=OrderedDict)
-    with open(outdir+'/splicing_simulator.effective_conf.json', 'w') as out:
-        print(json.dumps(config, indent=4, sort_keys=True), file=out)
-    if "random_seed" in config:
-        random.seed(config["random_seed"])
+    # write ORI files?
     write_uncoverted=config["write_uncoverted"] if "write_uncoverted" in config else True
     
     # executables
@@ -303,15 +269,22 @@ if __name__ == '__main__':
     igvtools_cmd = config["executables"]["igvtools_cmd"] if "executables" in config and "igvtools_cmd" in config["executables"] else 'igvtools'
     threads=config["threads"] if "threads" in config else 1
         
-    if args.force:
+    if overwrite:
         logging.info("NOTE: existing result files will be overwritten!")
     
     # read transcript data from external file if not in config
-    if 'transcripts' not in config:
+    if 'transcripts' in config:
+        logging.info("Reading transcript configuration from config file.")
+    else:
         assert "transcript_data" in config, "Transcript data needs to be configured either in config file ('transcripts' section) or in an external file referenced via 'transcript_data'"
         tfile = config['transcript_data']
         if not os.path.isabs(tfile):
-            tfile = os.path.dirname(os.path.abspath(args.confF))+"/"+tfile
+            tfile = config_dir+"/"+tfile
+        if not files_exist(tfile):
+            logging.info("Creating external transcript config file %s" % tfile)
+            calculate_transcript_data(config, config_dir, outdir)
+            
+        logging.info("Reading transcript configuration from external config file %s" % tfile)
         tdata = json.load(open(tfile), object_pairs_hook=OrderedDict)
         config["transcripts"]=tdata
     
@@ -330,7 +303,7 @@ if __name__ == '__main__':
     logging.info("Calculating isoform data")
     for cond in m.conditions:
         fout = tmpdir + config['dataset_name'] + "." + cond.id + ".fa"
-        if args.force or (not files_exist(fout) and not files_exist(fout+".gz")):
+        if overwrite or (not files_exist(fout) and not files_exist(fout+".gz")):
             buf=[]
             with open(fout, 'w') as out:
                 for t in m.transcripts.values():
@@ -363,7 +336,7 @@ if __name__ == '__main__':
         f_truth = tmpdir + config['dataset_name'] + "." + cond.id + ".truth_tsv"
         f_truth_tmp = f_truth + ".tmp"
         f_fq =  tmpdir + config['dataset_name'] + "." + cond.id + ".fq"
-        if args.force or not files_exist([f_fq+".gz", f_truth+".gz" ]):
+        if overwrite or not files_exist([f_fq+".gz", f_truth+".gz" ]):
             # NOTE: use 2x coverage as ~50% of reads will be simulated for wrong strand and will be dropped in postprocessing
             cmd=[art_cmd, "-ss", "HS25", "-i", f, "-l", str(config["readlen"]), "-f", str(cond.coverage * 2), "-na", "--samout", "-o", art_out_prefix ]
             if "random_seed" in config:
@@ -392,10 +365,14 @@ if __name__ == '__main__':
                             end_abs, bid_end = iso.rel2abs_pos(r.reference_end-1)
                             if read_strand == '-': # swap start/end coords
                                 start_abs, bid_start, end_abs, bid_end = end_abs, bid_end, start_abs, bid_start 
-                            read_cigar = iso.calc_cigar(start_abs, end_abs)
+                            read_cigar = iso.calc_cigartuples(start_abs, end_abs)
+                            read_cigar = ','.join(["%i-%i" % (a,b) for (a,b) in read_cigar]) # to parse cigar_tuples = [tuple(x.split('-')) for x in read_cigar.split(',')]
                             read_spliced = 1 if bid_start != bid_end else 0
                             rel_pos = cigar_to_rel_pos(r)
-                            read_name = "%s_%s_%i_%s_%s" % (r.query_name, iso.t.transcript.Chromosome, start_abs, read_cigar, (",".join(str(iso.rel2abs_pos(p)[0]) for p in rel_pos) )  if len(rel_pos)>0 else 'NA' )
+                            read_name = "%s_%s_%s_%s" % (r.query_name,                                                             
+                                                            iso.t.transcript.Chromosome, 
+                                                            read_cigar, 
+                                                            (",".join(str(iso.rel2abs_pos(p)[0]) for p in rel_pos) )  if len(rel_pos)>0 else 'NA' )
                             print("%s\t%i\t%i\t%s\t%s\t%i\t%i\t%i\t%s" % (read_name, 
                                                                           r.reference_start,
                                                                           r.reference_end, 
@@ -430,7 +407,7 @@ if __name__ == '__main__':
         f_all = tmpdir + config['dataset_name'] + "." + cond.id + ".fq"
         f_tc  = tmpdir + config['dataset_name'] + "." + cond.id + ".TC.fq"
         hist_tc=[]
-        if args.force or not files_exist(f_tc+".gz"):
+        if overwrite or not files_exist(f_tc+".gz"):
             with open(f_tc, 'w') as out:
                 with open(f_all, 'r') as fin:
                     buf=[]
@@ -506,24 +483,24 @@ if __name__ == '__main__':
                     star_splice_gtf=config['mappers'][mapper]['star_splice_gtf'] if 'star_splice_gtf' in config['mappers'][mapper] else None
                     star_genome_idx=config['mappers'][mapper]['star_genome_idx']
                     if write_uncoverted:
-                        if args.force or not files_exist(final_all):
+                        if overwrite or not files_exist(final_all):
                             runSTAR(b_all, 
                                     star_genome_idx, 
                                     reads1=[f_all], 
                                     gtf=star_splice_gtf,
                                     threads=threads, 
                                     STAR_EXE=STAR_EXE,
-                                    force=args.force )
+                                    force=overwrite )
                         else:
                             logging.warn("Will not re-create existing file %s" % (b_all))
-                    if args.force or not files_exist(final_tc):
+                    if overwrite or not files_exist(final_tc):
                         runSTAR(b_tc, 
                             star_genome_idx, 
                             reads1=[f_tc], 
                             gtf=star_splice_gtf,
                             threads=threads, 
                             STAR_EXE=STAR_EXE,
-                            force=args.force )   
+                            force=overwrite )   
                     else:
                         logging.warn("Will not re-create existing file %s" % (b_tc))            
                 elif mapper == "HISAT2_TLA":
@@ -532,7 +509,7 @@ if __name__ == '__main__':
                     hisat2_idx2=config['mappers'][mapper]['hisat2_idx2']
                     hisat2_kss=config['mappers'][mapper]['hisat2_kss'] if 'hisat2_kss' in config['mappers'][mapper] else None
                     if write_uncoverted:
-                        if args.force or not files_exist(final_all):
+                        if overwrite or not files_exist(final_all):
                             runHISAT2_TLA(b_all, 
                                     config["genome_fa"], 
                                     fq=f_all,
@@ -541,10 +518,10 @@ if __name__ == '__main__':
                                     known_splicesites=hisat2_kss,
                                     threads=threads, 
                                     HISAT2_EXE=HISAT2_EXE,
-                                    force=args.force )
+                                    force=overwrite )
                         else:
                             logging.warn("Will not re-create existing file %s" % (b_all))
-                    if args.force or not files_exist(final_tc):
+                    if overwrite or not files_exist(final_tc):
                         runHISAT2_TLA(b_tc, 
                             config["genome_fa"], 
                             fq=f_tc,
@@ -553,7 +530,7 @@ if __name__ == '__main__':
                             known_splicesites=hisat2_kss,
                             threads=threads, 
                             HISAT2_EXE=HISAT2_EXE,
-                            force=args.force )
+                            force=overwrite )
                     else:
                         logging.warn("Will not re-create existing file %s" % (b_tc))
                 else:
@@ -622,7 +599,7 @@ if __name__ == '__main__':
         logging.info("Creating TDF files for %i bams" % (len(bams)))
         igvtools_log=tmpdir + config['dataset_name'] + ".igvtools.log" 
         for b in list(bams.values()):
-            if args.force or not files_exist(b+".tdf"):
+            if overwrite or not files_exist(b+".tdf"):
                 create_tdf(b, b+".tdf", m.chrom_sizes, igvtools_cmd=igvtools_cmd, logfile=igvtools_log)
     
     logging.info("All done in %s" % str(datetime.timedelta(seconds=time.time()-startTime)))

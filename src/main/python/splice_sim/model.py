@@ -27,18 +27,19 @@ class Isoform():
         self.fractions = fractions
         self.splicing_status = splicing_status
         self.t = transcript
-        self.strand = self.t.transcript.Strand
-        # extract alignment blocks. Those contain absolute coords and are always ordered by genomic coords 
-        # (e.g., [(16101295, 16101359), (16101727, 16101936), (16102490, 16102599), (16102692, 16102829), (16103168, 16103334), (16103510, 16103684), (16104365, 16104662)])
-        self.aln_blocks=[]
-        bstart=self.t.transcript.Start
-        for idx, splicing in list(enumerate(self.splicing_status)):
-            if splicing==1:
-                bend=self.t.introns.iloc[idx].Start-1 # last exonic 1-based pos
-                self.aln_blocks+=[(bstart, bend)]
-                bstart=self.t.introns.iloc[idx].End+1 # 1st exonic 1-based pos
-        bend=self.t.transcript.End
-        self.aln_blocks+=[(bstart, bend)]
+        if self.t is not None:
+            self.strand = self.t.transcript.Strand
+            # extract alignment blocks. Those contain absolute coords and are always ordered by genomic coords 
+            # (e.g., [(16101295, 16101359), (16101727, 16101936), (16102490, 16102599), (16102692, 16102829), (16103168, 16103334), (16103510, 16103684), (16104365, 16104662)])
+            self.aln_blocks=[]
+            bstart=self.t.transcript.Start
+            for idx, splicing in list(enumerate(self.splicing_status)):
+                if splicing==1:
+                    bend=self.t.introns.iloc[idx].Start-1 # last exonic 1-based pos
+                    self.aln_blocks+=[(bstart, bend)]
+                    bstart=self.t.introns.iloc[idx].End+1 # 1st exonic 1-based pos
+            bend=self.t.transcript.End
+            self.aln_blocks+=[(bstart, bend)]
         #print("alignment blocks: %s" % (self.aln_blocks))       
     def rel2abs_pos(self, rel_pos):
         """ convert isoform-relative coordinates to genomic coordinates.
@@ -62,6 +63,7 @@ class Isoform():
         return (ret, block_id)
     def block_contains(self, bstart, bend, abs_pos):
         return abs_pos>=bstart and abs_pos<=bend
+    @DeprecationWarning
     def calc_cigar(self, abs_start, abs_end):
         """ calculate cigar """
         assert(abs_start<abs_end)
@@ -85,7 +87,27 @@ class Isoform():
             elif started:
                 cigar+="%iN%iM" % (bstart-gap_start, bwidth) # gap
                 gap_start=bend+1                
-        return cigar       
+        return cigar 
+    def calc_cigartuples(self, abs_start, abs_end):      
+        """ calculate cigar tuples (comparable to pysam rec.get_blocks() """
+        assert(abs_start<abs_end)
+        ablocks = self.aln_blocks
+        cigartuples=[]
+        started=False
+        for bstart,bend in ablocks:
+            bwidth = bend-bstart+1
+            if self.block_contains(bstart, bend, abs_start):
+                if self.block_contains(bstart, bend, abs_end): # start and stop in same block
+                    cigartuples+=[(abs_start, abs_end)]
+                    return cigartuples
+                cigartuples+=[(abs_start, bend)]
+                started=True
+            elif self.block_contains(bstart, bend, abs_end):
+                cigartuples+=[(bstart, abs_end)]
+                return cigartuples
+            elif started:
+                cigartuples+=[(bstart, bend)]
+        return cigartuples      
     def __repr__(self):
         return self.__str__()  
     def __str__(self):

@@ -233,7 +233,7 @@ def postfilter_bam( bam_in, bam_out, tag_tc=None, tag_mp=None):
         read.query_name = '_'.join([true_tid,true_strand,true_isoform,tag,true_chrom,true_read_cigar,true_seqerr,tc_pos])
 
         if is_tc_read:
-            if valid_tc==0: # no TC conversion
+            if valid_tc==0: # no valid TC conversion 
                 read.set_tag(tag=tag_tc, value=0, value_type="i")
                 # set read color to light grey!
                 read.set_tag(tag='YC', value='200,200,200' if is_correct_strand else '255,0,0', value_type="Z")

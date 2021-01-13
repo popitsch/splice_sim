@@ -160,6 +160,9 @@ def calculate_transcript_data(config, config_dir, outdir):
     #    from slamstr data
     # ------------------------------------------------------------------------------------
     if mode == 'from_slamstr':
+        assert 'slamstr_abundance_data_table' in config, "For from_slamstr mode, a slamstr_abundance_data_table must be provided in a file referenced by the 'slamstr_abundance_data_table' config property"
+        assert 'slamstr_transcript_table' in config, "For from_slamstr mode, a slamstr_transcript_table must be provided in a file referenced by the 'slamstr_transcript_table' config property"
+        assert 'slamstr_intron_table' in config, "For from_slamstr mode, a slamstr_intron_table must be provided in a file referenced by the 'slamstr_intron_table' config property"
         # get abundance data
         ab_table=pd.read_csv(config["slamstr_abundance_data_table"],delimiter='\t',encoding='utf-8')
         TAB_ALL=list(ab_table["TAB_ALL_"+conditions[-1]])
@@ -193,6 +196,7 @@ def calculate_transcript_data(config, config_dir, outdir):
     # ------------------------------------------------------------------------------------
     elif mode == '1:1_slamstr':
         # create output
+        assert 'slamstr_transcript_table' in config, "For 1:1_slamstr mode, a slamstr_transcript_table must be provided in a file referenced by the 'slamstr_transcript_table' config property"
         transcripts = pd.read_csv(config["slamstr_transcript_table"],delimiter='\t',encoding='utf-8')
         base_abundance = config["base_abundance"] if 'base_abundance' in config else 10
         abundances = [base_abundance] * len ( transcripts.index )

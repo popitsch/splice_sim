@@ -224,7 +224,7 @@ def postfilter_bam( bam_in, bam_out, tag_tc=None, tag_mp=None):
         # calc absolute t/c conversions
         if tc_pos != 'NA':
             tc_pos = [readidx2genpos_abs(read,int(x)) for x in tc_pos.split(',')] # convert to absolute pos
-            tc_pos = [x for x in gpos if x is not None] # drop invalid (softclipped) t/c conversions
+            tc_pos = [x for x in tc_pos if x is not None] # drop invalid (softclipped) t/c conversions
         tc_pos=','.join([readidx2genpos_abs(read,int(x)) for x in tc_pos.split(',')]) if tc_pos != 'NA' else 'NA' 
         is_correct_strand = ( read.is_reverse and true_strand=='-' ) or ((not read.is_reverse) and true_strand=='+') 
         

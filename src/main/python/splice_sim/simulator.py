@@ -221,9 +221,9 @@ def postfilter_bam( bam_in, bam_out, tag_tc=None, tag_mp=None):
         true_tid,true_strand,true_isoform,tag,true_chrom,true_read_cigar,true_seqerr,tc_pos = read_name.split("_")
         #true_seqerr=true_seqerr.split(',') if true_seqerr != 'NA' else None        
         # calc absolute t/c conversions
-        tc_pos=[readidx2genpos_abs(read,int(x)) for x in tc_pos.split(',')] if tc_pos != 'NA' else None 
+        tc_pos=','.join([readidx2genpos_abs(read,int(x)) for x in tc_pos.split(',')]) if tc_pos != 'NA' else 'NA' 
         is_correct_strand = ( read.is_reverse and true_strand=='-' ) or ((not read.is_reverse) and true_strand=='+') 
-        read.query_name = '_'.join([true_tid,true_strand,true_isoform,tag,true_chrom,true_read_cigar,true_seqerr,','.join(tc_pos) if tc_pos else 'NA'])
+        read.query_name = '_'.join([true_tid,true_strand,true_isoform,tag,true_chrom,true_read_cigar,true_seqerr,tc_pos])
 
         if is_tc_read:
             if len(tc_pos)==0: # no TC conversion

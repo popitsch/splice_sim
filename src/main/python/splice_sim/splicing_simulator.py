@@ -219,11 +219,11 @@ def postfilter_bam( bam_in, bam_out, tag_tc=None, tag_mp=None):
         is_tc_read = read_name.count('_')==9
         if not is_tc_read:
             read_name+='_NA'
-        true_tid,true_strand,true_isoform,tag,true_chrom,true_start_abs,true_read_cigar,true_seqerr,tc_pos = read.query_name.split("_")
+        true_tid,true_strand,true_isoform,tag,true_chrom,true_start_abs,true_read_cigar,true_seqerr,tc_pos = read_name.split("_")
         true_seqerr=true_seqerr.split(',') if true_seqerr != 'NA' else None        
         tc_pos=tc_pos.split(',') if tc_pos != 'NA' else None
         is_correct_strand = ( read.is_reverse and true_strand=='-' ) or ((not read.is_reverse) and true_strand=='+') 
-        read.query_name = query_name 
+        read.query_name = read_name 
         if is_tc_read:
             if not tc_pos[0]: # no TC conversion
                 read.set_tag(tag=tag_tc, value=0, value_type="i")

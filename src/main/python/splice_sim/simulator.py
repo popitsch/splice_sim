@@ -222,26 +222,22 @@ def postfilter_bam( bam_in, bam_out, tag_tc=None, tag_mp=None):
         true_tid,true_strand,true_isoform,tag,true_chrom,true_read_cigar,true_seqerr,tc_pos = read_name.split("_")
         #true_seqerr=true_seqerr.split(',') if true_seqerr != 'NA' else None        
         # calc absolute t/c conversions
+        valid_tc=0
         if tc_pos != 'NA':
             tc_pos = [readidx2genpos_abs(read,int(x)) for x in tc_pos.split(',')] # convert to absolute pos
-            tc_pos = ','.join([str(x) for x in tc_pos if x is not None]) # drop invalid (softclipped) t/c conversions
+            tc_pos = [str(x) for x in tc_pos if x is not None]
+            valid_tc=len(tc_pos)
+            tc_pos = ','.join(tc_pos) # drop invalid (softclipped) t/c conversions
         is_correct_strand = ( read.is_reverse and true_strand=='-' ) or ((not read.is_reverse) and true_strand=='+') 
         
         read.query_name = '_'.join([true_tid,true_strand,true_isoform,tag,true_chrom,true_read_cigar,true_seqerr,tc_pos])
 
         if is_tc_read:
-            if len(tc_pos)==0: # no TC conversion
+            if valid_tc==0: # no TC conversion
                 read.set_tag(tag=tag_tc, value=0, value_type="i")
                 # set read color to light grey!
                 read.set_tag(tag='YC', value='200,200,200' if is_correct_strand else '255,0,0', value_type="Z")
             else:
-                slamdunk_type=2 if read.is_reverse else 16 # see paper supplement
-                valid_tc=0
-                mp_str=[]
-                for gpos in tc_pos:
-                    if gpos is not None:
-                        valid_tc+=1
-                        mp_str+=[str(slamdunk_type)+":"+str(rpos)+":"+str(gpos)]
                 read.set_tag(tag=tag_tc, value=valid_tc, value_type="i")
                 # set blue read color intensity relative to number of tc conversions!
                 intensity = 255/min(valid_tc, 25) if valid_tc > 0 else 255

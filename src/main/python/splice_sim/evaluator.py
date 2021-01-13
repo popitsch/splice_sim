@@ -46,6 +46,19 @@ def evaluate_dataset(config, config_dir, outdir, overwrite=False):
         print("Creating dir " + outdir)
         os.makedirs(outdir)
 
+    # read transcript data from external file if not in config
+    if 'transcripts' in config:
+        logging.info("Reading transcript configuration from config file.")
+    else:
+        assert "transcript_data" in config, "Transcript data needs to be configured either in config file ('transcripts' section) or in an external file referenced via 'transcript_data'"
+        tfile = config['transcript_data']
+        if not os.path.isabs(tfile):
+            tfile = config_dir+"/"+tfile
+        assert files_exist(tfile), "transcript_data file not found: %s" % tdata
+        logging.info("Reading transcript configuration from external config file %s" % tfile)
+        tdata = json.load(open(tfile), object_pairs_hook=OrderedDict)
+        config["transcripts"]=tdata
+        
     # instantiate model
     m = Model( config )
     logging.info("Configured conditions: %s" % (", ".join(str(x) for x in m.conditions)) )

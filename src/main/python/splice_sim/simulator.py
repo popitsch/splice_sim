@@ -214,17 +214,19 @@ def postfilter_bam( bam_in, bam_out, tag_tc=None, tag_mp=None):
         # parse from read name
         read_name = read.query_name
         # example    : ENSMUST00000100497.10_-_mat_2-151_5_1-2,3-4,5-6_142905567,142905452
-        # example (tc): ENSMUST00000100497.10_-_mat_3-253_5_1-2,3-4,5-6_142905629_tc:72,58,9
+        # example (tc): ENSMUST00000100497.10_-_mat_3-253_5_1-2,3-4,5-6_142905629_72,58,9
         is_tc_read = read_name.count('_')==7
         if not is_tc_read:
-            read_name+='_NA'
+            read_name+='_NA' # no tc tag!
         true_tid,true_strand,true_isoform,tag,true_chrom,true_read_cigar,true_seqerr,tc_pos = read_name.split("_")
-        true_seqerr=true_seqerr.split(',') if true_seqerr != 'NA' else None        
-        tc_pos=tc_pos[3:].split(',') if tc_pos != 'NA' else None
+        #true_seqerr=true_seqerr.split(',') if true_seqerr != 'NA' else None        
+        # calc absolute t/c conversions
+        tc_pos=[readidx2genpos_abs(read,int(x)) for x in tc_pos.split(',')] if tc_pos != 'NA' else None 
         is_correct_strand = ( read.is_reverse and true_strand=='-' ) or ((not read.is_reverse) and true_strand=='+') 
-        read.query_name = read_name 
+        read.query_name = '_'.join(true_tid,true_strand,true_isoform,tag,true_chrom,true_read_cigar,true_seqerr,','.join(tc_pos))
+
         if is_tc_read:
-            if not tc_pos[0]: # no TC conversion
+            if len(tc_pos)==0: # no TC conversion
                 read.set_tag(tag=tag_tc, value=0, value_type="i")
                 # set read color to light grey!
                 read.set_tag(tag='YC', value='200,200,200' if is_correct_strand else '255,0,0', value_type="Z")
@@ -232,9 +234,7 @@ def postfilter_bam( bam_in, bam_out, tag_tc=None, tag_mp=None):
                 slamdunk_type=2 if read.is_reverse else 16 # see paper supplement
                 valid_tc=0
                 mp_str=[]
-                for x in tc_pos:
-                    rpos = int(x)
-                    gpos = readidx2genpos_rel(read, rpos)
+                for gpos in tc_pos:
                     if gpos is not None:
                         valid_tc+=1
                         mp_str+=[str(slamdunk_type)+":"+str(rpos)+":"+str(gpos)]
@@ -403,7 +403,7 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                             names=lines[0].split("_")
                             seq, conv=add_tc(lines[1], names[1], cond.conversion_rate)
                             hist_tc+=[len(conv)]
-                            buf+=["_".join(names)+"_tc:"+",".join(str(x) for x in conv)+"\n"]
+                            buf+=["_".join(names)+",".join(str(x) for x in conv)+"\n"]
                             buf+=[seq+"\n"]
                             buf+=[lines[2]+"\n"]
                             buf+=[lines[3]+"\n"]

@@ -338,10 +338,8 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
         f_fq_both = art_out_prefix + ".fq"
         f_sam_both =  art_out_prefix + ".sam"
         # filtered final output
-        f_truth = tmpdir + config['dataset_name'] + "." + cond.id + ".truth_tsv"
-        f_truth_tmp = f_truth + ".tmp"
         f_fq =  tmpdir + config['dataset_name'] + "." + cond.id + ".fq"
-        if overwrite or not files_exist([f_fq+".gz", f_truth+".gz" ]):
+        if overwrite or not files_exist([f_fq+".gz" ]):
             # NOTE: use 2x coverage as ~50% of reads will be simulated for wrong strand and will be dropped in postprocessing
             cmd=[art_cmd, "-ss", "HS25", "-i", f, "-l", str(config["readlen"]), "-f", str(cond.coverage * 2), "-na", "--samout", "-o", art_out_prefix ]
             if "random_seed" in config:
@@ -350,57 +348,39 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
             if not success:
                 logging.error('error simulating %s' % (f_fq_both))
     
-            # filter reads that map to wrong strand and write truth file
+            # filter reads that map to wrong strand and extend read names
             # get alignment positions from art aln file. Note that seq-read errors are encoded in the 
             # CIGAR string (e.g., '16=1X4=1X78=') means that bases 17 and 22 are mismatches wrt. reference.
             # Q: why are there no D/I entries in the cigarstrings? How to find seqerr INDELs?
-            with open(f_truth_tmp, 'w') as out_truth:
-                with open(f_fq, 'w') as out_fq:
-                    sam = pysam.AlignmentFile(f_sam_both, "rb")
-                    read_stats={}
-                    for r in sam.fetch():
-                        # e.g. 'ENSMUST00000099151.5_+_mat_0-400'. tag ('0-400') consists of running number from 'abundance' and running number form ART
-                        tid,transcript_strand,iso_id,tag=r.query_name.split("_")
-                        read_strand = "-" if r.is_reverse else "+"
-                        read_stats['all_'+read_strand]=read_stats['all_'+read_strand]+1 if 'all_'+read_strand in read_stats else 1
-                        if transcript_strand == read_strand: # NOTE: reads that were mapped to opposite strand will be dropped later in post_filtering step!
-                            valid_reads[cond].add(r.query_name)
-                            iso = m.transcripts[tid].isoforms[iso_id]
-                            start_abs, bid_start = iso.rel2abs_pos(r.reference_start)
-                            end_abs, bid_end = iso.rel2abs_pos(r.reference_end-1)
-                            if read_strand == '-': # swap start/end coords
-                                start_abs, bid_start, end_abs, bid_end = end_abs, bid_end, start_abs, bid_start 
-                            read_cigar = iso.calc_cigartuples(start_abs, end_abs)
-                            read_cigar = ','.join(["%i-%i" % (a,b) for (a,b) in read_cigar]) # to parse cigar_tuples = [tuple(x.split('-')) for x in read_cigar.split(',')]
-                            read_spliced = 1 if bid_start != bid_end else 0
-                            rel_pos = cigar_to_rel_pos(r)
-                            read_name = "%s_%s_%s_%s" % (r.query_name,                                                             
-                                                            iso.t.transcript.Chromosome, 
-                                                            read_cigar, 
-                                                            (",".join(str(iso.rel2abs_pos(p)[0]) for p in rel_pos) )  if len(rel_pos)>0 else 'NA' )
-                            print("%s\t%i\t%i\t%s\t%s\t%i\t%i\t%i\t%s" % (read_name, 
-                                                                          r.reference_start,
-                                                                          r.reference_end, 
-                                                                          (",".join(str(p) for p in rel_pos) ) if len(rel_pos)>0 else 'NA',
-                                                                          iso.t.transcript.Chromosome,
-                                                                          start_abs,
-                                                                          end_abs, 
-                                                                          read_spliced, 
-                                                                          (",".join(str(iso.rel2abs_pos(p)[0]) for p in rel_pos) )  if len(rel_pos)>0 else 'NA'  
-                                                                          ), file=out_truth )
-                            qstr = ''.join(map(lambda x: chr( x+33 ), r.query_qualities))
-                            print("@%s\n%s\n+\n%s" % ( read_name, r.query_sequence, qstr), file=out_fq )
-                        else:
-                            read_stats['dropped_'+read_strand]=read_stats['dropped_'+read_strand]+1 if 'dropped_'+read_strand in read_stats else 1
-            # sort truth file
-            with open(f_truth, 'w') as out_truth:
-                print("read_name\tstart_rel\tend_rel\tseq_err_pos_rel\tchr_abs\tstart_abs\tend_abs\tread_spliced\tseq_err_pos_abs", file=out_truth)
-            success = success and pipelineStep(f_truth_tmp, f_truth, ["sort", "--parallel="+str(threads), "-k5,5", "-k6,6n", f_truth_tmp], shell=True, stdout=f_truth, append=True)
+            with open(f_fq, 'w') as out_fq:
+                sam = pysam.AlignmentFile(f_sam_both, "rb")
+                read_stats={}
+                for r in sam.fetch():
+                    # e.g. 'ENSMUST00000099151.5_+_mat_0-400'. tag ('0-400') consists of running number from 'abundance' and running number form ART
+                    tid,transcript_strand,iso_id,tag=r.query_name.split("_")
+                    read_strand = "-" if r.is_reverse else "+"
+                    read_stats['all_'+read_strand]=read_stats['all_'+read_strand]+1 if 'all_'+read_strand in read_stats else 1
+                    if transcript_strand == read_strand: # NOTE: reads that were mapped to opposite strand will be dropped later in post_filtering step!
+                        valid_reads[cond].add(r.query_name)
+                        iso = m.transcripts[tid].isoforms[iso_id]
+                        start_abs, bid_start = iso.rel2abs_pos(r.reference_start)
+                        end_abs, bid_end = iso.rel2abs_pos(r.reference_end-1)
+                        if read_strand == '-': # swap start/end coords
+                            start_abs, bid_start, end_abs, bid_end = end_abs, bid_end, start_abs, bid_start 
+                        read_cigar = iso.calc_cigartuples(start_abs, end_abs)
+                        read_cigar = ','.join(["%i-%i" % (a,b) for (a,b) in read_cigar]) # to parse cigar_tuples = [tuple(x.split('-')) for x in read_cigar.split(',')]
+                        read_spliced = 1 if bid_start != bid_end else 0
+                        rel_pos = cigar_to_rel_pos(r)
+                        read_name = "%s_%s_%s_%s" % (r.query_name,                                                             
+                                                        iso.t.transcript.Chromosome, 
+                                                        read_cigar, 
+                                                        (",".join(str(iso.rel2abs_pos(p)[0]) for p in rel_pos) )  if len(rel_pos)>0 else 'NA' )
+                        qstr = ''.join(map(lambda x: chr( x+33 ), r.query_qualities))
+                        print("@%s\n%s\n+\n%s" % ( read_name, r.query_sequence, qstr), file=out_fq )
+                    else:
+                        read_stats['dropped_'+read_strand]=read_stats['dropped_'+read_strand]+1 if 'dropped_'+read_strand in read_stats else 1
             if success:
-                bgzip(f_truth, override=True, delinFile=True, threads=threads)
-                f_truth+='.gz'
-                tabix(f_truth, additionalParameters=["-S 1 -s 5 -b 6 -e 7"])
-                removeFile([f_fq_both, f_sam_both,f_truth_tmp])
+                removeFile([f_fq_both, f_sam_both])
             logging.debug(read_stats)
     
         else:

@@ -73,7 +73,7 @@ if __name__ == '__main__':
     #============================================================================
     config = json.load(open(args.config_file), object_pairs_hook=OrderedDict)
     check_config(config)
-    cdir = os.path.dirname(args.config_file)+'/'
+    cdir = os.path.abspath(os.path.dirname(args.config_file)+'/')
     
     # output dir (current dir if none provided)
     outdir = (args.outdir if args.outdir else os.getcwd()) + '/' + config['dataset_name'] +'/'

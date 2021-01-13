@@ -207,7 +207,7 @@ def postfilter_bam( bam_in, bam_out, tag_tc=None, tag_mp=None):
     n_reads=0
     f_reads=0
     for read in samin.fetch():
-        if read.is_secondary() or read.is_supplementary():
+        if read.is_secondary or read.is_supplementary:
             f_reads+=1
             continue
         #print(read.is_reverse)

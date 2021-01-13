@@ -65,7 +65,7 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
 
     fout = outdir+'reads.tsv'
     with open(fout, 'w') as out:
-        print("coords\tread_name\tcategory\tmapper\tcondition\toverlap")
+        print("coords\tread_name\tcategory\tmapper\tcondition\toverlap", file=out)
         for cond in m.conditions:
             for mapper in config['mappers'].keys():
                 bamdir_all = simdir + "bam_ori/" + mapper + "/"

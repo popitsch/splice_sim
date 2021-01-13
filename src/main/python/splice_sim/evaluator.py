@@ -34,7 +34,7 @@ def evaluate_bam(bam_file, category, mapper, condition, out):
 # bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/HISAT2_TLA/small4.5min.HISAT2_TLA.TC.bam'
 # evaluate_bam(bam, 'test', 'map', 'cond', None)
      
-def evaluate_dataset(config, config_dir, outdir, overwrite=False):
+def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
     """ Evaluates a dataset. """
     startTime = time.time()
 
@@ -68,8 +68,8 @@ def evaluate_dataset(config, config_dir, outdir, overwrite=False):
         print("coords\tread_name\tcategory\tmapper\tcondition\toverlap")
         for cond in m.conditions:
             for mapper in config['mappers'].keys():
-                bamdir_all = outdir + "bam_ori/" + mapper + "/"
-                bamdir_tc  = outdir + "bam_tc/" + mapper + "/"
+                bamdir_all = simdir + "bam_ori/" + mapper + "/"
+                bamdir_tc  = simdir + "bam_tc/" + mapper + "/"
                 final_all  = bamdir_all + config['dataset_name'] + "." + cond.id + "."+mapper+".bam"
                 final_tc   = bamdir_tc  + config['dataset_name'] + "." + cond.id + "."+mapper+".TC.bam"
                 evaluate_bam(final_all,'all',mapper,cond.id, out)    

@@ -112,9 +112,10 @@ def readidx2genpos_rel( read, idx ):
 
 def readidx2genpos_abs( read, idx ):
     """ Converts read positions to genomic positions (1-based) by taking all cigar operations into account. """
-    if len(read.get_aligned_pairs(matches_only=True))<idx:
+    pairs = read.get_aligned_pairs(matches_only=True)
+    if len(pairs)<=idx or len(pairs[idx-1])==0:
         return None
-    return (read.get_aligned_pairs(matches_only=True)[idx-1][1]+1+1)
+    return (pairs[idx][1]+1)
  
 def cigar_to_rel_pos(read):
     """ converts a (art_illumina) cigar string to a set of relative ref-mismatch (=seqerr) positions (0-based) """

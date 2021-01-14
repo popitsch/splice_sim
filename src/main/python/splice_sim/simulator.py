@@ -356,7 +356,7 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                     tid,transcript_strand,iso_id,tag=r.query_name.split("_")
                     read_strand = "-" if r.is_reverse else "+"
                     if transcript_strand == read_strand: # NOTE: reads that were mapped to opposite strand will be dropped later in post_filtering step!
-                        simulated_read_stats[cond,rid]+=1
+                        simulated_read_stats[cond,tid]+=1
                         iso = m.transcripts[tid].isoforms[iso_id]
                         start_abs, bid_start = iso.rel2abs_pos(r.reference_start)
                         end_abs, bid_end = iso.rel2abs_pos(r.reference_end-1)

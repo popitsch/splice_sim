@@ -206,7 +206,7 @@ def postfilter_bam( bam_in, bam_out, tag_tc=None, tag_mp=None):
         tag_mp="xp" 
     n_reads=0
     f_reads=0
-    for read in samin.fetch():
+    for read in samin.fetch(until_eof=True): # NOTE important to add until_eof=True otherwise unmapped reads will be skipped.
         if read.is_secondary or read.is_supplementary:
             f_reads+=1
             continue
@@ -527,14 +527,14 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                 if files_exist([b_all]):
                     success,n_reads, f_reads = postfilter_bam( b_all, final_all, tag_tc, tag_mp)
                     if success:
-                        removeFile([b_all, b_all+".bai"])
+                        #removeFile([b_all, b_all+".bai"]) # remove unfiltered/original BAM
                         stats+=[Stat("all_reads", n_reads,cond=cond, mapper=mapper)]
                         stats+=[Stat("all_filtered_secondary_alignments", f_reads,cond=cond, mapper=mapper)]
     
                 if files_exist([b_tc]):
                     success,n_reads,f_reads = postfilter_bam( b_tc, final_tc, tag_tc, tag_mp)
                     if success:
-                        removeFile([b_tc, b_tc+".bai"])
+                        #removeFile([b_tc, b_tc+".bai"]) # remove unfiltered/original BAM
                         stats+=[Stat("tc_reads", n_reads,cond=cond, mapper=mapper)]
                         stats+=[Stat("tc_filtered_secondary_alignments", f_reads,cond=cond, mapper=mapper)]
     

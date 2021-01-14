@@ -18,8 +18,9 @@ from model import Model, Condition, Isoform, Transcript
 
 
 def evaluate_bam(bam_file, category, mapper, condition, out):
+    loggin.info("Evaluating %s" % bam_file)
     samin = pysam.AlignmentFile(bam_file, "rb")
-    for read in samin.fetch():
+    for read in samin.fetch(until_eof=True):
         read_name=read.query_name
         true_tid,true_strand,true_isoform,tag,true_chr,true_read_cigar,true_seqerr,tc_pos = read_name.split("_")
         n_true_seqerr=len(true_seqerr.split(',')) if true_seqerr != 'NA' else 0
@@ -77,7 +78,7 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
                 final_tc   = bamdir_tc  + config['dataset_name'] + "." + cond.id + "."+mapper+".TC.bam"
                 evaluate_bam(final_all,'all',mapper,cond.id, out)    
                 evaluate_bam(final_tc, 'tc', mapper,cond.id, out)    
-    bgzip(fout, delinFile=True)
+    bgzip(fout, delinFile=True, override=True)
     logging.info("All done in %s" % str(datetime.timedelta(seconds=time.time()-startTime)))
     print("All done in", datetime.timedelta(seconds=time.time()-startTime))
     

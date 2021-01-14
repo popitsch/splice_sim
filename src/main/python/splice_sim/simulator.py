@@ -327,9 +327,8 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
     # run art simulator 
     logging.info("Running read simulator")
     artlog=tmpdir + config['dataset_name'] + ".art.log" 
-    valid_reads={}
+    simulated_read_stats=Counter()
     for cond in m.conditions:
-        valid_reads[cond]=set()
         f = tmpdir + config['dataset_name'] + "." + cond.id + ".fa"
         # art output
         art_out_prefix = tmpdir + config['dataset_name'] + "." + cond.id + ".bothstrands"
@@ -352,14 +351,12 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
             # Q: why are there no D/I entries in the cigarstrings? How to find seqerr INDELs?
             with open(f_fq, 'w') as out_fq:
                 sam = pysam.AlignmentFile(f_sam_both, "rb")
-                read_stats={}
-                for r in sam.fetch():
+                for r in sam.fetch(until_eof=True):
                     # e.g. 'ENSMUST00000099151.5_+_mat_0-400'. tag ('0-400') consists of running number from 'abundance' and running number form ART
                     tid,transcript_strand,iso_id,tag=r.query_name.split("_")
                     read_strand = "-" if r.is_reverse else "+"
-                    read_stats['all_'+read_strand]=read_stats['all_'+read_strand]+1 if 'all_'+read_strand in read_stats else 1
                     if transcript_strand == read_strand: # NOTE: reads that were mapped to opposite strand will be dropped later in post_filtering step!
-                        valid_reads[cond].add(r.query_name)
+                        simulated_read_stats[cond,rid]+=1
                         iso = m.transcripts[tid].isoforms[iso_id]
                         start_abs, bid_start = iso.rel2abs_pos(r.reference_start)
                         end_abs, bid_end = iso.rel2abs_pos(r.reference_end-1)
@@ -375,16 +372,21 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                                                         (",".join(str(iso.rel2abs_pos(p)[0]) for p in rel_pos) )  if len(rel_pos)>0 else 'NA' )
                         qstr = ''.join(map(lambda x: chr( x+33 ), r.query_qualities))
                         print("@%s\n%s\n+\n%s" % ( read_name, r.query_sequence, qstr), file=out_fq )
-                    else:
-                        read_stats['dropped_'+read_strand]=read_stats['dropped_'+read_strand]+1 if 'dropped_'+read_strand in read_stats else 1
             if success:
                 removeFile([f_fq_both, f_sam_both])
-            logging.debug(read_stats)
     
         else:
             logging.warn("Will not re-create existing file %s" % (f_fq+".gz"))
     
-                   
+    
+    # write simulated reead stats
+    f_srs = outdir + 'simulated_read_stats.tsv'
+    with open(f_srs, 'w') as out:
+        print("cond\ttranscript_id\tcount", file=out)
+        for k in simulated_read_stats.keys():
+            cond,transcript_id = k
+            print("%s\t%s\t%i" % (cond, transcript_id, simulated_read_stats[k]), file=out)
+            
     # concat files per condition, introduce T/C conversions and bgzip
     for cond in m.conditions:
         f_all = tmpdir + config['dataset_name'] + "." + cond.id + ".fq"

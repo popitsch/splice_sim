@@ -22,12 +22,15 @@ def evaluate_bam(bam_file, category, mapper, condition, out):
     for read in samin.fetch():
         read_name=read.query_name
         true_tid,true_strand,true_isoform,tag,true_chr,true_read_cigar,true_seqerr,tc_pos = read_name.split("_")
+        n_true_seqerr=len(true_seqerr.split(',')) if true_seqerr != 'NA' else 0
+        n_tc_pos=len(tc_pos.split(',')) if tc_pos != 'NA' else 0
+        
         read_chr = 'NA' if read.is_unmapped else read.reference_name
         read_coord='NA' if read.is_unmapped else '%s:%i-%i' % (read.reference_name, read.reference_start, read.reference_end )
         true_tuples=[tuple([int(y) for y in x.split('-')]) for x in true_read_cigar.split(',')]
         read_tuples=read.get_blocks()
         overlap=calc_coverage(true_chr, read_chr, true_tuples, read_tuples)
-        print("%s\t%s\t%s\t%s\t%s\t%i" % (read_coord, read_name,category,mapper,condition,overlap), file=out)
+        print("%s\t%s\t%s\t%s\t%i\t%s\t%s\t%s\t%s\t%s\t%i\t%i\t%s" % (read_coord,category,mapper,condition,overlap, true_tid,true_strand,true_isoform,tag,true_chr, n_true_seqerr, n_tc_pos, read_name), file=out)
         
 
 # #bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/STAR/small4.5min.STAR.TC.bam'
@@ -65,7 +68,7 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
 
     fout = outdir+'reads.tsv'
     with open(fout, 'w') as out:
-        print("coords\tread_name\tcategory\tmapper\tcondition\toverlap", file=out)
+        print("coords\tcategory\tmapper\tcondition\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\tread_name", file=out)
         for cond in m.conditions:
             for mapper in config['mappers'].keys():
                 bamdir_all = simdir + "bam_ori/" + mapper + "/"
@@ -74,6 +77,7 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
                 final_tc   = bamdir_tc  + config['dataset_name'] + "." + cond.id + "."+mapper+".TC.bam"
                 evaluate_bam(final_all,'all',mapper,cond.id, out)    
                 evaluate_bam(final_tc, 'tc', mapper,cond.id, out)    
-
+    bgzip(fout, delinFile=True)
     logging.info("All done in %s" % str(datetime.timedelta(seconds=time.time()-startTime)))
     print("All done in", datetime.timedelta(seconds=time.time()-startTime))
+    

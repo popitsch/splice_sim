@@ -127,7 +127,9 @@ def cigar_to_rel_pos(read):
         elif op == BAM_CDIFF: # X
           for i in range(0, len):
               off+=1
-              pos+=[readidx2genpos_abs(read, off)-1]  
+              p=readidx2genpos_abs(read, off)
+              if p is not None:
+                  pos+=[p-1]  
     return pos
 
 

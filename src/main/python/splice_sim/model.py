@@ -241,7 +241,7 @@ class Model():
         # load + filter gene gff
         logging.info("Loading gene GFF")
         self.gff = pr.read_gff3(config["gene_gff"])
-        self.gff = self.gff[gff.transcript_id.isin(list(config['transcripts'].keys()))] # reduce to contain only configured transcripts
+        self.gff = self.gff[self.gff.transcript_id.isin(list(config['transcripts'].keys()))] # reduce to contain only configured transcripts
 
         # load genome
         logging.info("Loading genome")

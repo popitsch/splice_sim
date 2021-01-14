@@ -529,14 +529,14 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                 if files_exist([b_all]):
                     success,n_reads, f_reads = postfilter_bam( b_all, final_all, tag_tc, tag_mp)
                     if success:
-                        #removeFile([b_all, b_all+".bai"]) # remove unfiltered/original BAM
+                        removeFile([b_all, b_all+".bai"]) # remove unfiltered/original BAM
                         stats+=[Stat("all_reads", n_reads,cond=cond, mapper=mapper)]
                         stats+=[Stat("all_filtered_secondary_alignments", f_reads,cond=cond, mapper=mapper)]
     
                 if files_exist([b_tc]):
                     success,n_reads,f_reads = postfilter_bam( b_tc, final_tc, tag_tc, tag_mp)
                     if success:
-                        #removeFile([b_tc, b_tc+".bai"]) # remove unfiltered/original BAM
+                        removeFile([b_tc, b_tc+".bai"]) # remove unfiltered/original BAM
                         stats+=[Stat("tc_reads", n_reads,cond=cond, mapper=mapper)]
                         stats+=[Stat("tc_filtered_secondary_alignments", f_reads,cond=cond, mapper=mapper)]
     

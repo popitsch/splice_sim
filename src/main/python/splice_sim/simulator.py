@@ -196,8 +196,7 @@ class Stat():
 
 
 def postfilter_bam( bam_in, bam_out, tag_tc="xc", tag_mp="xp" ):
-    """ Filters reads by correct read strand (i.e., removes all reads that were simulated on the wrong read strand by by ART) and adds 
-        XC/XP/YC/YT bam tags """  
+    """ set proper read names and bam tags """  
     if tag_tc is None:
         tag_tc="xc"
     if tag_mp is None:
@@ -242,9 +241,6 @@ def postfilter_bam( bam_in, bam_out, tag_tc="xc", tag_mp="xp" ):
                 intensity = 255/min(valid_tc, 25) if valid_tc > 0 else 255
                 read.set_tag(tag='YC', value='%i,%i,255' % (intensity,intensity) if is_correct_strand else '255,0,0', value_type="Z")
         mapped_out.write(read)  
-
-        
-        
         n_reads=n_reads+1
     samin.close()
     mapped_out.close()
@@ -274,7 +270,7 @@ def fastq_to_bam(fastq_file, m, bam_file, tag_tc='xc', SAMBAMBA_EXE='sambamba', 
     dict_chr2len = {c: m.genome.get_reference_length(c) for c in m.genome.references}
     header = { 'HD': {'VN': '1.4'}, 
                'SQ': [{'LN': l, 'SN': c} for c,l in dict_chr2len.items()] }
-    with pysam.AlignmentFile(bam_file+'.tmp.sam', "wb", header=header) as bam_out:
+    with pysam.AlignmentFile(bam_file+'.tmp.bam', "wb", header=header) as bam_out:
         with gzip.open(fastq_file, 'rt') as file_in:
             for l1 in file_in:
                 l2=str(next(file_in)).rstrip()
@@ -300,7 +296,7 @@ def fastq_to_bam(fastq_file, m, bam_file, tag_tc='xc', SAMBAMBA_EXE='sambamba', 
                 read.flag = 0 if true_strand=='+' else 16
                 bam_out.write(read)
     bam_out.close()
-    sambambasortbam(bam_file+'.tmp.sam', 
+    sambambasortbam(bam_file+'.tmp.bam', 
                     bam_file, 
                     index=True, 
                     override=True, 
@@ -621,7 +617,11 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                     
             # create truth BAMs
             bamdir_all = outdir + "bam_ori/TRUTH/"
+            if not os.path.exists(bamdir_all):
+                os.makedirs(bamdir_all)
             bamdir_tc  = outdir + "bam_tc/TRUTH/"
+            if not os.path.exists(bamdir_all):
+                os.makedirs(bamdir_all)
             final_all_truth  = bamdir_all + config['dataset_name'] + "." + cond.id + ".TRUTH.bam"
             final_tc_truth   = bamdir_tc  + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.bam"
             fastq_to_bam(f_all, m, final_all_truth, tag_tc=tag_tc, threads=threads)

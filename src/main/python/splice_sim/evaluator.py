@@ -59,7 +59,6 @@ def evaluate_bam(bam_file, category, m, mapper, condition, out_reads, out_perfor
     dict_idx2chr = {v: k for v, k in enumerate(chromosomes)}
     dict_chr2len = {c: m.genome.get_reference_length(c) for c in m.genome.references}
     overlap_cutoff = 10 #0.8 * m.readlen 
-    
     for c, c_len in dict_chr2len.items():
         df = m.df[(m.df.Feature == 'transcript') & (m.df.Chromosome == c)]  # get annotations
         if not df.empty:

@@ -198,6 +198,10 @@ class Stat():
 def postfilter_bam( bam_in, bam_out, tag_tc="xc", tag_mp="xp" ):
     """ Filters reads by correct read strand (i.e., removes all reads that were simulated on the wrong read strand by by ART) and adds 
         XC/XP/YC/YT bam tags """  
+    if tag_tc is None:
+        tag_tc="xc"
+    if tag_mp is None:
+        tag_mp="xp"    
     samin = pysam.AlignmentFile(bam_in, "rb")
     mapped_out = pysam.AlignmentFile(bam_out, "wb", template=samin )
     n_reads=0
@@ -262,6 +266,8 @@ def create_cigatuples(rtuples):
 
 def fastq_to_bam(fastq_file, m, bam_file, tag_tc='xc'):
     """ Convert simulated FASTQ files to BAM """
+    if tag_tc is None:
+        tag_tc="xc"
     chromosomes = m.genome.references
     dict_chr2idx = {k: v for v, k in enumerate(chromosomes)}
     dict_idx2chr = {v: k for v, k in enumerate(chromosomes)}
@@ -608,8 +614,8 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                 # create truth BAMs
                 final_all_truth  = bamdir_all + config['dataset_name'] + "." + cond.id + "."+mapper+".TRUTH.bam"
                 final_tc_truth   = bamdir_tc  + config['dataset_name'] + "." + cond.id + "."+mapper+".TC.TRUTH.bam"
-                fastq_to_bam(f_all, m, final_all_truth)
-                fastq_to_bam(f_tc, m, final_tc_truth)
+                fastq_to_bam(f_all, m, final_all_truth, tag_tc=tag_tc)
+                fastq_to_bam(f_tc, m, final_tc_truth, tag_tc=tag_tc)
     
     
     # write stats. FIXME: stats are not complete if pipeline was restarted with 

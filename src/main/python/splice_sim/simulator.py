@@ -195,15 +195,11 @@ class Stat():
     
 
 
-def postfilter_bam( bam_in, bam_out, tag_tc=None, tag_mp=None):
+def postfilter_bam( bam_in, bam_out, tag_tc="xc", tag_mp="xp" ):
     """ Filters reads by correct read strand (i.e., removes all reads that were simulated on the wrong read strand by by ART) and adds 
         XC/XP/YC/YT bam tags """  
     samin = pysam.AlignmentFile(bam_in, "rb")
-    samout = pysam.AlignmentFile(bam_out, "wb", template=samin, )
-    if tag_tc is None:
-        tag_tc="xc" 
-    if tag_mp is None:
-        tag_mp="xp" 
+    mapped_out = pysam.AlignmentFile(bam_out, "wb", template=samin )
     n_reads=0
     f_reads=0
     for read in samin.fetch(until_eof=True): # NOTE important to add until_eof=True otherwise unmapped reads will be skipped.
@@ -241,12 +237,73 @@ def postfilter_bam( bam_in, bam_out, tag_tc=None, tag_mp=None):
                 # set blue read color intensity relative to number of tc conversions!
                 intensity = 255/min(valid_tc, 25) if valid_tc > 0 else 255
                 read.set_tag(tag='YC', value='%i,%i,255' % (intensity,intensity) if is_correct_strand else '255,0,0', value_type="Z")
-        samout.write(read)  
+        mapped_out.write(read)  
+
+        
+        
         n_reads=n_reads+1
     samin.close()
-    samout.close()
+    mapped_out.close()
+    
     pysam.index(bam_out)
     return True, n_reads, f_reads
+
+
+def create_cigatuples(rtuples):
+    """ convert aligned block tuples to pysam cigartuples """
+    cigar_tuples=[]
+    last=None
+    for t in rtuples:
+        if last  is not None:
+            cigar_tuples+=[(3, t[0]-last-1)] # N-block
+        cigar_tuples+=[(0, t[1]-t[0]+1)] # M-block
+        last=t[1]
+    return cigar_tuples
+
+def fastq_to_bam(fastq_file, m, bam_file, tag_tc='xc'):
+    """ Convert simulated FASTQ files to BAM """
+    chromosomes = m.genome.references
+    dict_chr2idx = {k: v for v, k in enumerate(chromosomes)}
+    dict_idx2chr = {v: k for v, k in enumerate(chromosomes)}
+    dict_chr2len = {c: m.genome.get_reference_length(c) for c in m.genome.references}
+    header = { 'HD': {'VN': '1.4'}, 
+               'SQ': [{'LN': l, 'SN': c} for c,l in dict_chr2len.items()] }
+    with pysam.AlignmentFile(bam_file, "wb", header=header) as bam_out:
+        with gzip.open(fastq_file, 'rt') as file_in:
+            for l1 in file_in:
+                l2=str(next(file_in)).rstrip()
+                l3=str(next(file_in)).rstrip()
+                l4=str(next(file_in)).rstrip()
+                read_name=l1.rstrip()[1:]
+                is_tc_read = read_name.count('_')==7
+                if not is_tc_read:
+                    read_name+='_NA' # no tc tag!
+                true_tid,true_strand,true_isoform,tag,true_chrom,true_read_cigar,true_seqerr,tc_pos = read_name.split("_")
+                n_true_seqerr = len(true_seqerr.split(',')) if true_seqerr != 'NA' else 0
+                n_tc_pos = len(tc_pos.split(',')) if tc_pos != 'NA' else 0
+                read = pysam.AlignedSegment()
+                read.query_name = read_name
+                read.query_sequence = l2 if true_strand=='+' else reverse_complement(l2)
+                read.query_qualities = pysam.qualitystring_to_array(l4)
+                true_tuples = [tuple([int(y) for y in x.split('-')]) for x in true_read_cigar.split(',')]
+                read.reference_start = true_tuples[0][0]-1
+                read.cigartuples=create_cigatuples(true_tuples)
+                read.reference_id = dict_chr2idx[true_chrom]
+                read.mapping_quality = 60
+                read.tags = (("NM", n_true_seqerr + n_tc_pos ),(tag_tc, n_tc_pos))
+                read.flag = 0 if true_strand=='+' else 16
+                bam_out.write(read)
+    bam_out.close()
+
+# config = json.load(open('/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/config.json'), object_pairs_hook=OrderedDict)
+# config["transcripts"] = json.load(open('/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/' + config['transcript_data']), object_pairs_hook=OrderedDict)
+# for k in ['gene_gff', 'genome_fa']:
+#     config[k] = '/Volumes' + config[k] 
+# m = Model(config)
+# fq_file = '/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/tmp/small4.5min.TC.fq.gz'
+# bam_file= '/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/delme.bam'
+# fastq_to_bam(fq_file, m, bam_file)
+
 
 
 def simulate_dataset(config, config_dir, outdir, overwrite=False):
@@ -547,6 +604,12 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                     bams[cond.id + "."+mapper]=os.path.abspath(final_all)
                 if files_exist([final_tc]):
                     bams[cond.id + "."+mapper]=os.path.abspath(final_tc)
+                    
+                # create truth BAMs
+                final_all_truth  = bamdir_all + config['dataset_name'] + "." + cond.id + "."+mapper+".TRUTH.bam"
+                final_tc_truth   = bamdir_tc  + config['dataset_name'] + "." + cond.id + "."+mapper+".TC.TRUTH.bam"
+                fastq_to_bam(f_all, m, final_all_truth)
+                fastq_to_bam(f_tc, m, final_tc_truth)
     
     
     # write stats. FIXME: stats are not complete if pipeline was restarted with 

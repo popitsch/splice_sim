@@ -50,7 +50,8 @@ from iterator import *
 # #   (14:142903501-142906702, ([14:142903501-142906702], ['ENSMUST00000167721.7']))]
 
 
-def evaluate_bam(bam_file, category, m, mapper, condition, tdf, out_reads, out_performance):
+def evaluate_bam(bam_file, category, m, mapper, condition, out_reads, out_performance):
+    """ evaluate the passed BAM file """
     logging.info("Evaluating %s" % bam_file)
     performance = Counter()
     chromosomes = m.genome.references
@@ -136,7 +137,6 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
     # instantiate model
     m = Model(config)
     logging.info("Configured conditions: %s" % (", ".join(str(x) for x in m.conditions)))
-    tdf = m.gff[m.gff.Feature == 'transcript']
      
     fout = outdir + 'reads.tsv'
     fout2 = outdir + 'tid_performance.tsv'
@@ -146,12 +146,16 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
             print("category\tmapper\tcondition\ttid\tTP\tFP\tFN", file=out2)
             for cond in m.conditions:
                 for mapper in config['mappers'].keys():
-                    bamdir_all = simdir + "bam_ori/" + mapper + "/"
+                    bamdir_ori = simdir + "bam_ori/" + mapper + "/"
                     bamdir_tc = simdir + "bam_tc/" + mapper + "/"
-                    final_all = bamdir_all + config['dataset_name'] + "." + cond.id + "." + mapper + ".bam"
+                    final_ori = bamdir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".bam"
                     final_tc = bamdir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.bam"
-                    evaluate_bam(final_all, 'all', m, mapper, cond.id, tdf, out, out2)    
-                    evaluate_bam(final_tc, 'tc', m, mapper, cond.id, tdf, out, out2)    
+                    final_ori_truth  = bamdir_ori + config['dataset_name'] + "." + cond.id + "."+mapper+".TRUTH.bam"
+                    final_tc_truth   = bamdir_tc  + config['dataset_name'] + "." + cond.id + "."+mapper+".TC.TRUTH.bam"
+                    evaluate_bam(final_ori, 'ori', m, mapper, cond.id, out, out2)    
+                    evaluate_bam(final_tc, 'tc', m, mapper, cond.id, out, out2)    
+                    evaluate_bam(final_ori_truth, 'ori_truth', m, mapper, cond.id, out, out2)    
+                    evaluate_bam(final_tc_truth, 'tc_truth', m, mapper, cond.id, out, out2)    
     bgzip(fout, delinFile=True, override=True)
     logging.info("All done in %s" % str(datetime.timedelta(seconds=time.time() - startTime)))
     print("All done in", datetime.timedelta(seconds=time.time() - startTime))

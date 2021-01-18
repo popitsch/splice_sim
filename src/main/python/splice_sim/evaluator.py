@@ -145,14 +145,13 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
             print("category\tmapper\tcondition\ttid\tTP\tFP\tFN", file=out2)
             for cond in m.conditions:
                 for mapper in config['mappers'].keys():
-                    bamdir_ori = simdir + "bam_ori/" + mapper + "/"
-                    bamdir_tc = simdir + "bam_tc/" + mapper + "/"
-                    final_ori = bamdir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".bam"
-                    final_tc = bamdir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.bam"
-                    final_ori_truth  = bamdir_ori + config['dataset_name'] + "." + cond.id + "."+mapper+".TRUTH.bam"
-                    final_tc_truth   = bamdir_tc  + config['dataset_name'] + "." + cond.id + "."+mapper+".TC.TRUTH.bam"
+                    final_ori = simdir + "bam_ori/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".bam"
+                    final_tc = simdir + "bam_tc/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.bam"
                     evaluate_bam(final_ori, 'ori', m, mapper, cond.id, out, out2)    
                     evaluate_bam(final_tc, 'tc', m, mapper, cond.id, out, out2)    
+                # eval truth
+                final_ori_truth  = simdir + "bam_ori/TRUTH/" + config['dataset_name'] + "." + cond.id + "."+mapper+".TRUTH.bam"
+                final_tc_truth   = simdir + "bam_tc/TRUTH/"  + config['dataset_name'] + "." + cond.id + "."+mapper+".TC.TRUTH.bam"
                 evaluate_bam(final_ori_truth, 'ori_truth', m, 'NA', cond.id, out, out2)    
                 evaluate_bam(final_tc_truth, 'tc_truth', m, 'NA', cond.id, out, out2)    
     bgzip(fout, delinFile=True, override=True)

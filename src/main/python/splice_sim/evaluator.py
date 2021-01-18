@@ -50,7 +50,7 @@ from iterator import *
 # #   (14:142903501-142906702, ([14:142903501-142906702], ['ENSMUST00000167721.7']))]
 
 
-def evaluate_bam(bam_file, category, m, mapper, condition, tdf, out_reads, out_performance, out_debug):
+def evaluate_bam(bam_file, category, m, mapper, condition, tdf, out_reads, out_performance):
     logging.info("Evaluating %s" % bam_file)
     performance = Counter()
     chromosomes = m.genome.references
@@ -85,12 +85,21 @@ def evaluate_bam(bam_file, category, m, mapper, condition, tdf, out_reads, out_p
                     performance[true_tid, 'TP'] += 1
                 else:
                     performance[true_tid, 'FN'] += 1
-                    print("FN\t%s\t%s\t%s\t%s" % (true_tid, true_coord, read_coord, read_name), file=out_debug)
+                    print('\t'.join([str(x) for x in (read_coord, true_coord, 'FN', 'NA', 
+                                                      category, mapper, condition, overlap, true_tid, 
+                                                      true_strand, true_isoform, tag, true_chr,n_true_seqerr, 
+                                                      n_tc_pos, ','.join(overlapping_tids) if len(overlapping_tids) > 0 else 'NA', 
+                                                       read_name)]), file=out_reads)
                     for tid in overlapping_tids:
                         performance[tid, 'FP'] += 1/len(overlapping_tids)
-                        print("FP\t%s\t%s\t%s\t%s" % (true_tid, true_coord, read_coord, read_name), file=out_debug)
-
-                print("%s\t%s\t%s\t%s\t%i\t%s\t%s\t%s\t%s\t%s\t%i\t%i\t%s\t%s" % (read_coord, category, mapper, condition, overlap, true_tid, true_strand, true_isoform, tag, true_chr, n_true_seqerr, n_tc_pos, ','.join(overlapping_tids) if len(overlapping_tids) > 0 else 'NA', read_name), file=out_reads)
+                        print('\t'.join([str(x) for x in (read_coord, true_coord, 'FP', tid, 
+                                                          category, mapper, condition, overlap, true_tid, 
+                                                          true_strand, true_isoform, tag, true_chr,n_true_seqerr, 
+                                                          n_tc_pos, ','.join(overlapping_tids) if len(overlapping_tids) > 0 else 'NA', 
+                                                           read_name)]), file=out_reads)
+                
+                print("mapped_coords\ttrue_coords\tclassification\tcategory\tmapper\tcondition\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\toverlapping_tids\tread_name", file=out)
+                
     for tid in set([x for x, y in performance.keys()]):
          print("%s\t%s\t%s\t%s\t%i\t%i\t%i" % (category, mapper, condition, tid, performance[tid, 'TP'], performance[tid, 'FP'], performance[tid, 'FN']), file=out_performance) 
     category, mapper, condition,
@@ -132,21 +141,18 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
      
     fout = outdir + 'reads.tsv'
     fout2 = outdir + 'tid_performance.tsv'
-    fout3 = outdir + 'false_reads_debug.tsv'
     with open(fout, 'w') as out:
         with open(fout2, 'w') as out2:
-            with open(fout3, 'w') as out3:
-                print("coords\tcategory\tmapper\tcondition\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\toverlapping_tids\tread_name", file=out)
-                print("category\tmapper\tcondition\ttid\tTP\tFP\tFN", file=out2)
-                print("category\ttid\ttrue_coords\tmapped_coords\tread_name", file=out3)
-                for cond in m.conditions:
-                    for mapper in config['mappers'].keys():
-                        bamdir_all = simdir + "bam_ori/" + mapper + "/"
-                        bamdir_tc = simdir + "bam_tc/" + mapper + "/"
-                        final_all = bamdir_all + config['dataset_name'] + "." + cond.id + "." + mapper + ".bam"
-                        final_tc = bamdir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.bam"
-                        evaluate_bam(final_all, 'all', m, mapper, cond.id, tdf, out, out2, out3)    
-                        evaluate_bam(final_tc, 'tc', m, mapper, cond.id, tdf, out, out2, out3)    
+            print("mapped_coords\ttrue_coords\tclassification\ttid\tcategory\tmapper\tcondition\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\toverlapping_tids\tread_name", file=out)
+            print("category\tmapper\tcondition\ttid\tTP\tFP\tFN", file=out2)
+            for cond in m.conditions:
+                for mapper in config['mappers'].keys():
+                    bamdir_all = simdir + "bam_ori/" + mapper + "/"
+                    bamdir_tc = simdir + "bam_tc/" + mapper + "/"
+                    final_all = bamdir_all + config['dataset_name'] + "." + cond.id + "." + mapper + ".bam"
+                    final_tc = bamdir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.bam"
+                    evaluate_bam(final_all, 'all', m, mapper, cond.id, tdf, out, out2)    
+                    evaluate_bam(final_tc, 'tc', m, mapper, cond.id, tdf, out, out2)    
     bgzip(fout, delinFile=True, override=True)
     logging.info("All done in %s" % str(datetime.timedelta(seconds=time.time() - startTime)))
     print("All done in", datetime.timedelta(seconds=time.time() - startTime))

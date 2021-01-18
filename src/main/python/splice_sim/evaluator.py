@@ -49,7 +49,7 @@ from iterator import *
 # # [(14:142903115-142906754, ([14:142903115-142906754], ['ENSMUST00000100497.10'])), 
 # #   (14:142903501-142906702, ([14:142903501-142906702], ['ENSMUST00000167721.7']))]
 
-def classify_read(read, overlapping_tids, performance, out_reads):
+def classify_read(read, overlapping_tids, is_converted, performance, out_reads):
     """ Classifies a read """
     overlap_cutoff = 10 #0.8 * m.readlen 
     read_name = read.query_name
@@ -98,7 +98,7 @@ def evaluate_bam(bam_file, is_converted, m, mapper, condition, out_reads, out_pe
             rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=c_len, max_span=None, flag_filter=0) # max_span=m.max_ilen
             for loc, read in rit:
                 n_reads+=1
-                performance = classify_read(read, [], performance, out_reads)       
+                performance = classify_read(read, [], is_converted, performance, out_reads)       
         else:
             aits = [BlockLocationIterator(PyrangeIterator(df, dict_chr2idx, 'transcript_id'))]
             rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=c_len, max_span=None, flag_filter=0) # max_span=m.max_ilen
@@ -106,7 +106,7 @@ def evaluate_bam(bam_file, is_converted, m, mapper, condition, out_reads, out_pe
             for loc, (read, annos) in it:
                 n_reads+=1
                 overlapping_tids = [t[0] for (_, (_, t)) in annos[0]]
-                performance = classify_read(read, overlapping_tids, performance, out_reads)       
+                performance = classify_read(read, overlapping_tids, is_converted, performance, out_reads)       
     for tid in set([x for x, y in performance.keys()]):
          print("%s\t%s\t%s\t%s\t%i\t%i\t%i" % (1 if is_converted else 0, mapper, condition, tid, performance[tid, 'TP'], performance[tid, 'FP'], performance[tid, 'FN']), file=out_performance) 
     print("reads:  %i " % n_reads)

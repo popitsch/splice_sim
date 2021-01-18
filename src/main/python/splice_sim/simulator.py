@@ -356,7 +356,7 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                     tid,transcript_strand,iso_id,tag=r.query_name.split("_")
                     read_strand = "-" if r.is_reverse else "+"
                     if transcript_strand == read_strand: # NOTE: reads that were mapped to opposite strand will be dropped later in post_filtering step!
-                        simulated_read_stats[cond,tid]+=1
+                        simulated_read_stats[cond.id,tid]+=1
                         iso = m.transcripts[tid].isoforms[iso_id]
                         start_abs, bid_start = iso.rel2abs_pos(r.reference_start)
                         end_abs, bid_end = iso.rel2abs_pos(r.reference_end-1)
@@ -382,10 +382,13 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
     # write simulated reead stats
     f_srs = outdir + 'simulated_read_stats.tsv'
     with open(f_srs, 'w') as out:
-        print("cond\ttranscript_id\tcount", file=out)
+        print("cond\ttranscript_id\ttlen\tn_reads\tcov", file=out)
         for k in simulated_read_stats.keys():
-            cond,transcript_id = k
-            print("%s\t%s\t%i" % (cond, transcript_id, simulated_read_stats[k]), file=out)
+            condid,transcript_id = k
+            tlen=m.transcripts[tid].len
+            n_reads=simulated_read_stats[k]
+            cov=n_reads*config['readlen']/tlen
+            print("%s\t%s\t%i\t%i\t%f.2" % (condid, transcript_id, tlen, n_reads, cov), file=out)
             
     # concat files per condition, introduce T/C conversions and bgzip
     for cond in m.conditions:
@@ -530,15 +533,15 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                     success,n_reads, f_reads = postfilter_bam( b_all, final_all, tag_tc, tag_mp)
                     if success:
                         removeFile([b_all, b_all+".bai"]) # remove unfiltered/original BAM
-                        stats+=[Stat("all_reads", n_reads,cond=cond, mapper=mapper)]
-                        stats+=[Stat("all_filtered_secondary_alignments", f_reads,cond=cond, mapper=mapper)]
+                        stats+=[Stat("all_reads", n_reads,cond=cond.id, mapper=mapper)]
+                        stats+=[Stat("all_filtered_secondary_alignments", f_reads,cond=cond.id, mapper=mapper)]
     
                 if files_exist([b_tc]):
                     success,n_reads,f_reads = postfilter_bam( b_tc, final_tc, tag_tc, tag_mp)
                     if success:
                         removeFile([b_tc, b_tc+".bai"]) # remove unfiltered/original BAM
-                        stats+=[Stat("tc_reads", n_reads,cond=cond, mapper=mapper)]
-                        stats+=[Stat("tc_filtered_secondary_alignments", f_reads,cond=cond, mapper=mapper)]
+                        stats+=[Stat("tc_reads", n_reads,cond=cond.id, mapper=mapper)]
+                        stats+=[Stat("tc_filtered_secondary_alignments", f_reads,cond=cond.id, mapper=mapper)]
     
                 # store bams for tdf creation
                 if files_exist([final_all]):

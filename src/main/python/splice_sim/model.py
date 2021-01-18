@@ -224,7 +224,7 @@ class Model():
     """ builds a model using the passed configuration and conditions. 
         required config keys:
             conditions:   the configured experimental conditions
-            gene_gff:     the GFF3 file comtaining all gencode-style annotations
+            gene_gff:     the GFF3 file containing all gencode-style annotations
             transcripts:  a dict with configured transcript configurations, mapping tids to gene_name, abundance and possible isoforms_+fractions (e.g., as created by splicing_simulator_config_creator)
             genome_fa:    FASTA file of the genome
             chrom_sizes:  optional file containing chrom sizes.
@@ -244,7 +244,6 @@ class Model():
         self.gff = self.gff[self.gff.transcript_id.isin(list(config['transcripts'].keys()))] # reduce to contain only configured transcripts
         self.gff.Start = self.gff.Start+1# correct for pyranges bug?
         self.df = self.gff.df
-
         # load genome
         logging.info("Loading genome")
         self.genome = pysam.FastaFile(config["genome_fa"])
@@ -252,7 +251,7 @@ class Model():
         # instantiate transcripts
         self.transcripts=OrderedDict()
         self.max_ilen = config["max_ilen"] if 'max_ilen' in config else None
-    
+        self.readlen = config["readlen"] if 'readlen' in config else None
         for tid in list(config['transcripts'].keys()):
             tid_df = self.df[self.df['transcript_id']==tid] # extract data for this transcript only
             if tid_df.empty:

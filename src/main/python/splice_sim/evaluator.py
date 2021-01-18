@@ -87,7 +87,7 @@ def evaluate_bam(bam_file, category, m, mapper, condition, tdf, out_reads, out_p
                     for tid in overlapping_tids:
                         performance[tid, 'FP'] += 1/len(overlapping_tids)
 
-        print("%s\t%s\t%s\t%s\t%i\t%s\t%s\t%s\t%s\t%s\t%i\t%i\t%s\t%s" % (read_coord, category, mapper, condition, overlap, true_tid, true_strand, true_isoform, tag, true_chr, n_true_seqerr, n_tc_pos, ','.join(overlapping_tids) if len(overlapping_tids) > 0 else 'NA', read_name), file=out_reads)
+                print("%s\t%s\t%s\t%s\t%i\t%s\t%s\t%s\t%s\t%s\t%i\t%i\t%s\t%s" % (read_coord, category, mapper, condition, overlap, true_tid, true_strand, true_isoform, tag, true_chr, n_true_seqerr, n_tc_pos, ','.join(overlapping_tids) if len(overlapping_tids) > 0 else 'NA', read_name), file=out_reads)
     for tid in set([x for x, y in performance.keys()]):
          print("%s\t%s\t%s\t%s\t%i\t%i\t%i" % (category, mapper, condition, tid, performance[tid, 'TP'], performance[tid, 'FP'], performance[tid, 'FN'])) 
     category, mapper, condition,

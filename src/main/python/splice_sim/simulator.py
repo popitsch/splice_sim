@@ -224,8 +224,7 @@ def postfilter_bam( bam_in, bam_out, tag_tc=None, tag_mp=None):
         # calc absolute t/c conversions
         valid_tc=0
         if tc_pos != 'NA':
-            tc_pos = [readidx2genpos_abs(read,int(x)) for x in tc_pos.split(',') if x !=''] # convert to absolute pos
-            tc_pos = [str(x) for x in tc_pos if x is not None]
+            tc_pos = [str(x) for x in tc_pos.split(',') if x is not None and x !=''] # t/c positions, relative coords of simulated read
             valid_tc=len(tc_pos)
             tc_pos = ','.join(tc_pos) if len(tc_pos)>0 else 'NA' # drop invalid (softclipped) t/c conversions
         is_correct_strand = ( read.is_reverse and true_strand=='-' ) or ((not read.is_reverse) and true_strand=='+') 

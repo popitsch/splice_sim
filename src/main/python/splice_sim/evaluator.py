@@ -87,16 +87,16 @@ def evaluate_bam(bam_file, category, m, mapper, condition, tdf, out_reads, out_p
                     performance[true_tid, 'FN'] += 1
                     print('\t'.join([str(x) for x in (read_coord, true_coord, 'FN', 'NA', 
                                                       category, mapper, condition, overlap, true_tid, 
-                                                      true_strand, true_isoform, tag, true_chr,n_true_seqerr, 
-                                                      n_tc_pos, ','.join(overlapping_tids) if len(overlapping_tids) > 0 else 'NA', 
-                                                       read_name)]), file=out_reads)
+                                                      true_strand, true_isoform, tag, true_chr,n_true_seqerr, n_tc_pos, 
+                                                      ','.join(overlapping_tids) if len(overlapping_tids) > 0 else 'NA', 
+                                                      read_name)]), file=out_reads)
                     for tid in overlapping_tids:
                         performance[tid, 'FP'] += 1/len(overlapping_tids)
                         print('\t'.join([str(x) for x in (read_coord, true_coord, 'FP', tid, 
                                                           category, mapper, condition, overlap, true_tid, 
-                                                          true_strand, true_isoform, tag, true_chr,n_true_seqerr, 
-                                                          n_tc_pos, ','.join(overlapping_tids) if len(overlapping_tids) > 0 else 'NA', 
-                                                           read_name)]), file=out_reads)
+                                                          true_strand, true_isoform, tag, true_chr,n_true_seqerr, n_tc_pos, 
+                                                          ','.join(overlapping_tids) if len(overlapping_tids) > 0 else 'NA', 
+                                                          read_name)]), file=out_reads)
                 
                 
     for tid in set([x for x, y in performance.keys()]):

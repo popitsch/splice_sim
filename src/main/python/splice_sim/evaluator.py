@@ -145,8 +145,8 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
                         bamdir_tc = simdir + "bam_tc/" + mapper + "/"
                         final_all = bamdir_all + config['dataset_name'] + "." + cond.id + "." + mapper + ".bam"
                         final_tc = bamdir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.bam"
-                        evaluate_bam(final_all, 'all', m, mapper, cond.id, tdf, out, out2)    
-                        evaluate_bam(final_tc, 'tc', m, mapper, cond.id, tdf, out, out2,  out3)    
+                        evaluate_bam(final_all, 'all', m, mapper, cond.id, tdf, out, out2, out3)    
+                        evaluate_bam(final_tc, 'tc', m, mapper, cond.id, tdf, out, out2, out3)    
     bgzip(fout, delinFile=True, override=True)
     logging.info("All done in %s" % str(datetime.timedelta(seconds=time.time() - startTime)))
     print("All done in", datetime.timedelta(seconds=time.time() - startTime))

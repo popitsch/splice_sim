@@ -62,7 +62,7 @@ def evaluate_bam(bam_file, category, m, mapper, condition, tdf, out_reads, out_p
     for c, c_len in dict_chr2len.items():
         df = m.df[(m.df.Feature == 'transcript') & (m.df.Chromosome == c)]  # get annotations
         if not df.empty:
-            print("chrom", c)
+            print("Processing chromosome %s of %s/%s/%s"  % (c,  category, mapper, condition) )
             aits = [BlockLocationIterator(PyrangeIterator(df, dict_chr2idx, 'transcript_id'))]
             rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=c_len, max_span=m.max_ilen)
             it = AnnotationOverlapIterator(rit, aits)
@@ -84,12 +84,13 @@ def evaluate_bam(bam_file, category, m, mapper, condition, tdf, out_reads, out_p
                     performance[true_tid, 'TP'] += 1
                 else:
                     performance[true_tid, 'FN'] += 1
+                    print("FN for %s: %s" % (true_tid,  read_name))
                     for tid in overlapping_tids:
                         performance[tid, 'FP'] += 1/len(overlapping_tids)
 
                 print("%s\t%s\t%s\t%s\t%i\t%s\t%s\t%s\t%s\t%s\t%i\t%i\t%s\t%s" % (read_coord, category, mapper, condition, overlap, true_tid, true_strand, true_isoform, tag, true_chr, n_true_seqerr, n_tc_pos, ','.join(overlapping_tids) if len(overlapping_tids) > 0 else 'NA', read_name), file=out_reads)
     for tid in set([x for x, y in performance.keys()]):
-         print("%s\t%s\t%s\t%s\t%i\t%i\t%i" % (category, mapper, condition, tid, performance[tid, 'TP'], performance[tid, 'FP'], performance[tid, 'FN'])) 
+         print("%s\t%s\t%s\t%s\t%i\t%i\t%i" % (category, mapper, condition, tid, performance[tid, 'TP'], performance[tid, 'FP'], performance[tid, 'FN']), file=out_performance) 
     category, mapper, condition,
 
 # #bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/STAR/small4.5min.STAR.TC.bam'

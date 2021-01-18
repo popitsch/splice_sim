@@ -98,7 +98,6 @@ def evaluate_bam(bam_file, category, m, mapper, condition, tdf, out_reads, out_p
                                                           n_tc_pos, ','.join(overlapping_tids) if len(overlapping_tids) > 0 else 'NA', 
                                                            read_name)]), file=out_reads)
                 
-                print("mapped_coords\ttrue_coords\tclassification\tcategory\tmapper\tcondition\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\toverlapping_tids\tread_name", file=out)
                 
     for tid in set([x for x, y in performance.keys()]):
          print("%s\t%s\t%s\t%s\t%i\t%i\t%i" % (category, mapper, condition, tid, performance[tid, 'TP'], performance[tid, 'FP'], performance[tid, 'FN']), file=out_performance) 

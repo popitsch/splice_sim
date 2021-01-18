@@ -51,6 +51,7 @@ from iterator import *
 
 def classify_read(read, overlapping_tids, performance, out_reads):
     """ Classifies a read """
+    overlap_cutoff = 10 #0.8 * m.readlen 
     read_name = read.query_name
     true_tid, true_strand, true_isoform, tag, true_chr, true_read_cigar, true_seqerr, tc_pos = read_name.split("_")
     n_true_seqerr = len(true_seqerr.split(',')) if true_seqerr != 'NA' else 0
@@ -89,7 +90,6 @@ def evaluate_bam(bam_file, is_converted, m, mapper, condition, out_reads, out_pe
     dict_chr2idx = {k: v for v, k in enumerate(chromosomes)}
     dict_idx2chr = {v: k for v, k in enumerate(chromosomes)}
     dict_chr2len = {c: m.genome.get_reference_length(c) for c in m.genome.references}
-    overlap_cutoff = 10 #0.8 * m.readlen 
     n_reads=0
     for c, c_len in dict_chr2len.items():
         df = m.df[(m.df.Feature == 'transcript') & (m.df.Chromosome == c)]  # get annotations

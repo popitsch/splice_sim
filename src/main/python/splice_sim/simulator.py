@@ -619,11 +619,13 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                 if files_exist([final_tc]):
                     bams[cond.id + "."+mapper]=os.path.abspath(final_tc)
                     
-                # create truth BAMs
-                final_all_truth  = bamdir_all + config['dataset_name'] + "." + cond.id + "."+mapper+".TRUTH.bam"
-                final_tc_truth   = bamdir_tc  + config['dataset_name'] + "." + cond.id + "."+mapper+".TC.TRUTH.bam"
-                fastq_to_bam(f_all, m, final_all_truth, tag_tc=tag_tc, threads=threads)
-                fastq_to_bam(f_tc, m, final_tc_truth, tag_tc=tag_tc, threads=threads)
+            # create truth BAMs
+            bamdir_all = outdir + "bam_ori/TRUTH/"
+            bamdir_tc  = outdir + "bam_tc/TRUTH/"
+            final_all_truth  = bamdir_all + config['dataset_name'] + "." + cond.id + ".TRUTH.bam"
+            final_tc_truth   = bamdir_tc  + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.bam"
+            fastq_to_bam(f_all, m, final_all_truth, tag_tc=tag_tc, threads=threads)
+            fastq_to_bam(f_tc, m, final_tc_truth, tag_tc=tag_tc, threads=threads)
     
     
     # write stats. FIXME: stats are not complete if pipeline was restarted with 

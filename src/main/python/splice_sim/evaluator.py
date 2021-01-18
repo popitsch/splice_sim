@@ -81,9 +81,9 @@ def evaluate_bam(bam_file, category, m, mapper, condition, tdf, out_reads, out_p
                 
                 # read strongly overlaps with real location
                 if overlap >= overlap_cutoff:
-                    performance[real_tid, 'TP'] += 1
+                    performance[true_tid, 'TP'] += 1
                 else:
-                    performance[real_tid, 'FN'] += 1
+                    performance[true_tid, 'FN'] += 1
                     for tid in overlapping_tids:
                         performance[tid, 'FP'] += 1/len(overlapping_tids)
 

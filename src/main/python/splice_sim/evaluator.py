@@ -64,7 +64,7 @@ def evaluate_bam(bam_file, category, m, mapper, condition, out_reads, out_perfor
         if not df.empty:
             print("Processing chromosome %s of %s/%s/%s"  % (c,  category, mapper, condition) )
             aits = [BlockLocationIterator(PyrangeIterator(df, dict_chr2idx, 'transcript_id'))]
-            rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=c_len, max_span=m.max_ilen)
+            rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=c_len, max_span=m.max_ilen, flag_filter=0)
             it = AnnotationOverlapIterator(rit, aits)
             for loc, (read, annos) in it:
                 overlapping_tids = [t[0] for (_, (_, t)) in annos[0]]

@@ -49,6 +49,37 @@ from iterator import *
 # # [(14:142903115-142906754, ([14:142903115-142906754], ['ENSMUST00000100497.10'])), 
 # #   (14:142903501-142906702, ([14:142903501-142906702], ['ENSMUST00000167721.7']))]
 
+def classify_read(read, overlapping_tids, performance, out_reads):
+    """ Classifies a read """
+    read_name = read.query_name
+    true_tid, true_strand, true_isoform, tag, true_chr, true_read_cigar, true_seqerr, tc_pos = read_name.split("_")
+    n_true_seqerr = len(true_seqerr.split(',')) if true_seqerr != 'NA' else 0
+    n_tc_pos = len(tc_pos.split(',')) if tc_pos != 'NA' else 0                
+    read_chr = 'NA' if read.is_unmapped else read.reference_name
+    read_coord = 'NA' if read.is_unmapped else '%s:%i-%i' % (read.reference_name, read.reference_start, read.reference_end)
+    true_tuples = [tuple([int(y) for y in x.split('-')]) for x in true_read_cigar.split(',')]
+    read_tuples = read.get_blocks()
+    overlap = calc_coverage(true_chr, read_chr, true_tuples, read_tuples)
+    true_coord = "%s:%i-%i" % ( true_chr, true_tuples[0][0],  true_tuples[-1][1])
+    
+    # read strongly overlaps with real location; FIXME: check strand!
+    if overlap >= overlap_cutoff:
+        performance[true_tid, 'TP'] += 1
+    else:
+        performance[true_tid, 'FN'] += 1
+        print('\t'.join([str(x) for x in (read_coord, true_coord, 'FN', 'NA', 
+                                          1 if is_converted else 0, mapper, condition, overlap, true_tid, 
+                                          true_strand, true_isoform, tag, true_chr,n_true_seqerr, n_tc_pos, 
+                                          ','.join(overlapping_tids) if len(overlapping_tids) > 0 else 'NA', 
+                                          read_name)]), file=out_reads)
+        for tid in overlapping_tids:
+            performance[tid, 'FP'] += 1/len(overlapping_tids)
+            print('\t'.join([str(x) for x in (read_coord, true_coord, 'FP', tid, 
+                                              1 if is_converted else 0, mapper, condition, overlap, true_tid, 
+                                              true_strand, true_isoform, tag, true_chr,n_true_seqerr, n_tc_pos, 
+                                              ','.join(overlapping_tids) if len(overlapping_tids) > 0 else 'NA', 
+                                              read_name)]), file=out_reads)
+    return performance
 
 def evaluate_bam(bam_file, is_converted, m, mapper, condition, out_reads, out_performance):
     """ evaluate the passed BAM file """
@@ -62,50 +93,20 @@ def evaluate_bam(bam_file, is_converted, m, mapper, condition, out_reads, out_pe
     n_reads=0
     for c, c_len in dict_chr2len.items():
         df = m.df[(m.df.Feature == 'transcript') & (m.df.Chromosome == c)]  # get annotations
-        if not df.empty:
+        if df.empty: # no trasncript on this chrom: all reads are FN
+            rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=c_len, max_span=None, flag_filter=0) # max_span=m.max_ilen
+            for loc, read in it:
+                n_reads+=1
+                performance = classify_read(read, [], performance, out_reads)       
+        else:
             print("Processing chromosome %s of %s/%s/%s"  % (c,  is_converted, mapper, condition) )
             aits = [BlockLocationIterator(PyrangeIterator(df, dict_chr2idx, 'transcript_id'))]
-            rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=c_len, max_span=None, flag_filter=0)
-            test_reads=0
-            for _,r in rit:
-                test_reads+=1
-            print(test_reads)
             rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=c_len, max_span=None, flag_filter=0) # max_span=m.max_ilen
             it = AnnotationOverlapIterator(rit, aits)
             for loc, (read, annos) in it:
                 n_reads+=1
                 overlapping_tids = [t[0] for (_, (_, t)) in annos[0]]
-                read_name = read.query_name
-                true_tid, true_strand, true_isoform, tag, true_chr, true_read_cigar, true_seqerr, tc_pos = read_name.split("_")
-                n_true_seqerr = len(true_seqerr.split(',')) if true_seqerr != 'NA' else 0
-                n_tc_pos = len(tc_pos.split(',')) if tc_pos != 'NA' else 0
-                
-                read_chr = 'NA' if read.is_unmapped else read.reference_name
-                read_coord = 'NA' if read.is_unmapped else '%s:%i-%i' % (read.reference_name, read.reference_start, read.reference_end)
-                true_tuples = [tuple([int(y) for y in x.split('-')]) for x in true_read_cigar.split(',')]
-                read_tuples = read.get_blocks()
-                overlap = calc_coverage(true_chr, read_chr, true_tuples, read_tuples)
-                true_coord = "%s:%i-%i" % ( true_chr, true_tuples[0][0],  true_tuples[-1][1])
-                
-                # read strongly overlaps with real location; FIXME: check strand!
-                if overlap >= overlap_cutoff:
-                    performance[true_tid, 'TP'] += 1
-                else:
-                    performance[true_tid, 'FN'] += 1
-                    print('\t'.join([str(x) for x in (read_coord, true_coord, 'FN', 'NA', 
-                                                      1 if is_converted else 0, mapper, condition, overlap, true_tid, 
-                                                      true_strand, true_isoform, tag, true_chr,n_true_seqerr, n_tc_pos, 
-                                                      ','.join(overlapping_tids) if len(overlapping_tids) > 0 else 'NA', 
-                                                      read_name)]), file=out_reads)
-                    for tid in overlapping_tids:
-                        performance[tid, 'FP'] += 1/len(overlapping_tids)
-                        print('\t'.join([str(x) for x in (read_coord, true_coord, 'FP', tid, 
-                                                          1 if is_converted else 0, mapper, condition, overlap, true_tid, 
-                                                          true_strand, true_isoform, tag, true_chr,n_true_seqerr, n_tc_pos, 
-                                                          ','.join(overlapping_tids) if len(overlapping_tids) > 0 else 'NA', 
-                                                          read_name)]), file=out_reads)
-                
-                
+                performance = classify_read(read, overlapping_tids, performance, out_reads)       
     for tid in set([x for x, y in performance.keys()]):
          print("%s\t%s\t%s\t%s\t%i\t%i\t%i" % (1 if is_converted else 0, mapper, condition, tid, performance[tid, 'TP'], performance[tid, 'FP'], performance[tid, 'FN']), file=out_performance) 
     print("reads:  %i " % n_reads)

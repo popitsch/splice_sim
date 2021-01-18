@@ -50,7 +50,7 @@ from iterator import *
 # #   (14:142903501-142906702, ([14:142903501-142906702], ['ENSMUST00000167721.7']))]
 
 
-def evaluate_bam(bam_file, category, m, mapper, condition, out_reads, out_performance):
+def evaluate_bam(bam_file, is_converted, m, mapper, condition, out_reads, out_performance):
     """ evaluate the passed BAM file """
     logging.info("Evaluating %s" % bam_file)
     performance = Counter()
@@ -59,14 +59,16 @@ def evaluate_bam(bam_file, category, m, mapper, condition, out_reads, out_perfor
     dict_idx2chr = {v: k for v, k in enumerate(chromosomes)}
     dict_chr2len = {c: m.genome.get_reference_length(c) for c in m.genome.references}
     overlap_cutoff = 10 #0.8 * m.readlen 
+    n_reads=0
     for c, c_len in dict_chr2len.items():
         df = m.df[(m.df.Feature == 'transcript') & (m.df.Chromosome == c)]  # get annotations
         if not df.empty:
-            print("Processing chromosome %s of %s/%s/%s"  % (c,  category, mapper, condition) )
+            print("Processing chromosome %s of %s/%s/%s"  % (c,  is_converted, mapper, condition) )
             aits = [BlockLocationIterator(PyrangeIterator(df, dict_chr2idx, 'transcript_id'))]
-            rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=c_len, max_span=m.max_ilen, flag_filter=0)
+            rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=c_len, max_span=None, flag_filter=0) # max_span=m.max_ilen
             it = AnnotationOverlapIterator(rit, aits)
             for loc, (read, annos) in it:
+                n_reads+=1
                 overlapping_tids = [t[0] for (_, (_, t)) in annos[0]]
                 read_name = read.query_name
                 true_tid, true_strand, true_isoform, tag, true_chr, true_read_cigar, true_seqerr, tc_pos = read_name.split("_")
@@ -86,23 +88,22 @@ def evaluate_bam(bam_file, category, m, mapper, condition, out_reads, out_perfor
                 else:
                     performance[true_tid, 'FN'] += 1
                     print('\t'.join([str(x) for x in (read_coord, true_coord, 'FN', 'NA', 
-                                                      category, mapper, condition, overlap, true_tid, 
+                                                      1 if is_converted else 0, mapper, condition, overlap, true_tid, 
                                                       true_strand, true_isoform, tag, true_chr,n_true_seqerr, n_tc_pos, 
                                                       ','.join(overlapping_tids) if len(overlapping_tids) > 0 else 'NA', 
                                                       read_name)]), file=out_reads)
                     for tid in overlapping_tids:
                         performance[tid, 'FP'] += 1/len(overlapping_tids)
                         print('\t'.join([str(x) for x in (read_coord, true_coord, 'FP', tid, 
-                                                          category, mapper, condition, overlap, true_tid, 
+                                                          1 if is_converted else 0, mapper, condition, overlap, true_tid, 
                                                           true_strand, true_isoform, tag, true_chr,n_true_seqerr, n_tc_pos, 
                                                           ','.join(overlapping_tids) if len(overlapping_tids) > 0 else 'NA', 
                                                           read_name)]), file=out_reads)
                 
                 
     for tid in set([x for x, y in performance.keys()]):
-         print("%s\t%s\t%s\t%s\t%i\t%i\t%i" % (category, mapper, condition, tid, performance[tid, 'TP'], performance[tid, 'FP'], performance[tid, 'FN']), file=out_performance) 
-    category, mapper, condition,
-
+         print("%s\t%s\t%s\t%s\t%i\t%i\t%i" % (1 if is_converted else 0, mapper, condition, tid, performance[tid, 'TP'], performance[tid, 'FP'], performance[tid, 'FN']), file=out_performance) 
+    print("reads:  %i " % n_reads)
 # #bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/STAR/small4.5min.STAR.TC.bam'
 # bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/HISAT2_TLA/small4.5min.HISAT2_TLA.TC.bam'
 # evaluate_bam(bam, 'test', 'map', 'cond', None)
@@ -141,19 +142,19 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
     fout2 = outdir + 'tid_performance.tsv'
     with open(fout, 'w') as out:
         with open(fout2, 'w') as out2:
-            print("mapped_coords\ttrue_coords\tclassification\ttid\tcategory\tmapper\tcondition\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\toverlapping_tids\tread_name", file=out)
-            print("category\tmapper\tcondition\ttid\tTP\tFP\tFN", file=out2)
+            print("mapped_coords\ttrue_coords\tclassification\ttid\tis_converted\tmapper\tcondition\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\toverlapping_tids\tread_name", file=out)
+            print("is_converted\tmapper\tcondition\ttid\tTP\tFP\tFN", file=out2)
             for cond in m.conditions:
                 for mapper in config['mappers'].keys():
                     final_ori = simdir + "bam_ori/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".bam"
                     final_tc = simdir + "bam_tc/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.bam"
-                    evaluate_bam(final_ori, 'ori', m, mapper, cond.id, out, out2)    
-                    evaluate_bam(final_tc, 'tc', m, mapper, cond.id, out, out2)    
+                    evaluate_bam(final_ori, False, m, mapper, cond.id, out, out2)    
+                    evaluate_bam(final_tc, True, m, mapper, cond.id, out, out2)    
                 # eval truth
                 final_ori_truth  = simdir + "bam_ori/TRUTH/" + config['dataset_name'] + "." + cond.id + ".TRUTH.bam"
                 final_tc_truth   = simdir + "bam_tc/TRUTH/"  + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.bam"
-                evaluate_bam(final_ori_truth, 'ori_truth', m, 'NA', cond.id, out, out2)    
-                evaluate_bam(final_tc_truth, 'tc_truth', m, 'NA', cond.id, out, out2)    
+                evaluate_bam(final_ori_truth, False, m, 'NA', cond.id, out, out2)    
+                evaluate_bam(final_tc_truth, True, m, 'NA', cond.id, out, out2)    
     bgzip(fout, delinFile=True, override=True)
     logging.info("All done in %s" % str(datetime.timedelta(seconds=time.time() - startTime)))
     print("All done in", datetime.timedelta(seconds=time.time() - startTime))

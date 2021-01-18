@@ -264,7 +264,7 @@ def create_cigatuples(rtuples):
         last=t[1]
     return cigar_tuples
 
-def fastq_to_bam(fastq_file, m, bam_file, tag_tc='xc'):
+def fastq_to_bam(fastq_file, m, bam_file, tag_tc='xc', SAMBAMBA_EXE='sambamba', threads=1):
     """ Convert simulated FASTQ files to BAM """
     if tag_tc is None:
         tag_tc="xc"
@@ -274,7 +274,7 @@ def fastq_to_bam(fastq_file, m, bam_file, tag_tc='xc'):
     dict_chr2len = {c: m.genome.get_reference_length(c) for c in m.genome.references}
     header = { 'HD': {'VN': '1.4'}, 
                'SQ': [{'LN': l, 'SN': c} for c,l in dict_chr2len.items()] }
-    with pysam.AlignmentFile(bam_file, "wb", header=header) as bam_out:
+    with pysam.AlignmentFile(bam_file+'.tmp.sam', "wb", header=header) as bam_out:
         with gzip.open(fastq_file, 'rt') as file_in:
             for l1 in file_in:
                 l2=str(next(file_in)).rstrip()
@@ -300,6 +300,14 @@ def fastq_to_bam(fastq_file, m, bam_file, tag_tc='xc'):
                 read.flag = 0 if true_strand=='+' else 16
                 bam_out.write(read)
     bam_out.close()
+    sambambasortbam(bam_file+'.tmp.sam', 
+                    bam_file, 
+                    index=True, 
+                    override=True, 
+                    delinFile=True,
+                    ncpu=threads, 
+                    EXE=SAMBAMBA_EXE)
+    
 
 # config = json.load(open('/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/config.json'), object_pairs_hook=OrderedDict)
 # config["transcripts"] = json.load(open('/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/' + config['transcript_data']), object_pairs_hook=OrderedDict)
@@ -614,8 +622,8 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                 # create truth BAMs
                 final_all_truth  = bamdir_all + config['dataset_name'] + "." + cond.id + "."+mapper+".TRUTH.bam"
                 final_tc_truth   = bamdir_tc  + config['dataset_name'] + "." + cond.id + "."+mapper+".TC.TRUTH.bam"
-                fastq_to_bam(f_all, m, final_all_truth, tag_tc=tag_tc)
-                fastq_to_bam(f_tc, m, final_tc_truth, tag_tc=tag_tc)
+                fastq_to_bam(f_all, m, final_all_truth, tag_tc=tag_tc, threads=threads)
+                fastq_to_bam(f_tc, m, final_tc_truth, tag_tc=tag_tc, threads=threads)
     
     
     # write stats. FIXME: stats are not complete if pipeline was restarted with 

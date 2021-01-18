@@ -64,7 +64,7 @@ def evaluate_bam(bam_file, category, m, mapper, condition, tdf, out_reads, out_p
         if not df.empty:
             print("chrom", c)
             aits = [BlockLocationIterator(PyrangeIterator(df, dict_chr2idx, 'transcript_id'))]
-            rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=l, max_span=m.max_ilen)
+            rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=c_len, max_span=m.max_ilen)
             it = AnnotationOverlapIterator(rit, aits)
             for loc, (read, annos) in it:
                 overlapping_tids = [t[0] for (_, (_, t)) in annos[0]]

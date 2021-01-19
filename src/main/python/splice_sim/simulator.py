@@ -433,8 +433,8 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                         read_cigartuples_len=0
                         read_spliced=False
                         for (x,y) in block_tuples:
-                            start_abs, bid_start = iso.rel2abs_pos(x)
-                            end_abs, bid_end = iso.rel2abs_pos(y)
+                            start_abs, bid_start = r.reference_start + iso.rel2abs_pos(x)
+                            end_abs, bid_end = r.reference_start + iso.rel2abs_pos(y)
                             if not read_spliced and bid_start != bid_end:
                                 read_spliced=True
                             rc, rl = iso.calc_cigartuples(start_abs, end_abs)

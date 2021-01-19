@@ -428,8 +428,8 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                         end_abs, bid_end = iso.rel2abs_pos(r.reference_end-1)
                         if read_strand == '-': # swap start/end coords
                             start_abs, bid_start, end_abs, bid_end = end_abs, bid_end, start_abs, bid_start 
-                        read_cigartuples = iso.calc_cigartuples(start_abs, end_abs)
-                        read_cigar = ','.join(["%i-%i" % (a,b) for (a,b) in read_cigartuples]) # to parse cigar_tuples = [tuple(x.split('-')) for x in read_cigar.split(',')]
+                        read_cigartuples, read_cigartuples_len = iso.calc_cigartuples(start_abs, end_abs)
+                        read_cigar  = ','.join(["%i-%i" % (a,b) for (a,b) in read_cigartuples]) # to parse cigar_tuples = [tuple(x.split('-')) for x in read_cigar.split(',')]
                         read_spliced = 1 if bid_start != bid_end else 0
                         rel_pos = cigar_to_rel_pos(r)
                         read_name = "%s_%s_%s_%s" % (r.query_name,                                                             
@@ -439,7 +439,7 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                         qstr = ''.join(map(lambda x: chr( x+33 ), r.query_qualities))
                         # double check whether seq length and calculates CIGAR length match and if not skip read.
                         # FIXME: why does this happen?
-                        if ( len(read_cigartuples) != len(r.query_sequence)):
+                        if ( read_cigartuples_len != len(r.query_sequence)):
                             print("Data inconsistent for read %s with cigar %s. Ignoring..." % (read_name, r.cigarstring))
                             incosistent_data+=1
                         else:

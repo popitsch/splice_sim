@@ -450,7 +450,7 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                         read_name = "%s_%s_%s_%s" % (r.query_name,                                                             
                                                         iso.t.transcript.Chromosome, 
                                                         read_cigar, 
-                                                        (",".join(str(iso.rel2abs_pos(seqerr_pos)[0]) for p in rel_pos) )  if len(rel_pos)>0 else 'NA' )
+                                                        (",".join(str(iso.rel2abs_pos(seqerr_pos)[0]) for p in seqerr_pos) )  if len(seqerr_pos)>0 else 'NA' )
                         qstr = ''.join(map(lambda x: chr( x+33 ), r.query_qualities))
                         # double check whether seq length and calculates CIGAR length match and if not skip read.
                         # FIXME: why does this happen?

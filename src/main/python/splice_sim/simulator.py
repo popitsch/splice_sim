@@ -415,7 +415,11 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
             # filter reads that map to wrong strand and extend read names
             # get alignment positions from art aln file. Note that seq-read errors are encoded in the 
             # CIGAR string (e.g., '16=1X4=1X78=') means that bases 17 and 22 are mismatches wrt. reference.
-            # Q: why are there no D/I entries in the cigarstrings? How to find seqerr INDELs?
+            # FIXME: reads with INDELs are currently skipped! 
+            # deletion example: 80=1D20=
+            # insertion example: 45=1X47=1I6=
+            # TODO: 1) provide proper cigarblocks for INDEL reads
+            #       2) provide seqerr positions for INDELs 
             with open(f_fq, 'w') as out_fq:
                 sam = pysam.AlignmentFile(f_sam_both, "rb")
                 for r in sam.fetch(until_eof=True):
@@ -428,14 +432,25 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                         end_abs, bid_end = iso.rel2abs_pos(r.reference_end-1)
                         if read_strand == '-': # swap start/end coords
                             start_abs, bid_start, end_abs, bid_end = end_abs, bid_end, start_abs, bid_start 
-                        read_cigartuples, read_cigartuples_len = iso.calc_cigartuples(start_abs, end_abs)
+                            
+                        
+                        block_tuples, seqerr_pos = parse_art_cigar(r)
+                        read_cigartuples=[]
+                        read_cigartuples_len=0
+                        read_spliced=False
+                        for (x,y) in block_tuples:
+                            start_abs, bid_start = iso.rel2abs_pos(x)
+                            end_abs, bid_end = iso.rel2abs_pos(y)
+                            if not read_spliced and bid_start != bid_end:
+                                read_spliced=True
+                            rc, rl = iso.calc_cigartuples(start_abs, end_abs)
+                            read_cigartuples+=rc
+                            read_cigartuples_len+=rl
                         read_cigar  = ','.join(["%i-%i" % (a,b) for (a,b) in read_cigartuples]) # to parse cigar_tuples = [tuple(x.split('-')) for x in read_cigar.split(',')]
-                        read_spliced = 1 if bid_start != bid_end else 0
-                        rel_pos = cigar_to_rel_pos(r)
                         read_name = "%s_%s_%s_%s" % (r.query_name,                                                             
                                                         iso.t.transcript.Chromosome, 
                                                         read_cigar, 
-                                                        (",".join(str(iso.rel2abs_pos(p)[0]) for p in rel_pos) )  if len(rel_pos)>0 else 'NA' )
+                                                        (",".join(str(iso.rel2abs_pos(seqerr_pos)[0]) for p in rel_pos) )  if len(rel_pos)>0 else 'NA' )
                         qstr = ''.join(map(lambda x: chr( x+33 ), r.query_qualities))
                         # double check whether seq length and calculates CIGAR length match and if not skip read.
                         # FIXME: why does this happen?

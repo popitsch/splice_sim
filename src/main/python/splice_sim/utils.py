@@ -129,9 +129,33 @@ def cigar_to_rel_pos(read):
               off+=1
               p=readidx2genpos_abs(read, off)
               if p is not None:
-                  pos+=[p-1]  
+                  pos+=[p-1]    
     return pos
 
+def parse_art_cigar(read):
+    """ converts a (art_illumina) cigar string to a set of relative ref-mismatch (=seqerr) positions (0-based) """
+    seqerr_pos=[]
+    block_tuples=[]
+    off = 0
+    start=0
+    for op, len in read.cigartuples:
+        if (op == BAM_CMATCH) or (op == BAM_CEQUAL): # M or =
+           off+=len
+        elif op == BAM_CDIFF: # X
+            seqerr_pos+=[readidx2genpos_abs(read, off)]
+            off+=len
+        elif op == BAM_CINS: # I
+            seqerr_pos+=[readidx2genpos_abs(read, off)]
+            off+=len
+        elif op == BAM_CDEL: # D
+            block_tuples+=[(start, off)]
+            seqerr_pos+=[readidx2genpos_abs(read, off)]
+            off+=len
+            start=off
+        else:
+            print("UNSUPPORTED CIGAR operator %i" % op)
+    block_tuples+=[(start, off)]   
+    return block_tuples, seqerr_pos
 
 # FIXME: there is a problem with called subprocessed that do not terminate! This will hang this code!
 # example-cmd:

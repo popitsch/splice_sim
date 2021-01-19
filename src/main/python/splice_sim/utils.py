@@ -148,15 +148,15 @@ def parse_art_cigar(read):
             seqerr_pos+=[readidx2genpos_abs(read, off)]
             off+=len
         elif op == BAM_CDEL: # D
-            block_tuples+=[(start, off)]
+            block_tuples+=[(start, off-1)]
             seqerr_pos+=[readidx2genpos_abs(read, off)]
             off+=len
             start=off
         else:
             print("UNSUPPORTED CIGAR operator %i" % op)
-    block_tuples+=[(start, off)]   
+    block_tuples+=[(start, off-1)]   
     if read.is_reverse:
-        block_tuples = [(y,x) for (x,y) in reverse(block_tuples)]
+        block_tuples = [(y,x) for (x,y) in reversed(block_tuples)]
     return block_tuples, seqerr_pos
 
 # FIXME: there is a problem with called subprocessed that do not terminate! This will hang this code!

@@ -428,12 +428,6 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                     read_strand = "-" if r.is_reverse else "+"
                     if transcript_strand == read_strand: # NOTE: reads that were mapped to opposite strand will be dropped later in post_filtering step!
                         iso = m.transcripts[tid].isoforms[iso_id]
-                        start_abs, bid_start = iso.rel2abs_pos(r.reference_start)
-                        end_abs, bid_end = iso.rel2abs_pos(r.reference_end-1)
-                        if read_strand == '-': # swap start/end coords
-                            start_abs, bid_start, end_abs, bid_end = end_abs, bid_end, start_abs, bid_start 
-                            
-                        
                         block_tuples, seqerr_pos = parse_art_cigar(r)
                         read_cigartuples=[]
                         read_cigartuples_len=0

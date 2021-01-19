@@ -394,6 +394,7 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
     logging.info("Running read simulator")
     artlog=tmpdir + config['dataset_name'] + ".art.log" 
     simulated_read_stats=Counter()
+    incosistent_data=0
     for cond in m.conditions:
         f = tmpdir + config['dataset_name'] + "." + cond.id + ".fa"
         # art output
@@ -422,14 +423,13 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                     tid,transcript_strand,iso_id,tag=r.query_name.split("_")
                     read_strand = "-" if r.is_reverse else "+"
                     if transcript_strand == read_strand: # NOTE: reads that were mapped to opposite strand will be dropped later in post_filtering step!
-                        simulated_read_stats[cond.id,tid]+=1
                         iso = m.transcripts[tid].isoforms[iso_id]
                         start_abs, bid_start = iso.rel2abs_pos(r.reference_start)
                         end_abs, bid_end = iso.rel2abs_pos(r.reference_end-1)
                         if read_strand == '-': # swap start/end coords
                             start_abs, bid_start, end_abs, bid_end = end_abs, bid_end, start_abs, bid_start 
-                        read_cigar = iso.calc_cigartuples(start_abs, end_abs)
-                        read_cigar = ','.join(["%i-%i" % (a,b) for (a,b) in read_cigar]) # to parse cigar_tuples = [tuple(x.split('-')) for x in read_cigar.split(',')]
+                        read_cigartuples = iso.calc_cigartuples(start_abs, end_abs)
+                        read_cigar = ','.join(["%i-%i" % (a,b) for (a,b) in read_cigartuples]) # to parse cigar_tuples = [tuple(x.split('-')) for x in read_cigar.split(',')]
                         read_spliced = 1 if bid_start != bid_end else 0
                         rel_pos = cigar_to_rel_pos(r)
                         read_name = "%s_%s_%s_%s" % (r.query_name,                                                             
@@ -437,13 +437,21 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                                                         read_cigar, 
                                                         (",".join(str(iso.rel2abs_pos(p)[0]) for p in rel_pos) )  if len(rel_pos)>0 else 'NA' )
                         qstr = ''.join(map(lambda x: chr( x+33 ), r.query_qualities))
-                        print("@%s\n%s\n+\n%s" % ( read_name, r.query_sequence, qstr), file=out_fq )
+                        # double check whether seq length and calculates CIGAR length match and if not skip read.
+                        # FIXME: why does this happen?
+                        if ( len(read_cigartuples) != len(r.query_sequence)):
+                            print("Data inconsistent for read %s with cigar %s. Ignoring..." % (read_name, r.cigarstring))
+                            incosistent_data+=1
+                        else:
+                            simulated_read_stats[cond.id,tid]+=1
+                            print("@%s\n%s\n+\n%s" % ( read_name, r.query_sequence, qstr), file=out_fq )
             if success:
                 removeFile([f_fq_both, f_sam_both])
     
         else:
             logging.warn("Will not re-create existing file %s" % (f_fq+".gz"))
-    
+    if incosistent_data > 0:
+        logging.warn("Dropped %i simulated reads due to inconsistent data" % incosistent_data)
     
     # write simulated reead stats
     f_srs = outdir + 'simulated_read_stats.tsv'
@@ -624,8 +632,9 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                 os.makedirs(bamdir_tc)
             final_all_truth  = bamdir_all + config['dataset_name'] + "." + cond.id + ".TRUTH.bam"
             final_tc_truth   = bamdir_tc  + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.bam"
-            fastq_to_bam(f_all, m, final_all_truth, tag_tc=tag_tc, threads=threads)
-            fastq_to_bam(f_tc, m, final_tc_truth, tag_tc=tag_tc, threads=threads)
+            if not files_exist([final_all_truth, final_tc_truth]):
+                fastq_to_bam(f_all, m, final_all_truth, tag_tc=tag_tc, threads=threads)
+                fastq_to_bam(f_tc, m, final_tc_truth, tag_tc=tag_tc, threads=threads)
     
     
     # write stats. FIXME: stats are not complete if pipeline was restarted with 

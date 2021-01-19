@@ -2,6 +2,9 @@ from argparse import ArgumentParser, RawDescriptionHelpFormatter
 import os, sys
 import pandas as pd
 
+#
+# Extract a tid table from a slamstr transcript file
+#
 usage = '''                           
 
   Copyright (C) 2021 XXX.  All rights reserved.

@@ -94,20 +94,25 @@ class Isoform():
         ablocks = self.aln_blocks
         cigartuples=[]
         started=False
+        clen=0
         for bstart,bend in ablocks:
             bwidth = bend-bstart+1
             if self.block_contains(bstart, bend, abs_start):
                 if self.block_contains(bstart, bend, abs_end): # start and stop in same block
                     cigartuples+=[(abs_start, abs_end)]
-                    return cigartuples
+                    clen+=abs_end-abs_start+1
+                    return cigartuples, clen    
                 cigartuples+=[(abs_start, bend)]
+                clen+=bend-abs_start+1
                 started=True
             elif self.block_contains(bstart, bend, abs_end):
                 cigartuples+=[(bstart, abs_end)]
-                return cigartuples
+                clen+=abs_end-bstart+1
+                return cigartuples, clen    
             elif started:
                 cigartuples+=[(bstart, bend)]
-        return cigartuples      
+                clen+=bend-bstart+1
+        return cigartuples, clen    
     def __repr__(self):
         return self.__str__()  
     def __str__(self):

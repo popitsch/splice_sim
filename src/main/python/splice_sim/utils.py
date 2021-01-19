@@ -155,7 +155,7 @@ def parse_art_cigar(read):
         else:
             print("UNSUPPORTED CIGAR operator %i" % op)
     block_tuples+=[(start, off)]   
-    if r.is_reverse:
+    if read.is_reverse:
         block_tuples = [(y,x) for (x,y) in reverse(block_tuples)]
     return block_tuples, seqerr_pos
 

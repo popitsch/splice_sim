@@ -111,7 +111,7 @@ def evaluate_bam(bam_file, is_converted, m, mapper, condition, out_reads, out_pe
     isos= set([y for x, y, z in performance.keys()])
     for tid in tids:
         for iso in isos:
-             print("%s\t%s\t%s\t%s\t%i\t%i\t%i" % (1 if is_converted else 0, mapper, condition, iso, tid, performance[tid, 'TP'], performance[tid, 'FP'], performance[tid, 'FN']), file=out_performance) 
+             print("\t".join([str(x) for x in [1 if is_converted else 0, mapper, condition, iso, tid, performance[tid, 'TP'], performance[tid, 'FP'], performance[tid, 'FN'] ]]), file=out_performance) 
     print("reads:  %i " % n_reads)
 # #bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/STAR/small4.5min.STAR.TC.bam'
 # bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/HISAT2_TLA/small4.5min.HISAT2_TLA.TC.bam'

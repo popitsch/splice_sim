@@ -98,9 +98,9 @@ def classify_read(read, overlapping_tids, is_converted, mapper, condition, dict_
             true_read.tags = (("NM", n_true_seqerr + n_tc_pos ),)
             true_read.flag = 0 if true_strand=='+' else 16
             true_read.set_tag(tag='YC', value='255,255,255', value_type="Z")
-            sam_out.add(true_read)
+            sam_out.write(true_read)
             read.set_tag(tag='YC', value='255,0,0', value_type="Z")
-            sam_out.add(read)
+            sam_out.write(read)
     return performance
 
 def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_reads, out_performance):

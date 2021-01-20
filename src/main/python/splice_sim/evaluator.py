@@ -147,6 +147,8 @@ def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_read
              
     # add unmapped reads
     for read in samin.fetch(contig=None, until_eof=True):
+        if not read.is_unmapped:
+            continue
         n_reads+=1
         performance = classify_read(read, [], is_converted, mapper, condition, dict_chr2idx, performance, out_reads, samout)
     print("%s reads:  %i %i %i" % (bam_file, n_reads, samin.mapped, samin.unmapped))

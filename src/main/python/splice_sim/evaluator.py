@@ -149,10 +149,11 @@ def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_read
     for read in samin.fetch(contig=None, until_eof=True):
         n_reads+=1
         performance = classify_read(read, [], is_converted, mapper, condition, dict_chr2idx, performance, out_reads, samout)
+    print("%s reads:  %i %i %i" % (bam_file, n_reads, samin.mapped, samin.unmapped))
     samin.close()
     if samout is not None:
         samout.close()
-    print("%s reads:  %i " % (bam_file, n_reads))
+    
 # #bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/STAR/small4.5min.STAR.TC.bam'
 # bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/HISAT2_TLA/small4.5min.HISAT2_TLA.TC.bam'
 # evaluate_bam(bam, 'test', 'map', 'cond', None)

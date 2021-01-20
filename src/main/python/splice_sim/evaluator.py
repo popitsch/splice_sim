@@ -68,7 +68,6 @@ def classify_read(read, overlapping_tids, is_converted, mapper, condition, dict_
     read_tuples = read.get_blocks()
     overlap = calc_coverage(true_chr, read_chr, true_tuples, read_tuples)
     true_coord = "%s:%i-%i" % ( true_chr, true_tuples[0][0],  true_tuples[-1][1])
-    is_fn=False
     
     # read strongly overlaps with real location; FIXME: check strand!
     if overlap >= overlap_cutoff:
@@ -87,14 +86,25 @@ def classify_read(read, overlapping_tids, is_converted, mapper, condition, dict_
                                               true_strand, true_isoform, tag, true_chr,n_true_seqerr, n_tc_pos, 
                                               ','.join(overlapping_tids) if len(overlapping_tids) > 0 else 'NA', 
                                               read_name)]), file=out_reads)
-        is_fn=True
         # write FN/FP reads
         if sam_out is not None:
+            true_read = pysam.AlignedSegment()
+            true_read.query_name = read_name
+            is_correct_strand = ( read.is_reverse and true_strand=='-' ) or ((not read.is_reverse) and true_strand=='+')
+            true_read.query_sequence = read.query_sequence if is_correct_strand else reverse_complement(read.query_sequence)
+            true_read.query_qualities = read.query_qualities
+            true_read.reference_start = true_tuples[0][0]-1
+            true_read.cigartuples=create_cigatuples(true_tuples)
+            true_read.reference_id = dict_chr2idx[true_chr]
+            true_read.tags = (("NM", n_true_seqerr + n_tc_pos ),)
+            true_read.flag = 0 if true_strand=='+' else 16
+            true_read.set_tag(tag='YC', value='255,255,255', value_type="Z")
+            sam_out.write(true_read)
             read.set_tag(tag='YC', value='255,0,0', value_type="Z")
             sam_out.write(read)
-    return performance, is_fn
+    return performance
 
-def evaluate_bam(bam_file, bam_file_truth, bam_out, is_converted, m, mapper, condition, out_reads, out_performance):
+def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_reads, out_performance):
     """ evaluate the passed BAM file """
     logging.info("Evaluating %s" % bam_file)
     performance = Counter()
@@ -105,7 +115,7 @@ def evaluate_bam(bam_file, bam_file_truth, bam_out, is_converted, m, mapper, con
     n_reads=0
     samin = pysam.AlignmentFile(bam_file, "rb") 
     samout = pysam.AlignmentFile(bam_out+'.tmp.bam', "wb", template=samin ) if bam_out is not None else None
-    fn_read_names=[]
+    
     for c, c_len in dict_chr2len.items():
         df = m.df[(m.df.Feature == 'transcript') & (m.df.Chromosome == c)]  # get annotations
         #print("Processing chromosome %s of %s/%s/%s"  % (c,  is_converted, mapper, condition) )
@@ -113,9 +123,7 @@ def evaluate_bam(bam_file, bam_file_truth, bam_out, is_converted, m, mapper, con
             rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=c_len, max_span=None, flag_filter=0) # max_span=m.max_ilen
             for loc, read in rit:
                 n_reads+=1
-                performance, is_fn = classify_read(read, [], is_converted, mapper, condition, dict_chr2idx, performance, out_reads, samout)
-                if is_fn:
-                    fn_read_names+=[read.query_name]       
+                performance = classify_read(read, [], is_converted, mapper, condition, dict_chr2idx, performance, out_reads, samout)       
         else:
             aits = [BlockLocationIterator(PyrangeIterator(df, dict_chr2idx, 'transcript_id'))]
             rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=c_len, max_span=None, flag_filter=0) # max_span=m.max_ilen
@@ -123,9 +131,7 @@ def evaluate_bam(bam_file, bam_file_truth, bam_out, is_converted, m, mapper, con
             for loc, (read, annos) in it:
                 n_reads+=1
                 overlapping_tids = [t[0] for (_, (_, t)) in annos[0]]
-                performance, is_fn = classify_read(read, overlapping_tids, is_converted, mapper, condition, dict_chr2idx, performance, out_reads, samout)
-                if is_fn:
-                    fn_read_names+=[read.query_name]       
+                performance = classify_read(read, overlapping_tids, is_converted, mapper, condition, dict_chr2idx, performance, out_reads, samout)
     tids= set([x for x, y, z in performance.keys()])
     isos= set([y for x, y, z in performance.keys()])
     for tid in tids:
@@ -145,18 +151,7 @@ def evaluate_bam(bam_file, bam_file_truth, bam_out, is_converted, m, mapper, con
         if not read.is_unmapped:
             continue
         n_reads+=1
-        performance, is_fn = classify_read(read, [], is_converted, mapper, condition, dict_chr2idx, performance, out_reads, samout)
-        if is_fn:
-            fn_read_names+=[read.query_name]       
-        
-    # add FN reads from truth bam
-    if len(fn_read_names) > 0:
-        samtruth = pysam.AlignmentFile(bam_file_truth, "rb") 
-        for read in samtruth.fetch(contig=None, until_eof=True):
-            if read.query_name in fn_read_names:
-                read.set_tag(tag='YC', value='255,255,255', value_type="Z")
-                samout.write(read)
-    
+        performance = classify_read(read, [], is_converted, mapper, condition, dict_chr2idx, performance, out_reads, samout)
     print("%s reads:  %i %i %i" % (bam_file, n_reads, samin.mapped, samin.unmapped))
     samin.close()
     if samout is not None:
@@ -211,12 +206,6 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
             print("mapped_coords\ttrue_coords\tclassification\ttid\tis_converted\tmapper\tcondition\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\toverlapping_tids\tread_name", file=out)
             print("is_converted\tmapper\tcondition\tiso\ttid\tTP\tFP\tFN", file=out2)
             for cond in m.conditions:
-                # eval truth
-                bam_ori_truth  = simdir + "bam_ori/TRUTH/" + config['dataset_name'] + "." + cond.id + ".TRUTH.bam"
-                bam_tc_truth   = simdir + "bam_tc/TRUTH/"  + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.bam"
-                evaluate_bam(bam_ori_truth, bam_ori_truth, None, False, m, 'NA', cond.id, out, out2)    
-                evaluate_bam(bam_tc_truth, bam_tc_truth, None, True, m, 'NA', cond.id, out, out2)    
-
                 for mapper in config['mappers'].keys():
                     bam_ori = simdir + "bam_ori/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".bam"
                     bam_tc = simdir + "bam_tc/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.bam"
@@ -230,8 +219,13 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
                         os.makedirs(bam_out_dir_tc) 
                     bam_ori_out = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".mismapped.bam"
                     bam_tc_out =  bam_out_dir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.mismapped.bam"
-                    evaluate_bam(bam_ori, bam_ori_truth, bam_ori_out, False, m, mapper, cond.id, out, out2)    
-                    evaluate_bam(bam_tc, bam_tc_truth, bam_tc_out, True, m, mapper, cond.id, out, out2)    
+                    evaluate_bam(bam_ori, bam_ori_out, False, m, mapper, cond.id, out, out2)    
+                    evaluate_bam(bam_tc, bam_tc_out, True, m, mapper, cond.id, out, out2)    
+                # eval truth
+                bam_ori_truth  = simdir + "bam_ori/TRUTH/" + config['dataset_name'] + "." + cond.id + ".TRUTH.bam"
+                bam_tc_truth   = simdir + "bam_tc/TRUTH/"  + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.bam"
+                evaluate_bam(bam_ori_truth, None, False, m, 'NA', cond.id, out, out2)    
+                evaluate_bam(bam_tc_truth, None, True, m, 'NA', cond.id, out, out2)    
     bgzip(fout, delinFile=True, override=True)
     logging.info("All done in %s" % str(datetime.timedelta(seconds=time.time() - startTime)))
     print("All done in", datetime.timedelta(seconds=time.time() - startTime))

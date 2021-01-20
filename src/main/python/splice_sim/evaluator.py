@@ -128,6 +128,7 @@ def evaluate_bam(bam_file, is_converted, m, mapper, condition, out_reads, out_pe
                  performance[tid, iso, 'FN'] ]]), file=out_performance) 
              
     # add unmapped reads
+    samfile = pysam.AlignmentFile(bam_file, "rb") 
     for read in samfile.fetch(contig=None, until_eof=True):
         performance = classify_read(read, [], is_converted, mapper, condition, performance, out_reads)
     print("%s reads:  %i " % (bam_file, n_reads))

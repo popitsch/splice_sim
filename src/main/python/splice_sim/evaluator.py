@@ -155,6 +155,7 @@ def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_read
     samin.close()
     if samout is not None:
         samout.close()
+        pysam.index(bam_out)
     
 # #bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/STAR/small4.5min.STAR.TC.bam'
 # bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/HISAT2_TLA/small4.5min.HISAT2_TLA.TC.bam'
@@ -173,7 +174,6 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
         print("Creating dir " + outdir)
         os.makedirs(outdir)
     
-
     # read transcript data from external file if not in config
     if 'transcripts' in config:
         logging.info("Reading transcript configuration from config file.")
@@ -190,6 +190,9 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
     # instantiate model
     m = Model(config)
     logging.info("Configured conditions: %s" % (", ".join(str(x) for x in m.conditions)))
+    
+    overlap_cutoff = config['overlap_cutoff'] if 'overlap_cutoff' in config else m.readlen * 0.8
+    logging.info("Configured overlap cutoff: %i" % overlap_cutoff)
      
     fout = outdir + 'reads.tsv'
     fout2 = outdir + 'tid_performance.tsv'
@@ -201,12 +204,16 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
                 for mapper in config['mappers'].keys():
                     bam_ori = simdir + "bam_ori/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".bam"
                     bam_tc = simdir + "bam_tc/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.bam"
-                    bam_out_dir = outdir + "bam_ori/" + mapper + "/"
-                    if not os.path.exists(bam_out_dir):
-                        print("Creating dir " + bam_out_dir)
-                        os.makedirs(bam_out_dir) 
-                    bam_ori_out = bam_out_dir + config['dataset_name'] + "." + cond.id + "." + mapper + ".mismapped.bam"
-                    bam_tc_out = bam_out_dir + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.mismapped.bam"
+                    bam_out_dir_ori = outdir + "bam_ori/" + mapper + "/"
+                    if not os.path.exists(bam_out_dir_ori):
+                        print("Creating dir " + bam_out_dir_ori)
+                        os.makedirs(bam_out_dir_ori) 
+                    bam_out_dir_tc = outdir + "bam_tc/" + mapper + "/"
+                    if not os.path.exists(bam_out_dir_tc):
+                        print("Creating dir " + bam_out_dir_tc)
+                        os.makedirs(bam_out_dir_tc) 
+                    bam_ori_out = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".mismapped.bam"
+                    bam_tc_out =  bam_out_dir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.mismapped.bam"
                     evaluate_bam(bam_ori, bam_ori_out, False, m, mapper, cond.id, out, out2)    
                     evaluate_bam(bam_tc, bam_tc_out, True, m, mapper, cond.id, out, out2)    
                 # eval truth

@@ -249,17 +249,6 @@ def postfilter_bam( bam_in, bam_out, tag_tc="xc", tag_mp="xp" ):
     return True, n_reads, f_reads
 
 
-def create_cigatuples(rtuples):
-    """ convert aligned block tuples to pysam cigartuples """
-    cigar_tuples=[]
-    last=None
-    for t in rtuples:
-        if last  is not None:
-            cigar_tuples+=[(3, t[0]-last-1)] # N-block
-        cigar_tuples+=[(0, t[1]-t[0]+1)] # M-block
-        last=t[1]
-    return cigar_tuples
-
 def fastq_to_bam(fastq_file, m, bam_file, tag_tc='xc', SAMBAMBA_EXE='sambamba', threads=1):
     """ Convert simulated FASTQ files to BAM """
     if tag_tc is None:

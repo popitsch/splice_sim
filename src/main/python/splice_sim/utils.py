@@ -132,6 +132,17 @@ def cigar_to_rel_pos(read):
                   pos+=[p-1]    
     return pos
 
+def create_cigatuples(rtuples):
+    """ convert aligned block tuples to pysam cigartuples """
+    cigar_tuples=[]
+    last=None
+    for t in rtuples:
+        if last  is not None:
+            cigar_tuples+=[(3, t[0]-last-1)] # N-block
+        cigar_tuples+=[(0, t[1]-t[0]+1)] # M-block
+        last=t[1]
+    return cigar_tuples
+
 def parse_art_cigar(read):
     """ converts a (art_illumina) cigar string to a set of relative ref-mismatch (=seqerr) positions (0-based) """
     seqerr_pos=[]

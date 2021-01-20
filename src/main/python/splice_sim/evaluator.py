@@ -150,11 +150,12 @@ def evaluate_bam(bam_file, bam_file_truth, bam_out, is_converted, m, mapper, con
             fn_read_names+=[read.query_name]       
         
     # add FN reads from truth bam
-    samtruth = pysam.AlignmentFile(bam_file_truth, "rb") 
-    for read in samtruth.fetch(contig=None, until_eof=True):
-        if read.query_name in fn_read_names:
-            read.set_tag(tag='YC', value='255,255,255', value_type="Z")
-            sam_out.write(read)
+    if len(fn_read_names) > 0:
+        samtruth = pysam.AlignmentFile(bam_file_truth, "rb") 
+        for read in samtruth.fetch(contig=None, until_eof=True):
+            if read.query_name in fn_read_names:
+                read.set_tag(tag='YC', value='255,255,255', value_type="Z")
+                samout.write(read)
     
     print("%s reads:  %i %i %i" % (bam_file, n_reads, samin.mapped, samin.unmapped))
     samin.close()

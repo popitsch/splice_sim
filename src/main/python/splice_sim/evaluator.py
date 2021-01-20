@@ -95,7 +95,7 @@ def classify_read(read, overlapping_tids, is_converted, mapper, condition, dict_
             true_read.reference_start = true_tuples[0][0]-1
             true_read.cigartuples=create_cigatuples(true_tuples)
             true_read.reference_id = dict_chr2idx[true_chr]
-            true_read.tags = (("NM", n_true_seqerr + n_tc_pos ),(tag_tc, n_tc_pos))
+            true_read.tags = (("NM", n_true_seqerr + n_tc_pos ),)
             true_read.flag = 0 if true_strand=='+' else 16
             true_read.set_tag(tag='YC', value='255,255,255', value_type="Z")
             sam_out.add(true_read)

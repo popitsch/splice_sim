@@ -213,8 +213,8 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
                 # eval truth
                 bam_ori_truth  = simdir + "bam_ori/TRUTH/" + config['dataset_name'] + "." + cond.id + ".TRUTH.bam"
                 bam_tc_truth   = simdir + "bam_tc/TRUTH/"  + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.bam"
-                evaluate_bam(bam_ori_truth, None, False, m, 'NA', cond.id, out, out2)    
-                evaluate_bam(bam_tc_truth, None, True, m, 'NA', cond.id, out, out2)    
+                evaluate_bam(bam_ori_truth, bam_ori_truth, None, False, m, 'NA', cond.id, out, out2)    
+                evaluate_bam(bam_tc_truth, bam_tc_truth, None, True, m, 'NA', cond.id, out, out2)    
 
                 for mapper in config['mappers'].keys():
                     bam_ori = simdir + "bam_ori/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".bam"

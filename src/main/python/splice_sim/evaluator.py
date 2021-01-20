@@ -55,7 +55,7 @@ from iterator import *
 # [(14:142903115-142906754, ([14:142903115-142906754], ['ENSMUST00000100497.10'])), 
 #   (14:142903501-142906702, ([14:142903501-142906702], ['ENSMUST00000167721.7']))]
 
-def classify_read(read, overlapping_tids, is_converted, mapper, condition, performance, out_reads, sam_out):
+def classify_read(read, overlapping_tids, is_converted, mapper, condition, dict_chr2idx, performance, out_reads, sam_out):
     """ Classifies a read """
     overlap_cutoff = 10 #0.8 * m.readlen 
     read_name = read.query_name
@@ -94,7 +94,7 @@ def classify_read(read, overlapping_tids, is_converted, mapper, condition, perfo
             true_read.query_qualities = read.query_qualities
             true_read.reference_start = true_tuples[0][0]-1
             true_read.cigartuples=create_cigatuples(true_tuples)
-            true_read.reference_name = true_chr
+            true_read.reference_id = dict_chr2idx[true_chr]
             true_read.tags = (("NM", n_true_seqerr + n_tc_pos ),(tag_tc, n_tc_pos))
             true_read.flag = 0 if true_strand=='+' else 16
             true_read.set_tag(tag='YC', value='255,255,255', value_type="Z")
@@ -122,7 +122,7 @@ def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_read
             rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=c_len, max_span=None, flag_filter=0) # max_span=m.max_ilen
             for loc, read in rit:
                 n_reads+=1
-                performance = classify_read(read, [], is_converted, mapper, condition, performance, out_reads, samout)       
+                performance = classify_read(read, [], is_converted, mapper, condition, dict_chr2idx, performance, out_reads, samout)       
         else:
             aits = [BlockLocationIterator(PyrangeIterator(df, dict_chr2idx, 'transcript_id'))]
             rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=c_len, max_span=None, flag_filter=0) # max_span=m.max_ilen
@@ -130,7 +130,7 @@ def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_read
             for loc, (read, annos) in it:
                 n_reads+=1
                 overlapping_tids = [t[0] for (_, (_, t)) in annos[0]]
-                performance = classify_read(read, overlapping_tids, is_converted, mapper, condition, performance, out_reads, samout)
+                performance = classify_read(read, overlapping_tids, is_converted, mapper, condition, dict_chr2idx, performance, out_reads, samout)
     tids= set([x for x, y, z in performance.keys()])
     isos= set([y for x, y, z in performance.keys()])
     for tid in tids:
@@ -148,7 +148,7 @@ def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_read
     # add unmapped reads
     for read in samin.fetch(contig=None, until_eof=True):
         n_reads+=1
-        performance = classify_read(read, [], is_converted, mapper, condition, performance, out_reads)
+        performance = classify_read(read, [], is_converted, mapper, condition, dict_chr2idx, performance, out_reads)
     samin.close()
     if samout is not None:
         samout.close()

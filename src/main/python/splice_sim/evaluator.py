@@ -55,7 +55,7 @@ from iterator import *
 # [(14:142903115-142906754, ([14:142903115-142906754], ['ENSMUST00000100497.10'])), 
 #   (14:142903501-142906702, ([14:142903501-142906702], ['ENSMUST00000167721.7']))]
 
-def classify_read(read, overlapping_tids, is_converted, mapper, condition, performance, out_reads):
+def classify_read(read, overlapping_tids, is_converted, mapper, condition, performance, out_reads, sam_out):
     """ Classifies a read """
     overlap_cutoff = 10 #0.8 * m.readlen 
     read_name = read.query_name
@@ -86,9 +86,24 @@ def classify_read(read, overlapping_tids, is_converted, mapper, condition, perfo
                                               true_strand, true_isoform, tag, true_chr,n_true_seqerr, n_tc_pos, 
                                               ','.join(overlapping_tids) if len(overlapping_tids) > 0 else 'NA', 
                                               read_name)]), file=out_reads)
+        # write FN/FP reads
+        if sam_out is not None:
+            true_read = pysam.AlignedSegment()
+            true_read.query_name = read_name
+            true_read.query_sequence = read.query_sequence
+            true_read.query_qualities = read.query_qualities
+            true_read.reference_start = true_tuples[0][0]-1
+            true_read.cigartuples=create_cigatuples(true_tuples)
+            true_read.reference_id = dict_chr2idx[true_chr]
+            true_read.tags = (("NM", n_true_seqerr + n_tc_pos ),(tag_tc, n_tc_pos))
+            true_read.flag = 0 if true_strand=='+' else 16
+            true_read.set_tag(tag='YC', value='255,255,255', value_type="Z")
+            sam_out.add(true_read)
+            read.set_tag(tag='YC', value='255,0,0', value_type="Z")
+            sam_out.add(read)
     return performance
 
-def evaluate_bam(bam_file, is_converted, m, mapper, condition, out_reads, out_performance):
+def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_reads, out_performance):
     """ evaluate the passed BAM file """
     logging.info("Evaluating %s" % bam_file)
     performance = Counter()
@@ -97,6 +112,9 @@ def evaluate_bam(bam_file, is_converted, m, mapper, condition, out_reads, out_pe
     dict_idx2chr = {v: k for v, k in enumerate(chromosomes)}
     dict_chr2len = {c: m.genome.get_reference_length(c) for c in m.genome.references}
     n_reads=0
+    samin = pysam.AlignmentFile(bam_file, "rb") 
+    samout = pysam.AlignmentFile(bam_out, "wb", template=samin ) if bam_out is not None else None
+    
     for c, c_len in dict_chr2len.items():
         df = m.df[(m.df.Feature == 'transcript') & (m.df.Chromosome == c)]  # get annotations
         #print("Processing chromosome %s of %s/%s/%s"  % (c,  is_converted, mapper, condition) )
@@ -104,7 +122,7 @@ def evaluate_bam(bam_file, is_converted, m, mapper, condition, out_reads, out_pe
             rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=c_len, max_span=None, flag_filter=0) # max_span=m.max_ilen
             for loc, read in rit:
                 n_reads+=1
-                performance = classify_read(read, [], is_converted, mapper, condition, performance, out_reads)       
+                performance = classify_read(read, [], is_converted, mapper, condition, performance, out_reads, samout)       
         else:
             aits = [BlockLocationIterator(PyrangeIterator(df, dict_chr2idx, 'transcript_id'))]
             rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=c_len, max_span=None, flag_filter=0) # max_span=m.max_ilen
@@ -112,7 +130,7 @@ def evaluate_bam(bam_file, is_converted, m, mapper, condition, out_reads, out_pe
             for loc, (read, annos) in it:
                 n_reads+=1
                 overlapping_tids = [t[0] for (_, (_, t)) in annos[0]]
-                performance = classify_read(read, overlapping_tids, is_converted, mapper, condition, performance, out_reads)
+                performance = classify_read(read, overlapping_tids, is_converted, mapper, condition, performance, out_reads, samout)
     tids= set([x for x, y, z in performance.keys()])
     isos= set([y for x, y, z in performance.keys()])
     for tid in tids:
@@ -128,9 +146,12 @@ def evaluate_bam(bam_file, is_converted, m, mapper, condition, out_reads, out_pe
                  performance[tid, iso, 'FN'] ]]), file=out_performance) 
              
     # add unmapped reads
-    samfile = pysam.AlignmentFile(bam_file, "rb") 
-    for read in samfile.fetch(contig=None, until_eof=True):
+    for read in samin.fetch(contig=None, until_eof=True):
+        n_reads+=1
         performance = classify_read(read, [], is_converted, mapper, condition, performance, out_reads)
+    samin.close()
+    if samout is not None:
+        samout.close()
     print("%s reads:  %i " % (bam_file, n_reads))
 # #bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/STAR/small4.5min.STAR.TC.bam'
 # bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/HISAT2_TLA/small4.5min.HISAT2_TLA.TC.bam'
@@ -148,6 +169,7 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
     if not os.path.exists(outdir):
         print("Creating dir " + outdir)
         os.makedirs(outdir)
+    
 
     # read transcript data from external file if not in config
     if 'transcripts' in config:
@@ -174,15 +196,21 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
             print("is_converted\tmapper\tcondition\tiso\ttid\tTP\tFP\tFN", file=out2)
             for cond in m.conditions:
                 for mapper in config['mappers'].keys():
-                    final_ori = simdir + "bam_ori/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".bam"
-                    final_tc = simdir + "bam_tc/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.bam"
-                    evaluate_bam(final_ori, False, m, mapper, cond.id, out, out2)    
-                    evaluate_bam(final_tc, True, m, mapper, cond.id, out, out2)    
+                    bam_ori = simdir + "bam_ori/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".bam"
+                    bam_tc = simdir + "bam_tc/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.bam"
+                    bam_out_dir = outdir + "bam_ori/" + mapper + "/"
+                    if not os.path.exists(bam_out_dir):
+                        print("Creating dir " + bam_out_dir)
+                        os.makedirs(bam_out_dir) 
+                    bam_ori_out = bam_out_dir + config['dataset_name'] + "." + cond.id + "." + mapper + ".mismapped.bam"
+                    bam_tc_out = bam_out_dir + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.mismapped.bam"
+                    evaluate_bam(bam_ori, bam_ori_out, False, m, mapper, cond.id, out, out2)    
+                    evaluate_bam(bam_tc, bam_tc_out, True, m, mapper, cond.id, out, out2)    
                 # eval truth
-                final_ori_truth  = simdir + "bam_ori/TRUTH/" + config['dataset_name'] + "." + cond.id + ".TRUTH.bam"
-                final_tc_truth   = simdir + "bam_tc/TRUTH/"  + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.bam"
-                evaluate_bam(final_ori_truth, False, m, 'NA', cond.id, out, out2)    
-                evaluate_bam(final_tc_truth, True, m, 'NA', cond.id, out, out2)    
+                bam_ori_truth  = simdir + "bam_ori/TRUTH/" + config['dataset_name'] + "." + cond.id + ".TRUTH.bam"
+                bam_tc_truth   = simdir + "bam_tc/TRUTH/"  + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.bam"
+                evaluate_bam(bam_ori_truth, None, False, m, 'NA', cond.id, out, out2)    
+                evaluate_bam(bam_tc_truth, None, True, m, 'NA', cond.id, out, out2)    
     bgzip(fout, delinFile=True, override=True)
     logging.info("All done in %s" % str(datetime.timedelta(seconds=time.time() - startTime)))
     print("All done in", datetime.timedelta(seconds=time.time() - startTime))

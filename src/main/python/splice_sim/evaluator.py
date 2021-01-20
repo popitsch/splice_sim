@@ -16,25 +16,31 @@ import logging
 from model import Model, Condition, Isoform, Transcript
 from iterator import *
 
-# config = json.load(open('/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/config.json'), object_pairs_hook=OrderedDict)
-# config["transcripts"] = json.load(open('/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/' + config['transcript_data']), object_pairs_hook=OrderedDict)
-# 
+# config = json.load(open('/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3/config.json'), object_pairs_hook=OrderedDict)
+# config["transcripts"] = json.load(open('/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3/' + config['transcript_data']), object_pairs_hook=OrderedDict)
+#  
 # for k in ['gene_gff', 'genome_fa']:
 #     config[k] = '/Volumes' + config[k] 
 # m = Model(config)
-# bam_file = '/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_ori/STAR/small4.5min.STAR.bam'
+# bam_file = '/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3/big3/sim/bam_tc/STAR/big3.c_01.STAR.TC.bam'
 # # anno='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/gencode.SMALL.gff3.gz'
-# 
+#  
 # fasta = pysam.FastaFile(config["genome_fa"])
 # chromosomes = fasta.references
 # dict_chr2idx = {k: v for v, k in enumerate(chromosomes)}
 # dict_idx2chr = {v: k for v, k in enumerate(chromosomes)}
-# 
+#  
 # # dict_idx2chr = {v: k for v, k in enumerate(chromosomes)}
 # dict_chr2len = {c: fasta.get_reference_length(c) for c in fasta.references}
-# 
-# with open('/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/delme.tsv', 'w') as out:
-#     for c, l in dict_chr2len.items():
+# x=Counter()
+# with open('/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3/delme.tsv', 'w') as out:
+#     for c, c_len in dict_chr2len.items():
+#         print(c)
+#         rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=c_len, max_span=None, flag_filter=0)
+#         for _,r in rit:
+#             x['reads']+=1
+# print(x)
+#         
 #         df = m.df[(m.df.Feature == 'transcript') & (m.df.Chromosome == c)]
 #         if not df.empty:
 #             print("chrom", c)
@@ -44,10 +50,10 @@ from iterator import *
 #             for loc, (read, annos) in it:
 #                 tids = [t[0] for (_, (_, t)) in annos[0]]
 #                 print(loc.to_str(dict_idx2chr), read.query_name, tids, file=out)
-# # BlockLocationIterator()
-# 
-# # [(14:142903115-142906754, ([14:142903115-142906754], ['ENSMUST00000100497.10'])), 
-# #   (14:142903501-142906702, ([14:142903501-142906702], ['ENSMUST00000167721.7']))]
+# BlockLocationIterator()
+ 
+# [(14:142903115-142906754, ([14:142903115-142906754], ['ENSMUST00000100497.10'])), 
+#   (14:142903501-142906702, ([14:142903501-142906702], ['ENSMUST00000167721.7']))]
 
 def classify_read(read, overlapping_tids, is_converted, mapper, condition, performance, out_reads):
     """ Classifies a read """
@@ -94,7 +100,7 @@ def evaluate_bam(bam_file, is_converted, m, mapper, condition, out_reads, out_pe
     for c, c_len in dict_chr2len.items():
         df = m.df[(m.df.Feature == 'transcript') & (m.df.Chromosome == c)]  # get annotations
         #print("Processing chromosome %s of %s/%s/%s"  % (c,  is_converted, mapper, condition) )
-        if df.empty: # no trasncript on this chrom: all reads are FN
+        if df.empty: # no transcript on this chrom: all reads are FN
             rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=c_len, max_span=None, flag_filter=0) # max_span=m.max_ilen
             for loc, read in rit:
                 n_reads+=1
@@ -117,8 +123,14 @@ def evaluate_bam(bam_file, is_converted, m, mapper, condition, out_reads, out_pe
                  condition, 
                  iso, 
                  tid, 
-                 performance[tid, iso, 'TP'], performance[tid, iso, 'FP'], performance[tid, iso, 'FN'] ]]), file=out_performance) 
-    print("reads:  %i " % n_reads)
+                 performance[tid, iso, 'TP'], 
+                 performance[tid, iso, 'FP'], 
+                 performance[tid, iso, 'FN'] ]]), file=out_performance) 
+             
+    # add unmapped reads
+    for read in samfile.fetch(contig=None, until_eof=True):
+        performance = classify_read(read, [], is_converted, mapper, condition, performance, out_reads)
+    print("%s reads:  %i " % (bam_file, n_reads))
 # #bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/STAR/small4.5min.STAR.TC.bam'
 # bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/HISAT2_TLA/small4.5min.HISAT2_TLA.TC.bam'
 # evaluate_bam(bam, 'test', 'map', 'cond', None)

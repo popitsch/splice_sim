@@ -506,12 +506,16 @@ class ReadMisMatchIterator():
         self.max_span = max_span
 
     def __iter__(self):
-        region_ref = pysam.FastaFile(self.fasta_file).fetch(reference=self.reference, start=self.start - 1, end=self.end)
+        region_ref = pysam.FastaFile(self.fasta_file).fetch(
+            reference=self.reference, 
+            start=self.start - 1, 
+            end=self.end)
         region_off = self.start - 1
         region_len = self.end - self.start
         for r in self.samfile.fetch(contig=self.reference, 
                                     start=self.start, 
-                                    end=self.end):
+                                    end=self.end,
+                                    until_eof=True):
             # test flags
             if r.flag & self.flag_filter:
                 #print("skip %s %i %i" % (r, r.flag, self.flag_filter) )

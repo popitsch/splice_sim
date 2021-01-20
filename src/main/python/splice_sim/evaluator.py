@@ -113,7 +113,7 @@ def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_read
     dict_chr2len = {c: m.genome.get_reference_length(c) for c in m.genome.references}
     n_reads=0
     samin = pysam.AlignmentFile(bam_file, "rb") 
-    samout = pysam.AlignmentFile(bam_out, "wb", template=samin ) if bam_out is not None else None
+    samout = pysam.AlignmentFile(bam_out+'.tmp.bam', "wb", template=samin ) if bam_out is not None else None
     
     for c, c_len in dict_chr2len.items():
         df = m.df[(m.df.Feature == 'transcript') & (m.df.Chromosome == c)]  # get annotations
@@ -155,7 +155,11 @@ def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_read
     samin.close()
     if samout is not None:
         samout.close()
-        pysam.index(bam_out)
+        sambambasortbam(bam_out+'.tmp.bam', 
+                        bam_out, 
+                        index=True, 
+                        override=True, 
+                        delinFile=True)
     
 # #bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/STAR/small4.5min.STAR.TC.bam'
 # bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/HISAT2_TLA/small4.5min.HISAT2_TLA.TC.bam'

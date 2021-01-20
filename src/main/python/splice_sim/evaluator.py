@@ -148,7 +148,7 @@ def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_read
     # add unmapped reads
     for read in samin.fetch(contig=None, until_eof=True):
         n_reads+=1
-        performance = classify_read(read, [], is_converted, mapper, condition, dict_chr2idx, performance, out_reads)
+        performance = classify_read(read, [], is_converted, mapper, condition, dict_chr2idx, performance, out_reads, samout)
     samin.close()
     if samout is not None:
         samout.close()

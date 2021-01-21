@@ -131,6 +131,12 @@ def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_read
             for loc, (read, annos) in it:
                 n_reads+=1
                 overlapping_tids = [t[0] for (_, (_, t)) in annos[0]]
+                if read.query_name=="ENSMUST00000119947.1_+_pre_1-26_16_37883072-37883171_NA_22,32":
+                    print(read, mapper, condition)
+                    print(annos)
+                    print(overlapping_tids)
+                    print(df)
+
                 performance = classify_read(read, overlapping_tids, is_converted, mapper, condition, dict_chr2idx, performance, out_reads, samout)
     tids= set([x for x, y, z in performance.keys()])
     isos= set([y for x, y, z in performance.keys()])
@@ -162,10 +168,9 @@ def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_read
                         override=True, 
                         delinFile=True)
     
-# #bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/STAR/small4.5min.STAR.TC.bam'
+#bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/STAR/small4.5min.STAR.TC.bam'
 # bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/HISAT2_TLA/small4.5min.HISAT2_TLA.TC.bam'
-# evaluate_bam(bam, 'test', 'map', 'cond', None)
-
+  
      
 def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
     """ Evaluates a dataset. """

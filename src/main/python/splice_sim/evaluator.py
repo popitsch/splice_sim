@@ -131,7 +131,7 @@ def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_read
             for loc, (read, annos) in it:
                 n_reads+=1
                 overlapping_tids = [t[0] for (_, (_, t)) in annos[0]]
-                if read.query_name=="ENSMUST00000119947.1_+_pre_1-26_16_37883072-37883171_NA_22,32":
+                if read.query_name=="ENSMUST00000119947.1_+_mat_4-5_16_37883024-37883123_NA_19,31,70,87":
                     print(read, mapper, condition)
                     print(annos)
                     print(overlapping_tids)

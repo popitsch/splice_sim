@@ -18,29 +18,48 @@ from iterator import *
 
 # config = json.load(open('/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3/config.json'), object_pairs_hook=OrderedDict)
 # config["transcripts"] = json.load(open('/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3/' + config['transcript_data']), object_pairs_hook=OrderedDict)
-#  
+#   
 # for k in ['gene_gff', 'genome_fa']:
 #     config[k] = '/Volumes' + config[k] 
 # m = Model(config)
-# bam_file = '/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3/big3/sim/bam_tc/STAR/big3.c_01.STAR.TC.bam'
-# # anno='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/gencode.SMALL.gff3.gz'
-#  
+# bam_file = '/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3/big3/sim/bam_tc/STAR/big3.c_10.STAR.TC.bam'
+# anno='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/gencode.SMALL.gff3.gz'
+#   
 # fasta = pysam.FastaFile(config["genome_fa"])
 # chromosomes = fasta.references
 # dict_chr2idx = {k: v for v, k in enumerate(chromosomes)}
 # dict_idx2chr = {v: k for v, k in enumerate(chromosomes)}
-#  
-# # dict_idx2chr = {v: k for v, k in enumerate(chromosomes)}
 # dict_chr2len = {c: fasta.get_reference_length(c) for c in fasta.references}
+# print(dict_chr2len)
+# 
+# 
+# c='5'
+# c_len=dict_chr2len[c]
+# df = m.df[(m.df.Feature == 'transcript') & (m.df.Chromosome == c)].sort_values(by=['Start','End']) # NOTE: querying changes row order!
+# it = PyrangeIterator(df, dict_chr2idx, 'transcript_id')
+# 
+# aits = [BlockLocationIterator(PyrangeIterator(df, dict_chr2idx, 'transcript_id'))]
+# for _,(aloc,a)  in aits[0]:
+#     if a=='ENSMUST00000100497.10':
+#         break
+# aits = [BlockLocationIterator(PyrangeIterator(df, dict_chr2idx, 'transcript_id'))]
+# rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=c_len, max_span=None, flag_filter=0)
+# it = AnnotationOverlapIterator(rit, aits)
+# for loc, (read, annos) in it:
+#     if read.query_name=="ENSMUST00000119947.1_+_mat_4-5_16_37883024-37883123_NA_19,31,70,87":
+#         print(loc.to_str(dict_idx2chr), read, annos)
+#         break
+#         
+#         
 # x=Counter()
 # with open('/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3/delme.tsv', 'w') as out:
 #     for c, c_len in dict_chr2len.items():
-#         print(c)
 #         rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=c_len, max_span=None, flag_filter=0)
-#         for _,r in rit:
-#             x['reads']+=1
-# print(x)
-#         
+#         for loc,r in rit:
+#             if r.query_name=="ENSMUST00000119947.1_+_mat_4-5_16_37883024-37883123_NA_19,31,70,87":
+#                 print(c, c_len, loc.to_str(dict_idx2chr), r.reference_name)
+#                 sys.exit(0)
+#          
 #         df = m.df[(m.df.Feature == 'transcript') & (m.df.Chromosome == c)]
 #         if not df.empty:
 #             print("chrom", c)
@@ -51,7 +70,7 @@ from iterator import *
 #                 tids = [t[0] for (_, (_, t)) in annos[0]]
 #                 print(loc.to_str(dict_idx2chr), read.query_name, tids, file=out)
 # BlockLocationIterator()
- 
+#   
 # [(14:142903115-142906754, ([14:142903115-142906754], ['ENSMUST00000100497.10'])), 
 #   (14:142903501-142906702, ([14:142903501-142906702], ['ENSMUST00000167721.7']))]
 
@@ -115,9 +134,11 @@ def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_read
     n_reads=0
     samin = pysam.AlignmentFile(bam_file, "rb") 
     samout = pysam.AlignmentFile(bam_out+'.tmp.bam', "wb", template=samin ) if bam_out is not None else None
-    
     for c, c_len in dict_chr2len.items():
-        df = m.df[(m.df.Feature == 'transcript') & (m.df.Chromosome == c)]  # get annotations
+        df = m.df[(m.df.Feature == 'transcript') & (m.df.Chromosome == c)].sort_values(by=['Start','End'])  # get annotations and resort as sort order will not be maintained!
+        # check whether df is sorted! 
+        l=[x for x in df.Start]
+        assert all(l[i] <= l[i+1] for i in range(len(l)-1)), "DF is not sorted by start coord!"
         #print("Processing chromosome %s of %s/%s/%s"  % (c,  is_converted, mapper, condition) )
         if df.empty: # no transcript on this chrom: all reads are FN
             rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=c_len, max_span=None, flag_filter=0) # max_span=m.max_ilen

@@ -246,9 +246,9 @@ class Model():
         # load + filter gene gff
         logging.info("Loading gene GFF")
         self.gff = pr.read_gff3(config["gene_gff"])
-        self.gff = self.gff[self.gff.transcript_id.isin(list(config['transcripts'].keys()))] # reduce to contain only configured transcripts
+        self.gff = self.gff[self.gff.transcript_id.isin(list(config['transcripts'].keys()))] # reduce to contain only configured transcripts. 
         self.gff.Start = self.gff.Start+1# correct for pyranges bug?
-        self.df = self.gff.df
+        self.df = self.gff.df.sort_values(by=['Chromosome', 'Start','End']) # sort!
         # load genome
         logging.info("Loading genome")
         self.genome = pysam.FastaFile(config["genome_fa"])

@@ -595,7 +595,6 @@ class BlockedPerPositionIterator():
 class AnnotationOverlapIterator():
     """ gets one annotation iterator (sorted) and n BlockLocationIterators. Will yield the annotation location and 
     all overlapping intervals from the BlockLocationIterators """
-    
     def __init__(self, anno_it, block_its):
         self.anno_it = anno_it
         self.iterators = [ peekable(it) for it in block_its ]
@@ -607,7 +606,7 @@ class AnnotationOverlapIterator():
             ret=[]
             for idx, it in enumerate(self.iterators):
                 # remove non-overlapping items from beginning of list 
-                self.buffer[idx] = [(loc, dat) for loc,dat in self.buffer[idx] if loc.overlaps(aloc) or loc > aloc ]
+                self.buffer[idx] = [(loc, dat) for loc,dat in self.buffer[idx] if (loc.overlaps(aloc)) or (loc > aloc) ]
                 # skip reads left of annotation
                 while it.peek(None) and it.peek()[0] < aloc:
                     loc, dat = next(it)
@@ -620,7 +619,6 @@ class AnnotationOverlapIterator():
                 # report current lists
                 ret+=[self.buffer[idx]]
             yield aloc, (a, ret)
-
     def close(self):
         try:
             self.anno_it.close()

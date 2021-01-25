@@ -1,0 +1,224 @@
+---
+title: "analyze_evaluation_results.Rmd"
+author: "niko.popitsch@imba.oeaw.ac.at"
+documentclass: article
+fontsize: 10pt
+output:
+  html_document:
+    df_print: paged
+  pdf_document:
+    fig_caption: yes
+    fig_height: 10
+    fig_width: 10
+geometry: margin=1in
+classoption: a4paper
+params:
+    tid_performance:
+        value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3/big3/eva/tid_performance.tsv"  
+        #value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/eva/tid_performance.tsv"  
+    reads_table:
+        value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3/big3/eva/reads.tsv.gz"  
+        #value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/eva/reads.tsv.gz"  
+    transcript_table:
+        value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/data/slamstr/pooled.mm10.all/pooled.mm10.all.Slamstr.stats.transcript.tsv.gz"  
+---
+<style type="text/css">
+body, td {
+   font-size: 10px;
+}
+code.r{
+  font-size: 10px;
+}
+pre {
+  font-size: 10px
+}
+</style>
+
+# INIT
+
+```{r setup, include=FALSE}
+require(data.table)
+require(tidyr)
+require(dplyr)
+require(ggplot2)
+require(scales)
+
+# load data from TSV
+load_table = function(dataF, append="", header=T) {
+  dataF = as.character(paste0(dataF, append))
+  print(paste("Loading", dataF))
+  if ( endsWith(dataF, ".gz") ) {
+    return(fread(cmd=paste('gunzip -c', dataF), header=header, sep="\t", na.strings=c("na","NA",".")))
+  } else {
+    return(fread(dataF, header=header, sep="\t", na.strings=c("na","NA",".")))
+  }
+}
+
+gn2tid = function(gn) {
+  return ( (transcripts_data %>% filter(gene_name == gn))$transcript_id )
+}
+
+
+```
+
+# init
+```{r init, include=FALSE}
+
+tid_performance=load_table(params$tid_performance)
+reads=load_table(params$reads_table)
+transcripts_data=load_table(params$transcript_table) %>% select('chr','start','end','strand','transcript_id','gene_id','gene_name','gene_type','rnk','len','ilen','GC_frac','mappability_median', 'mappability_mean', 'T_Pos','canon' )
+
+# add mappability, coords, etc.
+d=merge(tid_performance, transcripts_data, by.x='tid', by.y='transcript_id', all.x=T) 
+d$category=factor(d$category)
+d$mapper=factor(d$mapper)
+d$condition=factor(d$condition)
+d$is_converted=factor(d$is_converted)
+levels(d$is_converted)=c("no_tc", "tc")
+
+# reads
+reads$is_converted=factor(reads$is_converted)
+
+# add performance measures
+d = d %>% mutate(
+  precision=TP/(TP+FP), 
+  recall=TP/(TP+FN), 
+  F1=2*TP/(2*TP+FP+FN),
+  TFrac=T_Pos/len)
+
+# keep only truth transcripts!
+valid_tids =(d %>% filter(is.na(mapper)) %>% distinct(tid))$tid
+d = d %>% filter( tid %in% valid_tids)
+
+# fp reads per transcript
+#test=data.frame(tid=c('a','b','c'), overlapping=c('a,c','b','x'), stringsAsFactors = F)
+#test %>% filter(!str_detect(overlapping, tid))
+```
+
+# performance per transcript
+```{r performance}
+
+plot_gene_performance = function(d, trans_id) {
+  lab = paste0(transcripts_data %>% filter(transcript_id==trans_id) %>% select(transcript_id, gene_name, gene_type), collapse=', ')
+  p = ggplot( d %>% filter(tid==trans_id), aes(x=paste0(condition,'/',iso), y=F1, fill=condition) ) +
+    geom_bar(stat='identity') +
+    facet_grid(is_converted~mapper) +
+    ggtitle(lab) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+    xlab("condition / isoform")
+  return (p)
+}
+
+plot_gene_performance(d, 'ENSMUST00000179887.1')
+plot_gene_performance(d, 'ENSMUST00000180000.1')
+plot_gene_performance(d, gn2tid('Actb'))
+
+
+# overall correlations
+plot_overall_performance = function(d, subtitle='') {
+  p = ggplot( d, aes(x=paste0(condition,'/',iso), y=F1, fill=condition) ) +
+    geom_violin() +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+    xlab("condition / isoform") +
+    geom_boxplot(width=.1) +
+    facet_grid(is_converted~mapper) +
+    ggtitle(paste0("F1 measure per transcript (n=",length(unique(d$tid)),")"), subtitle)
+  return(p)
+}
+
+# some correlations
+plot_corr = function(d, a, b, xlog=F) {
+  
+  thecor = paste("r_pearson = ", round(cor(d[[a]], d[[b]], use = "complete.obs"), 4), 
+                 "\nr_spearman = ", round(cor(d[[a]], d[[b]], use = "complete.obs", method="spearman"), 4),
+                 "\nn =",nrow(d)  )
+  p = ggplot( d, aes_string(x=a, y=b) ) +
+    geom_point(aes(col=condition, alpha=0.5), size=.5)  +
+    #annotation_custom(thecor) + 
+    #stat_binhex(bins=100) + scale_fill_gradientn("", colours = rev(rainbow(10, end = 4/6))) +
+    facet_grid(is_converted + iso ~ mapper) +
+    geom_abline(intercept = 0, slope = 1, col="black",linetype="dotted") +
+    ggtitle(paste0("Correlation between ",a," and ",b), thecor)
+  if ( xlog ) {
+    p=p+scale_x_log10()
+  }
+  return(p)
+}
+
+plot_overall_performance(d)
+plot_corr(d, "len", "F1", xlog=T)
+plot_corr(d, "mappability_median", "F1")
+plot_corr(d, "mappability_mean", "F1")
+plot_corr(d, "rnk", "F1")
+plot_corr(d, "GC_frac", "F1")
+plot_corr(d, "TFrac", "F1")
+
+d_map = d %>% filter(mappability_median>0.5)
+plot_overall_performance(d_map, subtitle='map_med > 0.5')
+plot_corr(d_map, "len", "F1", xlog=T)
+plot_corr(d_map, "mappability_median", "F1")
+plot_corr(d_map, "mappability_mean", "F1")
+plot_corr(d_map, "rnk", "F1")
+plot_corr(d_map, "GC_frac", "F1")
+plot_corr(d_map, "TFrac", "F1")
+
+d_map_long = d %>% filter(mappability_median>0.5, len>1000)
+plot_overall_performance(d_map_long, subtitle='map_med > 0.5, len>1kb')
+
+```
+
+# mismapped reads
+```{r mismapped_reads}
+tab = reads %>% group_by(classification, is_converted, mapper, condition, true_isoform) %>% count() 
+
+ggplot( tab, aes(x=paste0(condition,'/',true_isoform), y=n, fill=factor(is_converted)) ) +
+  geom_bar( stat='identity', position='dodge') +
+  facet_grid(classification~mapper) +
+  ggtitle("Number of mismapped reads per mapper") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  xlab("condition / isoform")
+
+ggplot( reads %>% filter(is_converted==1), aes(x=condition, y=n_tc_pos) ) + 
+  geom_violin() +
+  facet_grid(classification~mapper) +
+  ggtitle('Density of n_tc')
+```
+
+
+# per-gene stats
+```{r init, include=FALSE}
+plot_gene = function(gname, bar_ylim_min=50) {
+  tab = d %>% filter(gene_name==gname) %>% select('category','mapper','condition','overlap') %>% reshape2::melt(id.vars=c('category','mapper','condition'))
+  tab$value=tab$value+0.0000000000001
+  
+  p1 = ggplot(tab, aes(x=mapper, y=value, fill=mapper)) +
+    geom_violin() +
+    facet_grid(rows=vars(category), cols=vars(condition)) +
+    scale_y_log10() +
+    ylab('number of overlapping bases')
+  
+  tab2 = tab %>% group_by(category,mapper,condition,variable) %>% summarise(m=mean(value))
+  p2 = ggplot(tab2, aes(x=mapper, y=m, fill=mapper)) +
+    geom_bar(stat='identity') +
+    facet_grid(rows=vars(category), cols=vars(condition), scales="free") +
+    ylab('mean # of overlapping bases') +
+    scale_y_continuous(limits=c(bar_ylim_min,100), oob=rescale_none)
+
+  tab3 = d %>% filter(gene_name==gname,overlap>50) %>% count(category,mapper,condition, .drop=F)
+  p3 = ggplot(tab3, aes(x=mapper, y=n, fill=mapper)) +
+    geom_bar(stat='identity') +
+    facet_grid(rows=vars(category), cols=vars(condition), scales="free") +
+    ylab('# recovered reads with overlap>50')
+  
+  p=gridExtra::grid.arrange(p1,p2,p3, ncol=2, top=gname)
+  return(p)
+}
+
+plot(plot_gene('Actb'))
+
+plot(plot_gene('Mat2a'))
+
+plot(plot_gene('Gm10243', bar_ylim_min=0))
+  
+plot(plot_gene('Ybx1-ps2', bar_ylim_min=0))
+```     

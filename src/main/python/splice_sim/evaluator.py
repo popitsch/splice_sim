@@ -135,7 +135,7 @@ def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_read
     samin = pysam.AlignmentFile(bam_file, "rb") 
     samout = pysam.AlignmentFile(bam_out+'.tmp.bam', "wb", template=samin ) if bam_out is not None else None
     for c, c_len in dict_chr2len.items():
-        df = m.df[(m.df.Feature == 'transcript') & (m.df.Chromosome == c)].sort_values(by=['Start','End'])  # get annotations and resort as sort order will not be maintained!
+        df = m.df[(m.df.Feature == 'transcript') & (m.df.Chromosome == c)]# get annotations
         # check whether df is sorted! 
         l=[x for x in df.Start]
         assert all(l[i] <= l[i+1] for i in range(len(l)-1)), "DF is not sorted by start coord!"

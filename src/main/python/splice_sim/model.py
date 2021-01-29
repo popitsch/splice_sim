@@ -5,7 +5,7 @@ import math
 import pysam
 from collections import *
 from utils import *
-
+import logging
 
 
 class Condition():
@@ -15,10 +15,8 @@ class Condition():
         self.conversion_rate=conversion_rate
         self.coverage = coverage
         self.bam="?"
-        
     def __repr__(self):
         return self.__str__()  
-    
     def __str__(self):
         ret = ("%s: [tp=%i, cr=%f, cv=%f]" % (self.id, self.timepoint, self.conversion_rate, self.coverage ) )
         return (ret)  
@@ -29,23 +27,23 @@ class Isoform():
         self.fractions = fractions
         self.splicing_status = splicing_status
         self.t = transcript
-        self.strand = self.t.transcript.Strand
-        # extract alignment blocks. Those contain absolute coords and are always ordered by genomic coords 
-        # (e.g., [(16101295, 16101359), (16101727, 16101936), (16102490, 16102599), (16102692, 16102829), (16103168, 16103334), (16103510, 16103684), (16104365, 16104662)])
-        self.aln_blocks=[]
-        bstart=self.t.transcript.Start
-        for idx, splicing in list(enumerate(self.splicing_status)):
-            if splicing==1:
-                bend=self.t.introns.iloc[idx].Start-1 # last exonic 1-based pos
-                self.aln_blocks+=[(bstart, bend)]
-                bstart=self.t.introns.iloc[idx].End+1 # 1st exonic 1-based pos
-        bend=self.t.transcript.End
-        self.aln_blocks+=[(bstart, bend)]
-        #print("alignment blocks: %s" % (self.aln_blocks))
-        
-    # convert isoform-relative coordinates to genomic coordinates.
-    # E.g., a rel_pos==0 will return the 1st position of the transcript in genomic coordinates (1-based)
+        if self.t is not None:
+            self.strand = self.t.transcript.Strand
+            # extract alignment blocks. Those contain absolute coords and are always ordered by genomic coords 
+            # (e.g., [(16101295, 16101359), (16101727, 16101936), (16102490, 16102599), (16102692, 16102829), (16103168, 16103334), (16103510, 16103684), (16104365, 16104662)])
+            self.aln_blocks=[]
+            bstart=self.t.transcript.Start
+            for idx, splicing in list(enumerate(self.splicing_status)):
+                if splicing==1:
+                    bend=self.t.introns.iloc[idx].Start-1 # last exonic 1-based pos
+                    self.aln_blocks+=[(bstart, bend)]
+                    bstart=self.t.introns.iloc[idx].End+1 # 1st exonic 1-based pos
+            bend=self.t.transcript.End
+            self.aln_blocks+=[(bstart, bend)]
+        #print("alignment blocks: %s" % (self.aln_blocks))       
     def rel2abs_pos(self, rel_pos):
+        """ convert isoform-relative coordinates to genomic coordinates.
+            E.g., a rel_pos==0 will return the 1st position of the transcript in genomic coordinates (1-based) """
         ablocks = self.aln_blocks if self.strand == '+' else reversed(self.aln_blocks)
         abs_pos=None
         off = rel_pos
@@ -60,13 +58,63 @@ class Isoform():
             off -= bwidth
             block_id+=1
         if off != 0:
-            print("WARN: Invalid relative position %i / %i in isoform %s: %i" % (rel_pos, abs_pos, self, off))
+            logging.warn("Invalid relative position %i / %i in isoform %s: %i" % (rel_pos, abs_pos, self, off))
         ret = abs_pos+off if self.strand == '+' else abs_pos-off
         return (ret, block_id)
-    
+    def block_contains(self, bstart, bend, abs_pos):
+        return abs_pos>=bstart and abs_pos<=bend
+    @DeprecationWarning
+    def calc_cigar(self, abs_start, abs_end):
+        """ calculate cigar """
+        assert(abs_start<abs_end)
+        ablocks = self.aln_blocks
+        cigar=""
+        gap_start=None
+        started=False
+        for bstart,bend in ablocks:
+            bwidth = bend-bstart+1
+            if self.block_contains(bstart, bend, abs_start):
+                if self.block_contains(bstart, bend, abs_end): # start and stop in same block
+                    return "%iM" % (abs_end-abs_start+1)
+                cigar+="%iM" % (bend-abs_start+1)
+                gap_start=bend+1
+                started=True
+            elif self.block_contains(bstart, bend, abs_end):
+                if gap_start is not None:
+                    cigar+="%iN" % (bstart-gap_start)
+                cigar+="%iM" % (abs_end-bstart+1)
+                return cigar
+            elif started:
+                cigar+="%iN%iM" % (bstart-gap_start, bwidth) # gap
+                gap_start=bend+1                
+        return cigar 
+    def calc_cigartuples(self, abs_start, abs_end):      
+        """ calculate cigar tuples (comparable to pysam rec.get_blocks() """
+        assert(abs_start<abs_end)
+        ablocks = self.aln_blocks
+        cigartuples=[]
+        started=False
+        clen=0
+        for bstart,bend in ablocks:
+            bwidth = bend-bstart+1
+            if self.block_contains(bstart, bend, abs_start):
+                if self.block_contains(bstart, bend, abs_end): # start and stop in same block
+                    cigartuples+=[(abs_start, abs_end)]
+                    clen+=abs_end-abs_start+1
+                    return cigartuples, clen    
+                cigartuples+=[(abs_start, bend)]
+                clen+=bend-abs_start+1
+                started=True
+            elif self.block_contains(bstart, bend, abs_end):
+                cigartuples+=[(bstart, abs_end)]
+                clen+=abs_end-bstart+1
+                return cigartuples, clen    
+            elif started:
+                cigartuples+=[(bstart, bend)]
+                clen+=bend-bstart+1
+        return cigartuples, clen    
     def __repr__(self):
         return self.__str__()  
-    
     def __str__(self):
         ret = ("%s_%s @ %s, [%s], [%s]" % (self.t.tid, self.id, self.t.region, ",".join(str(x) for x in self.fractions), ",".join(str(x) for x in self.splicing_status)) )
         return (ret)   
@@ -98,7 +146,7 @@ class Transcript():
                 intron = pd.DataFrame(data=dat, columns=self.df.columns, index=[0])
                 ilen = (ex.Start-1) - (last_end+1) + 1
                 if (max_ilen is not None) and (ilen > max_ilen):
-                    print("Skipping transcript %s due to too long intron (%i vs %i). Skipping transcript..." % ( self.tid, ilen, max_ilen))
+                    logging.warn("Skipping transcript %s due to too long intron (%i vs %i). Skipping transcript..." % ( self.tid, ilen, max_ilen))
                     self.is_valid = False
                     return
                 idata.append(intron)
@@ -119,7 +167,7 @@ class Transcript():
                 splicing_status = list(reversed(splicing_status)) # so 1st entry in config refers to 1st intron.
             # assert len(splicing_status)==len(self.introns), "misconfigured splicing status for some isoform/conditions: %s (%i vs %i)" % ( self.tid, len(splicing_status), len(self.introns))
             if len(splicing_status)!=len(self.introns):
-                print("Misconfigured splicing status for some isoform/conditions of transcript %s (%i vs %i). Skipping transcript..." % ( self.tid, len(splicing_status), len(self.introns)))
+                logging.error("Misconfigured splicing status for some isoform/conditions of transcript %s (%i vs %i). Skipping transcript..." % ( self.tid, len(splicing_status), len(self.introns)))
                 self.is_valid = False
                 return
             self.isoforms[iso] = Isoform(iso, frac, splicing_status, self)    
@@ -133,8 +181,7 @@ class Transcript():
             iso='mat'
             splicing_status=[1] * len(self.introns)
             self.isoforms[iso] = Isoform(iso, frac, splicing_status, self)    
-        #print('added mature isoform for %s: %s' % (tid, self.isoforms[iso]) )
-        
+        #print('added mature isoform for %s: %s' % (tid, self.isoforms[iso]) )  
     def get_dna_seq(self, splicing_status):
         seq = self.transcript_seq
         for idx, splicing in reversed(list(enumerate(splicing_status))):
@@ -143,13 +190,11 @@ class Transcript():
                 pos2=self.introns.iloc[idx].End - self.transcript.Start + 1
                 seq = seq[:pos1]+seq[pos2:]
         return (seq)
-    
     def get_rna_seq(self, iso):
         seq = self.get_dna_seq(self.isoforms[iso].splicing_status)
         if self.transcript.Strand == '-':
             seq = reverse_complement(seq)
         return (seq)
-    
     def get_sequences(self):
         ret=OrderedDict()
         for cond_idx, cond in enumerate(self.cond):
@@ -165,18 +210,15 @@ class Transcript():
             toadd = self.abundance - total_count
             #assert toadd==0 | toadd==1 , "rounding error"
             if toadd > 0: # add 1 to last isoform
-                print("corrected counts by %i" % (toadd))
+                logging.debug("corrected counts by %i" % (toadd))
                 id = list(self.isoforms.keys())[-1]
                 ret[cond][id]=[ret[cond][id][0], ret[cond][id][1] + toadd]
         return (ret)
-    
     def to_bed(self):
         t=self.transcript
         return ("%s\t%i\t%i\t%s\t%i\t%s" % (t.Chromosome, t.Start, t.End, t.ID, 1000, t.Strand) )
-    
     def __repr__(self):
         return self.__str__()  
-    
     def __str__(self):
         ret = ("%s" % (self.transcript.transcript_id) )
         return (ret)   
@@ -187,7 +229,7 @@ class Model():
     """ builds a model using the passed configuration and conditions. 
         required config keys:
             conditions:   the configured experimental conditions
-            gene_gff:     the GFF3 file comtaining all gencode-style annotations
+            gene_gff:     the GFF3 file containing all gencode-style annotations
             transcripts:  a dict with configured transcript configurations, mapping tids to gene_name, abundance and possible isoforms_+fractions (e.g., as created by splicing_simulator_config_creator)
             genome_fa:    FASTA file of the genome
             chrom_sizes:  optional file containing chrom sizes.
@@ -197,42 +239,36 @@ class Model():
     def __init__(self, config):
         self.config = config
         self.threads=config["threads"] if "threads" in config else 1
-        
         # init conditions
         self.conditions=[]
         for id in config["conditions"].keys():
             self.conditions+=[Condition(id, config["conditions"][id][0], config["conditions"][id][1], config["conditions"][id][2] )]
-        print("Configured conditions: %s" % (", ".join(str(x) for x in self.conditions)) )
-        
         # load + filter gene gff
-        print("Loading gene GFF")
+        logging.info("Loading gene GFF")
         self.gff = pr.read_gff3(config["gene_gff"])
-        self.gff_df = self.gff.df
-        self.gff_df.Start = self.gff_df.Start + 1 # correct for pyranges bug?
-        self.df = self.gff_df[self.gff_df['transcript_id'].isin(list(config['transcripts'].keys()))] # reduce to contain only configured transcripts
-        
+        self.gff = self.gff[self.gff.transcript_id.isin(list(config['transcripts'].keys()))] # reduce to contain only configured transcripts. 
+        self.gff.Start = self.gff.Start+1# correct for pyranges bug?
+        self.df = self.gff.df.sort_values(by=['Chromosome', 'Start','End']) # sort!
         # load genome
-        print("Loading genome")
+        logging.info("Loading genome")
         self.genome = pysam.FastaFile(config["genome_fa"])
         self.chrom_sizes = config["chrom_sizes"] if 'chrom_sizes' in config else config["genome_fa"]+".chrom.sizes"
-
         # instantiate transcripts
         self.transcripts=OrderedDict()
         self.max_ilen = config["max_ilen"] if 'max_ilen' in config else None
-    
+        self.readlen = config["readlen"] if 'readlen' in config else None
         for tid in list(config['transcripts'].keys()):
             tid_df = self.df[self.df['transcript_id']==tid] # extract data for this transcript only
             if tid_df.empty:
-                print("No annotation data found for configured tid %s, skipping..." % (tid))
+                logging.warn("No annotation data found for configured tid %s, skipping..." % (tid))
             else:
                 t = Transcript(config, tid, tid_df, self.genome, self.conditions, max_ilen=self.max_ilen) 
                 if t.is_valid:
                     self.transcripts[tid] = t
-        print("Instantiated %i transcripts" % len(self.transcripts))
-        
+        logging.info("Instantiated %i transcripts" % len(self.transcripts))      
     def write_gff(self, outdir):
         """ Write a filtered GFF file containing all kept/simulated transcripts """
-        print("Writing filtered gene GFF")
+        logging.info("Writing filtered gene GFF")
         out_file=outdir+"gene_anno.gff3"
         d=pd.read_csv(self.config["gene_gff"],delimiter='\t',encoding='utf-8')
         if not files_exist(out_file+".gz"):

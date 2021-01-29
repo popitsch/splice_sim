@@ -51,7 +51,26 @@ def reverse_complement(seq):
 def to_region(dat):
     """ Create region string (chr:start-end) """
     return(dat.Chromosome + ":" + str(dat.Start) + "-" + str(dat.End))
-
+def overlaps(a,b):
+    """ x1 <= y2 && y1 <= x2 """
+    return a[0]<=b[1] and a[1]>=b[0]
+def calc_cov_a(a,b):
+    """ coverage of interval a """
+    cov = min(a[1],b[1]) - max(a[0],b[0]) + 1
+    if cov<0:
+        cov=0
+    return cov
+def calc_coverage(true_chr, read_chr, true_tuples, read_tuples):
+    """ Calculate the coverage (number of bases) of a mapped read with the passed aligned blocks (r.get_blocks()) wrt. the passed true tuples. """
+    if true_chr != read_chr:
+        return 0
+    # note: intervals are non-overlapping and there are usually very few (1-2) intervals per set
+    cov=0
+    for a in true_tuples:
+        for b in read_tuples:
+            #print(a,b,calc_cov_a(a,b))
+            cov+=calc_cov_a(a,b)
+    return cov
 def pad_n(seq, minlen):
     """ Add up-/downstream padding with N's to ensure a given minimum length of the passed sequence """ 
     ret = seq
@@ -60,9 +79,6 @@ def pad_n(seq, minlen):
         pad1="N" * int(minlen-(len(ret)+len(pad0))) 
         ret=pad0+ret+pad1
     return (ret)
-
-# 
-# 
 def add_tc(seq, strand, conversion_rate):
     """ introduces TC / AG conversions
         returns the new sequence and the converted positions (always! 5'-3' as shown in genome browser)
@@ -96,9 +112,10 @@ def readidx2genpos_rel( read, idx ):
 
 def readidx2genpos_abs( read, idx ):
     """ Converts read positions to genomic positions (1-based) by taking all cigar operations into account. """
-    if len(read.get_aligned_pairs(matches_only=True))<idx:
+    pairs = read.get_aligned_pairs(matches_only=True)
+    if len(pairs)<=idx or len(pairs[idx-1])==0:
         return None
-    return (read.get_aligned_pairs(matches_only=True)[idx-1][1]+1)
+    return (pairs[idx][1]+1)
  
 def cigar_to_rel_pos(read):
     """ converts a (art_illumina) cigar string to a set of relative ref-mismatch (=seqerr) positions (0-based) """
@@ -110,9 +127,48 @@ def cigar_to_rel_pos(read):
         elif op == BAM_CDIFF: # X
           for i in range(0, len):
               off+=1
-              pos+=[readidx2genpos_abs(read, off)-1]  
+              p=readidx2genpos_abs(read, off)
+              if p is not None:
+                  pos+=[p-1]    
     return pos
 
+def create_cigatuples(rtuples):
+    """ convert aligned block tuples to pysam cigartuples """
+    cigar_tuples=[]
+    last=None
+    for t in rtuples:
+        if last  is not None:
+            cigar_tuples+=[(3, t[0]-last-1)] # N-block
+        cigar_tuples+=[(0, t[1]-t[0]+1)] # M-block
+        last=t[1]
+    return cigar_tuples
+
+def parse_art_cigar(read):
+    """ converts a (art_illumina) cigar string to a set of relative ref-mismatch (=seqerr) positions (0-based) """
+    seqerr_pos=[]
+    block_tuples=[]
+    off = 0
+    start=0
+    for op, len in read.cigartuples:
+        if (op == BAM_CMATCH) or (op == BAM_CEQUAL): # M or =
+           off+=len
+        elif op == BAM_CDIFF: # X
+            seqerr_pos+=[readidx2genpos_abs(read, off)]
+            off+=len
+        elif op == BAM_CINS: # I
+            seqerr_pos+=[readidx2genpos_abs(read, off)]
+            off+=len
+        elif op == BAM_CDEL: # D
+            block_tuples+=[(start, off-1)]
+            seqerr_pos+=[readidx2genpos_abs(read, off)]
+            off+=len
+            start=off
+        else:
+            print("UNSUPPORTED CIGAR operator %i" % op)
+    block_tuples+=[(start, off-1)]   
+    if read.is_reverse:
+        block_tuples = [(y,x) for (x,y) in reversed(block_tuples)]
+    return block_tuples, seqerr_pos
 
 # FIXME: there is a problem with called subprocessed that do not terminate! This will hang this code!
 # example-cmd:

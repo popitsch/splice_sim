@@ -154,13 +154,22 @@ def parse_art_cigar(read):
            off+=len
         elif op == BAM_CDIFF: # X
             seqerr_pos+=[readidx2genpos_abs(read, off)]
+            if seqerr_pos[-1] is None:
+                logging.warn("Invalid seqerr position calculated for %s / %i. Ignoring!" % (read.query_name, off))
+                del seqerr_pos[-1]
             off+=len
         elif op == BAM_CINS: # I
             seqerr_pos+=[readidx2genpos_abs(read, off)]
+            if seqerr_pos[-1] is None:
+                logging.warn("Invalid seqerr position calculated for %s / %i. Ignoring!" % (read.query_name, off))
+                del seqerr_pos[-1]
             off+=len
         elif op == BAM_CDEL: # D
             block_tuples+=[(start, off-1)]
             seqerr_pos+=[readidx2genpos_abs(read, off)]
+            if seqerr_pos[-1] is None:
+                logging.warn("Invalid seqerr position calculated for %s / %i. Ignoring!" % (read.query_name, off))
+                del seqerr_pos[-1]
             off+=len
             start=off
         else:

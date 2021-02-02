@@ -205,15 +205,15 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition,
 
     transcripts = m.transcripts
 
+    performance = Counter()
+
     for tid in transcripts:
 
         t = transcripts[tid]
 
-        performance = Counter()
-
         for i in range(0, len(t.introns)):
 
-            readBuffer = list()
+            # readBuffer = list()
 
             txid = t.introns.iloc[i]['transcript_id']
             exonnumber = t.introns.iloc[i]['exon_number']
@@ -233,8 +233,8 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition,
 
             for read in donorIterator:
 
-                if read.name in readBuffer:
-                    continue
+                # if read.name in readBuffer:
+                #     continue
 
                 start = read.start
                 end = read.end
@@ -269,15 +269,16 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition,
                         if (samout):
                             samout.write(bamRead)
 
-                readBuffer.append(read.name)
+                n_reads += 1
+                # readBuffer.append(read.name)
 
             # Acceptor
             acceptorIterator = SimulatedReadIterator(samin.fetch(contig=chromosome, start=intronend, stop=intronend + 1))
 
             for read in acceptorIterator:
 
-                if read.name in readBuffer:
-                    continue
+                # if read.name in readBuffer:
+                #     continue
 
                 start = read.start
                 end = read.end
@@ -301,18 +302,41 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition,
                             samout.write(bamRead)
 
                     elif start < iv.end:
-                        performance[tid, intronID, 'acceptor_rc_overlapping'] += 1
+                        performance[tid, intronID, 'donor_rc_overlapping'] += 1
                         bamRead.setTag('YC', colors["exonintron"])
                         if (samout):
                             samout.write(bamRead)
                     else:
-                        bamRead.setTag('YC', colors["intron"])
-                        if (samout):
-                            samout.write(bamRead)
+                        # Start ends at first exon position of acceptor
+                        pass
+                        # bamRead.setTag('YC', colors["intron"])
+                        # if (samout):
+                        #     samout.write(bamRead)
 
-                readBuffer.append(read.name)
+                n_reads += 1
+                # readBuffer.append(read.name)
 
+    print("%s reads:  %i %i %i" % (bam_file, n_reads, samin.mapped, samin.unmapped))
     samin.close()
+
+    tids = set([x for x, y, z in performance.keys()])
+    introns = set([y for x, y, z in performance.keys()])
+    for tid in tids:
+        for intron in introns:
+            print("\t".join([str(x) for x in [
+                1 if is_converted else 0,
+                mapper,
+                condition,
+                tid,
+                intron,
+                performance[tid, intron, 'acceptor_rc_splicing'] if performance[tid, intron, 'acceptor_rc_splicing'] else 0,
+                performance[tid, intron, 'acceptor_rc_splicing_wrong'] if performance[tid, intron, 'acceptor_rc_splicing_wrong'] else 0,
+                performance[tid, intron, 'acceptor_rc_overlapping'] if performance[tid, intron, 'acceptor_rc_overlapping'] else 0,
+                performance[tid, intron, 'donor_rc_splicing'] if performance[tid, intron, 'donor_rc_splicing'] else 0,
+                performance[tid, intron, 'donor_rc_splicing_wrong'] if performance[tid, intron, 'donor_rc_splicing_wrong'] else 0,
+                performance[tid, intron, 'donor_rc_overlapping'] if performance[tid, intron, 'donor_rc_overlapping'] else 0
+                ]]), file=out_performance)
+
     if samout is not None:
         samout.close()
         sambambasortbam(bam_out + '.tmp.bam',
@@ -359,35 +383,54 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
      
     fout = outdir + 'reads.tsv'
     fout2 = outdir + 'tid_performance.tsv'
+    fout3 = outdir + 'splice_site_performance.tsv'
     with open(fout, 'w') as out:
         with open(fout2, 'w') as out2:
-            print("mapped_coords\ttrue_coords\tclassification\ttid\tis_converted\tmapper\tcondition\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\toverlapping_tids\tread_name", file=out)
-            print("is_converted\tmapper\tcondition\tiso\ttid\tTP\tFP\tFN", file=out2)
-            for cond in m.conditions:
-                for mapper in config['mappers'].keys():
-                    bam_ori = simdir + "bam_ori/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".bam"
-                    bam_tc = simdir + "bam_tc/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.bam"
-                    bam_out_dir_ori = outdir + "bam_ori/" + mapper + "/"
+            with open(fout3, 'w') as out3:
+                print("mapped_coords\ttrue_coords\tclassification\ttid\tis_converted\tmapper\tcondition\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\toverlapping_tids\tread_name", file=out)
+                print("is_converted\tmapper\tcondition\tiso\ttid\tTP\tFP\tFN", file=out2)
+                print("is_converted\tmapper\tcondition\ttid\tintron_id\tacceptor_rc_splicing\tacceptor_rc_splicing_wrong\tacceptor_rc_overlapping\tdonor_rc_splicing\tdonor_rc_splicing_wrong\tdonor_rc_overlapping", file=out3)
+                for cond in m.conditions:
+                    for mapper in config['mappers'].keys():
+                        bam_ori = simdir + "bam_ori/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".bam"
+                        bam_tc = simdir + "bam_tc/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.bam"
+                        bam_out_dir_ori = outdir + "bam_ori/" + mapper + "/"
+                        if not os.path.exists(bam_out_dir_ori):
+                            print("Creating dir " + bam_out_dir_ori)
+                            os.makedirs(bam_out_dir_ori)
+                        bam_out_dir_tc = outdir + "bam_tc/" + mapper + "/"
+                        if not os.path.exists(bam_out_dir_tc):
+                            print("Creating dir " + bam_out_dir_tc)
+                            os.makedirs(bam_out_dir_tc)
+                        bam_ori_out = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".mismapped.bam"
+                        bam_ori_out_intron = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".intron.bam"
+                        bam_tc_out =  bam_out_dir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.mismapped.bam"
+                        bam_tc_out_intron = bam_out_dir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.intron.bam"
+                        evaluate_bam(bam_ori, bam_ori_out, False, m, mapper, cond.id, out, out2)
+                        evaluate_splice_sites(bam_ori, bam_ori_out_intron, False, m, mapper, cond.id, out, out3)
+                        evaluate_bam(bam_tc, bam_tc_out, True, m, mapper, cond.id, out, out2)
+                        evaluate_splice_sites(bam_tc, bam_tc_out_intron, True, m, mapper, cond.id, out, out3)
+                    # eval truth
+                    bam_ori_truth  = simdir + "bam_ori/TRUTH/" + config['dataset_name'] + "." + cond.id + ".TRUTH.bam"
+                    bam_tc_truth   = simdir + "bam_tc/TRUTH/"  + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.bam"
+
+                    bam_out_dir_ori = outdir + "bam_ori/TRUTH/"
                     if not os.path.exists(bam_out_dir_ori):
                         print("Creating dir " + bam_out_dir_ori)
-                        os.makedirs(bam_out_dir_ori) 
-                    bam_out_dir_tc = outdir + "bam_tc/" + mapper + "/"
+                        os.makedirs(bam_out_dir_ori)
+                    bam_out_dir_tc = outdir + "bam_tc/TRUTH/"
                     if not os.path.exists(bam_out_dir_tc):
                         print("Creating dir " + bam_out_dir_tc)
-                        os.makedirs(bam_out_dir_tc) 
-                    bam_ori_out = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".mismapped.bam"
-                    bam_ori_out_intron = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".mismapped.intron.bam"
-                    bam_tc_out =  bam_out_dir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.mismapped.bam"
-                    bam_tc_out_intron = bam_out_dir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.mismapped.intron.bam"
-                    evaluate_bam(bam_ori, bam_ori_out, False, m, mapper, cond.id, out, out2)
-                    evaluate_splice_sites(bam_ori, bam_ori_out_intron, False, m, mapper, cond.id, out, out2)
-                    evaluate_bam(bam_tc, bam_tc_out, True, m, mapper, cond.id, out, out2)
-                    evaluate_splice_sites(bam_tc, bam_tc_out_intron, True, m, mapper, cond.id, out, out2)
-                # eval truth
-                bam_ori_truth  = simdir + "bam_ori/TRUTH/" + config['dataset_name'] + "." + cond.id + ".TRUTH.bam"
-                bam_tc_truth   = simdir + "bam_tc/TRUTH/"  + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.bam"
-                evaluate_bam(bam_ori_truth, None, False, m, 'NA', cond.id, out, out2)
-                evaluate_splice_sites(bam_tc_truth, None, True, m, 'NA', cond.id, out, out2)
+                        os.makedirs(bam_out_dir_tc)
+
+                    bam_ori_truth_intron = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + ".TRUTH.intron.bam"
+                    bam_tc_truth_intron = bam_out_dir_tc + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.intron.bam"
+
+                    evaluate_bam(bam_ori_truth, None, False, m, 'NA', cond.id, out, out2)
+                    evaluate_splice_sites(bam_ori_truth, bam_ori_truth_intron, False, m, 'NA', cond.id, out, out3)
+                    evaluate_bam(bam_tc_truth, None, True, m, 'NA', cond.id, out, out2)
+                    evaluate_splice_sites(bam_tc_truth, bam_tc_truth_intron, True, m, 'NA', cond.id, out, out3)
+
     bgzip(fout, delinFile=True, override=True)
     logging.info("All done in %s" % str(datetime.timedelta(seconds=time.time() - startTime)))
     print("All done in", datetime.timedelta(seconds=time.time() - startTime))

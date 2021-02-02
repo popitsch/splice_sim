@@ -319,23 +319,50 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition,
     print("%s reads:  %i %i %i" % (bam_file, n_reads, samin.mapped, samin.unmapped))
     samin.close()
 
-    tids = set([x for x, y, z in performance.keys()])
-    introns = set([y for x, y, z in performance.keys()])
-    for tid in tids:
-        for intron in introns:
+    #tids, intron, classes = performance.keys()
+    #tids = set([x for x, y, z in performance.keys()])
+    #introns = set([y for x, y, z in performance.keys()])
+    prevIntron = ""
+    prevTid = ""
+    intronBuffer = dict()
+
+    for tid, intron, classification in performance.keys():
+
+        if intron != prevIntron and prevIntron != "":
+
             print("\t".join([str(x) for x in [
                 1 if is_converted else 0,
                 mapper,
                 condition,
-                tid,
-                intron,
-                performance[tid, intron, 'acceptor_rc_splicing'] if performance[tid, intron, 'acceptor_rc_splicing'] else 0,
-                performance[tid, intron, 'acceptor_rc_splicing_wrong'] if performance[tid, intron, 'acceptor_rc_splicing_wrong'] else 0,
-                performance[tid, intron, 'acceptor_rc_overlapping'] if performance[tid, intron, 'acceptor_rc_overlapping'] else 0,
-                performance[tid, intron, 'donor_rc_splicing'] if performance[tid, intron, 'donor_rc_splicing'] else 0,
-                performance[tid, intron, 'donor_rc_splicing_wrong'] if performance[tid, intron, 'donor_rc_splicing_wrong'] else 0,
-                performance[tid, intron, 'donor_rc_overlapping'] if performance[tid, intron, 'donor_rc_overlapping'] else 0
-                ]]), file=out_performance)
+                prevTid,
+                prevIntron,
+                intronBuffer['acceptor_rc_splicing'] if 'acceptor_rc_splicing' in intronBuffer else 0,
+                intronBuffer['acceptor_rc_splicing_wrong'] if 'acceptor_rc_splicing_wrong' in intronBuffer else 0,
+                intronBuffer['acceptor_rc_overlapping'] if 'acceptor_rc_overlapping' in intronBuffer else 0,
+                intronBuffer['donor_rc_splicing'] if 'donor_rc_splicing' in intronBuffer else 0,
+                intronBuffer['donor_rc_splicing_wrong'] if 'donor_rc_splicing_wrong' in intronBuffer else 0,
+                intronBuffer['donor_rc_overlapping'] if 'donor_rc_overlapping' in intronBuffer else 0
+            ]]), file=out_performance)
+
+            intronBuffer = dict()
+
+        intronBuffer[classification] = performance[tid, intron, classification]
+        prevTid = tid
+        prevIntron = intron
+
+    print("\t".join([str(x) for x in [
+        1 if is_converted else 0,
+        mapper,
+        condition,
+        prevTid,
+        prevIntron,
+        intronBuffer['acceptor_rc_splicing'] if intronBuffer['acceptor_rc_splicing'] else 0,
+        intronBuffer['acceptor_rc_splicing_wrong'] if intronBuffer['acceptor_rc_splicing_wrong'] else 0,
+        intronBuffer['acceptor_rc_overlapping'] if intronBuffer['acceptor_rc_overlapping'] else 0,
+        intronBuffer['donor_rc_splicing'] if intronBuffer['donor_rc_splicing'] else 0,
+        intronBuffer['donor_rc_splicing_wrong'] if intronBuffer['donor_rc_splicing_wrong'] else 0,
+        intronBuffer['donor_rc_overlapping'] if intronBuffer['donor_rc_overlapping'] else 0
+    ]]), file=out_performance)
 
     if samout is not None:
         samout.close()

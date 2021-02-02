@@ -170,7 +170,7 @@ def parse_art_cigar(read):
             if seqerr_pos[-1] is None:
                 logging.warn("Invalid seqerr position calculated for %s / %i. Ignoring!" % (read.query_name, off))
                 del seqerr_pos[-1]
-            off+=len
+            #off+=len
             start=off
         else:
             print("UNSUPPORTED CIGAR operator %i" % op)

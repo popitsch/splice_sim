@@ -66,7 +66,7 @@ class Isoform():
     @DeprecationWarning
     def calc_cigar(self, abs_start, abs_end):
         """ calculate cigar """
-        assert(abs_start<abs_end)
+        assert(abs_start<=abs_end), "abs start > abs_end. blocks: %s" % str(self.aln_blocks)
         ablocks = self.aln_blocks
         cigar=""
         gap_start=None
@@ -90,7 +90,7 @@ class Isoform():
         return cigar 
     def calc_cigartuples(self, abs_start, abs_end):      
         """ calculate cigar tuples (comparable to pysam rec.get_blocks() """
-        assert(abs_start<abs_end)
+        assert(abs_start<=abs_end), "abs start > abs_end. blocks: %s" % str(self.aln_blocks)
         ablocks = self.aln_blocks
         cigartuples=[]
         started=False

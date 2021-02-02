@@ -64,7 +64,7 @@ if __name__ == '__main__':
 
     parser["evaluate"] = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
     parser["evaluate"].add_argument("-c", "--config", type=existing_file, required=True, dest="config_file", metavar="config_file", help="JSON config file")
-    parser["evaluate"].add_argument("-o", "--outdir", type=str, required=False, dest="outdir", metavar="outdir", help="output directory (default i current dir)")
+    parser["evaluate"].add_argument("-o", "--outdir", type=str, required=False, dest="outdir", metavar="outdir", help="output directory (default is current dir)")
     parser["evaluate"].add_argument("--overwrite", required=False, action="store_true", default=False, dest="overwrite", help="If set, existing files will be overwritten")
    
     print(LOGO)
@@ -74,7 +74,7 @@ if __name__ == '__main__':
     config = json.load(open(args.config_file), object_pairs_hook=OrderedDict)
     check_config(config)
     cdir = os.path.dirname(os.path.abspath(args.config_file))+'/'
-    print("cofig dir", cdir)
+    print("config dir", cdir)
     
     # output dir (current dir if none provided)
     outdir = (args.outdir if args.outdir else os.getcwd()) + '/' + config['dataset_name'] +'/'
@@ -91,4 +91,4 @@ if __name__ == '__main__':
     if mod == "simulate":
         simulate_dataset(config, cdir, outdir + 'sim/', args.overwrite)
     if mod == "evaluate":
-        evaluate_dataset(config, cdir, outdir + 'sim/', outdir + 'eva/', args.overwrite)
+        evaluate_dataset(config, cdir, cdir + 'big3/sim1/', outdir + 'eva/', args.overwrite)

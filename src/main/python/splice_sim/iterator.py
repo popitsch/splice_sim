@@ -104,7 +104,6 @@ class Location():
     def to_file_str(self):
         return "%i_%i_%i" % (self.chr_idx, self.start, self.end)
 
-
 class TabixIterator():
     """ Iterates over tabix-indexed files and returns tuples of the column values """
     def __init__(self, tabix_file, reference=None, start=None, end=None):
@@ -630,3 +629,107 @@ class AnnotationOverlapIterator():
             except AttributeError:
                 pass 
      
+
+class SimulatedRead:
+
+    def __init__(self, name, chromosome, start, end, splicing, spliceSites, bamRead):
+        # Name of the parsed read
+        self.name = name
+        # Chromosome
+        self.chromosome = chromosome
+        # Absolute starting position of the read alignment
+        self.start = start
+        # Absolute end position of the read alignment
+        self.end = end
+        # Splicing status
+        self.splicing = splicing
+        # Splicing status
+        self.spliceSites = spliceSites
+        # Pysam read object
+        self.bamRead = bamRead
+
+    def hasSpliceSite(self, junction):
+        if self.splicing:
+            for spliceSite in self.spliceSites:
+                res = junction.envelop(spliceSite[0], spliceSite[1])
+                if (res) :
+                    iv = res.pop()
+                    begin, end, data = iv
+                    if begin == spliceSite[0] and end == spliceSite[1]:
+                        return True
+        return False
+
+    def __repr__(self):
+        return "\t".join([self.name, self.chromosome, str(self.start), str(self.end), str(self.splicing), str(self.spliceSites)])
+
+
+class SimulatedReadIterator:
+
+    def __init__(self, readIterator):
+        self._readIterator = readIterator
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+
+        read = self._readIterator.__next__()
+
+        # TODO: Make this optional with parameter
+        while read.is_secondary:
+            read = self._readIterator.__next__()
+
+        name = read.query_name
+
+        chromosome = read.reference_name
+
+        start = read.reference_start
+
+        end = read.reference_end
+
+        softclippedlist = read.get_reference_positions(full_length=True)
+
+        offsetStart = 0
+        offsetEnd = 0
+
+        while (softclippedlist[offsetStart] != start) :
+            offsetStart += 1
+
+        softclippedlist.reverse()
+
+        # reference_end points to one past the last aligned residue
+        while (softclippedlist[offsetEnd] != (end - 1)) :
+            offsetEnd += 1
+
+        start -= offsetStart
+        end += offsetEnd
+
+        spliceSites = list()
+        spliced = False
+
+        refPositions = read.get_aligned_pairs(matches_only=False, with_seq=False)
+        offset = 0
+
+        for operation in read.cigartuples:
+            if operation[0] == 3:
+                spliced = True
+                if not refPositions[offset + operation[1]][1]:
+                    if not refPositions[offset + operation[1] - 1][1]:
+                        if not refPositions[offset + operation[1] + 1][1]:
+                            continue
+                        else :
+                            spliceSite = (
+                            refPositions[offset - 1][1] + 1, refPositions[offset + operation[1] + 1][1] + 1)
+                            spliceSites.append(spliceSite)
+                    else :
+                        spliceSite = (refPositions[offset - 1][1] + 1, refPositions[offset + operation[1] - 1][1] + 1)
+                        spliceSites.append(spliceSite)
+                else :
+                    spliceSite = (refPositions[offset - 1][1] + 1, refPositions[offset + operation[1]][1] + 1)
+                    spliceSites.append(spliceSite)
+
+            offset += operation[1]
+
+        simulatedRead = SimulatedRead(name, chromosome, start + 1, end, spliced, spliceSites, read)
+
+        return simulatedRead

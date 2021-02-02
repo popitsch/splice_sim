@@ -356,12 +356,12 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition,
         condition,
         prevTid,
         prevIntron,
-        intronBuffer['acceptor_rc_splicing'] if intronBuffer['acceptor_rc_splicing'] else 0,
-        intronBuffer['acceptor_rc_splicing_wrong'] if intronBuffer['acceptor_rc_splicing_wrong'] else 0,
-        intronBuffer['acceptor_rc_overlapping'] if intronBuffer['acceptor_rc_overlapping'] else 0,
-        intronBuffer['donor_rc_splicing'] if intronBuffer['donor_rc_splicing'] else 0,
-        intronBuffer['donor_rc_splicing_wrong'] if intronBuffer['donor_rc_splicing_wrong'] else 0,
-        intronBuffer['donor_rc_overlapping'] if intronBuffer['donor_rc_overlapping'] else 0
+        intronBuffer['acceptor_rc_splicing'] if 'acceptor_rc_splicing' in intronBuffer else 0,
+        intronBuffer['acceptor_rc_splicing_wrong'] if 'acceptor_rc_splicing_wrong' in intronBuffer else 0,
+        intronBuffer['acceptor_rc_overlapping'] if 'acceptor_rc_overlapping' in intronBuffer else 0,
+        intronBuffer['donor_rc_splicing'] if 'donor_rc_splicing' in intronBuffer else 0,
+        intronBuffer['donor_rc_splicing_wrong'] if 'donor_rc_splicing_wrong' in intronBuffer else 0,
+        intronBuffer['donor_rc_overlapping'] if 'donor_rc_overlapping' in intronBuffer else 0
     ]]), file=out_performance)
 
     if samout is not None:

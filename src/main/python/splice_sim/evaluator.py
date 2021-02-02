@@ -249,21 +249,25 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition,
 
                         performance[tid, intronID, 'acceptor_rc_splicing_wrong'] += 1
                         bamRead.setTag('YC', colors["exonexonfalse"])
-                        samout.write(bamRead)
+                        if (samout):
+                            samout.write(bamRead)
 
                     elif read.splicing and read.hasSpliceSite(ivTree):
 
                         performance[tid, intronID, 'acceptor_rc_splicing'] += 1
                         bamRead.setTag('YC', colors["exonexontrue"])
-                        samout.write(bamRead)
+                        if (samout):
+                            samout.write(bamRead)
 
                     elif end > iv.begin:
                         performance[tid, intronID, 'acceptor_rc_overlapping'] += 1
                         bamRead.setTag('YC', colors["exonintron"])
-                        samout.write(bamRead)
+                        if (samout):
+                            samout.write(bamRead)
                     else:
                         bamRead.setTag('YC', colors["intron"])
-                        samout.write(bamRead)
+                        if (samout):
+                            samout.write(bamRead)
 
                 readBuffer.append(read.name)
 
@@ -286,21 +290,25 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition,
 
                         performance[tid, intronID, 'donor_rc_splicing_wrong'] += 1
                         bamRead.setTag('YC', colors["exonexonfalse"])
-                        samout.write(bamRead)
+                        if (samout):
+                            samout.write(bamRead)
 
                     elif read.splicing and read.hasSpliceSite(ivTree):
 
                         performance[tid, intronID, 'donor_rc_splicing'] += 1
                         bamRead.setTag('YC', colors["exonexontrue"])
-                        samout.write(bamRead)
+                        if (samout):
+                            samout.write(bamRead)
 
                     elif start < iv.end:
                         performance[tid, intronID, 'acceptor_rc_overlapping'] += 1
                         bamRead.setTag('YC', colors["exonintron"])
-                        samout.write(bamRead)
+                        if (samout):
+                            samout.write(bamRead)
                     else:
                         bamRead.setTag('YC', colors["intron"])
-                        samout.write(bamRead)
+                        if (samout):
+                            samout.write(bamRead)
 
                 readBuffer.append(read.name)
 

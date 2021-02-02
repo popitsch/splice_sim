@@ -665,8 +665,9 @@ class SimulatedRead:
 
 class SimulatedReadIterator:
 
-    def __init__(self, readIterator):
+    def __init__(self, readIterator, flagFilter=BAM_FUNMAP | BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_SUPPLEMENTARY):
         self._readIterator = readIterator
+        self._flagFilter = flagFilter
 
     def __iter__(self):
         return self
@@ -675,8 +676,7 @@ class SimulatedReadIterator:
 
         read = self._readIterator.__next__()
 
-        # TODO: Make this optional with parameter
-        while read.is_secondary:
+        while read.flag & self._flagFilter:
             read = self._readIterator.__next__()
 
         name = read.query_name

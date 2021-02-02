@@ -229,7 +229,7 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition,
 
             # Donor
 
-            donorIterator = SimulatedReadIterator(samin.fetch(contig=chromosome, start=intronstart - 1, stop=intronstart))
+            donorIterator = SimulatedReadIterator(samin.fetch(contig=chromosome, start=intronstart - 1, stop=intronstart), flagFilter=0)
 
             for read in donorIterator:
 
@@ -273,7 +273,7 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition,
                 # readBuffer.append(read.name)
 
             # Acceptor
-            acceptorIterator = SimulatedReadIterator(samin.fetch(contig=chromosome, start=intronend, stop=intronend + 1))
+            acceptorIterator = SimulatedReadIterator(samin.fetch(contig=chromosome, start=intronend, stop=intronend + 1), flagFilter=0)
 
             for read in acceptorIterator:
 

@@ -91,4 +91,4 @@ if __name__ == '__main__':
     if mod == "simulate":
         simulate_dataset(config, cdir, outdir + 'sim/', args.overwrite)
     if mod == "evaluate":
-        evaluate_dataset(config, cdir, outdir + 'sim1/', outdir + 'eva/', args.overwrite)
+        evaluate_dataset(config, cdir, outdir + 'sim/', outdir + 'eva/', args.overwrite)

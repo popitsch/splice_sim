@@ -257,14 +257,14 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition,
 
                 if start <= iv.begin:
 
-                    if read.splicing and not read.hasSpliceSite(ivTree):
+                    if read.splicing and not read.hasSpliceSite(ivTree) and end > iv.begin:
 
                         performance[tid, intronID, 'donor_rc_splicing_wrong'] += 1
                         bamRead.setTag('YC', colors["exonexonfalse"])
                         if (samout):
                             samout.write(bamRead)
 
-                    elif read.splicing and read.hasSpliceSite(ivTree):
+                    elif read.splicing and read.hasSpliceSite(ivTree) and end > iv.begin:
 
                         performance[tid, intronID, 'donor_rc_splicing'] += 1
                         bamRead.setTag('YC', colors["exonexontrue"])
@@ -299,14 +299,14 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition,
 
                 if end >= iv.end:
 
-                    if read.splicing and not read.hasSpliceSite(ivTree):
+                    if read.splicing and not read.hasSpliceSite(ivTree) and start < iv.end:
 
                         performance[tid, intronID, 'acceptor_rc_splicing_wrong'] += 1
                         bamRead.setTag('YC', colors["exonexonfalse"])
                         if (samout):
                             samout.write(bamRead)
 
-                    elif read.splicing and read.hasSpliceSite(ivTree):
+                    elif read.splicing and read.hasSpliceSite(ivTree) and start < iv.end:
 
                         performance[tid, intronID, 'acceptor_rc_splicing'] += 1
                         bamRead.setTag('YC', colors["exonexontrue"])
@@ -349,12 +349,12 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition,
                 condition,
                 prevTid,
                 prevIntron,
-                intronBuffer['acceptor_rc_splicing'],
-                intronBuffer['acceptor_rc_splicing_wrong'],
-                intronBuffer['acceptor_rc_overlapping'],
                 intronBuffer['donor_rc_splicing'],
                 intronBuffer['donor_rc_splicing_wrong'],
-                intronBuffer['donor_rc_overlapping']
+                intronBuffer['donor_rc_overlapping'],
+                intronBuffer['acceptor_rc_splicing'],
+                intronBuffer['acceptor_rc_splicing_wrong'],
+                intronBuffer['acceptor_rc_overlapping']
             ]]), file=out_performance)
 
             intronBuffer = dict()
@@ -369,12 +369,12 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition,
         condition,
         prevTid,
         prevIntron,
-        intronBuffer['acceptor_rc_splicing'],
-        intronBuffer['acceptor_rc_splicing_wrong'],
-        intronBuffer['acceptor_rc_overlapping'],
         intronBuffer['donor_rc_splicing'],
         intronBuffer['donor_rc_splicing_wrong'],
-        intronBuffer['donor_rc_overlapping']
+        intronBuffer['donor_rc_overlapping'],
+        intronBuffer['acceptor_rc_splicing'],
+        intronBuffer['acceptor_rc_splicing_wrong'],
+        intronBuffer['acceptor_rc_overlapping']
     ]]), file=out_performance)
 
     if samout is not None:
@@ -429,7 +429,7 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
             with open(fout3, 'w') as out3:
                 print("mapped_coords\ttrue_coords\tclassification\ttid\tis_converted\tmapper\tcondition\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\toverlapping_tids\tread_name", file=out)
                 print("is_converted\tmapper\tcondition\tiso\ttid\tTP\tFP\tFN", file=out2)
-                print("is_converted\tmapper\tcondition\ttid\tintron_id\tacceptor_rc_splicing\tacceptor_rc_splicing_wrong\tacceptor_rc_overlapping\tdonor_rc_splicing\tdonor_rc_splicing_wrong\tdonor_rc_overlapping", file=out3)
+                print("is_converted\tmapper\tcondition\ttid\tintron_id\tdonor_rc_splicing\tdonor_rc_splicing_wrong\tdonor_rc_overlapping\tacceptor_rc_splicing\tacceptor_rc_splicing_wrong\tacceptor_rc_overlapping", file=out3)
                 for cond in m.conditions:
                     for mapper in config['mappers'].keys():
                         bam_ori = simdir + "bam_ori/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".bam"

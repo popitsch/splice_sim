@@ -207,9 +207,13 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition,
 
     performance = Counter()
 
+    #ftxid = open(bam_out + "txs.txt", "w")
+
     for tid in transcripts:
 
         t = transcripts[tid]
+
+        #print(tid + "\t" + str(len(t.introns)), file = ftxid)
 
         for i in range(0, len(t.introns)):
 
@@ -226,6 +230,14 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition,
             iv = Interval(intronstart - 1, intronend + 1)
             ivTree = IntervalTree()
             ivTree.add(iv)
+
+            performance[tid, intronID, 'acceptor_rc_splicing'] += 0
+            performance[tid, intronID, 'acceptor_rc_splicing_wrong'] += 0
+            performance[tid, intronID, 'acceptor_rc_overlapping'] += 0
+
+            performance[tid, intronID, 'donor_rc_splicing'] = 0
+            performance[tid, intronID, 'donor_rc_splicing_wrong'] = 0
+            performance[tid, intronID, 'donor_rc_overlapping'] = 0
 
             # Donor
 
@@ -247,20 +259,20 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition,
 
                     if read.splicing and not read.hasSpliceSite(ivTree):
 
-                        performance[tid, intronID, 'acceptor_rc_splicing_wrong'] += 1
+                        performance[tid, intronID, 'donor_rc_splicing_wrong'] += 1
                         bamRead.setTag('YC', colors["exonexonfalse"])
                         if (samout):
                             samout.write(bamRead)
 
                     elif read.splicing and read.hasSpliceSite(ivTree):
 
-                        performance[tid, intronID, 'acceptor_rc_splicing'] += 1
+                        performance[tid, intronID, 'donor_rc_splicing'] += 1
                         bamRead.setTag('YC', colors["exonexontrue"])
                         if (samout):
                             samout.write(bamRead)
 
                     elif end > iv.begin:
-                        performance[tid, intronID, 'acceptor_rc_overlapping'] += 1
+                        performance[tid, intronID, 'donor_rc_overlapping'] += 1
                         bamRead.setTag('YC', colors["exonintron"])
                         if (samout):
                             samout.write(bamRead)
@@ -289,20 +301,20 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition,
 
                     if read.splicing and not read.hasSpliceSite(ivTree):
 
-                        performance[tid, intronID, 'donor_rc_splicing_wrong'] += 1
+                        performance[tid, intronID, 'acceptor_rc_splicing_wrong'] += 1
                         bamRead.setTag('YC', colors["exonexonfalse"])
                         if (samout):
                             samout.write(bamRead)
 
                     elif read.splicing and read.hasSpliceSite(ivTree):
 
-                        performance[tid, intronID, 'donor_rc_splicing'] += 1
+                        performance[tid, intronID, 'acceptor_rc_splicing'] += 1
                         bamRead.setTag('YC', colors["exonexontrue"])
                         if (samout):
                             samout.write(bamRead)
 
                     elif start < iv.end:
-                        performance[tid, intronID, 'donor_rc_overlapping'] += 1
+                        performance[tid, intronID, 'acceptor_rc_overlapping'] += 1
                         bamRead.setTag('YC', colors["exonintron"])
                         if (samout):
                             samout.write(bamRead)
@@ -316,6 +328,7 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition,
                 n_reads += 1
                 # readBuffer.append(read.name)
 
+    #ftxid.close()
     print("%s reads:  %i %i %i" % (bam_file, n_reads, samin.mapped, samin.unmapped))
     samin.close()
 
@@ -336,12 +349,12 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition,
                 condition,
                 prevTid,
                 prevIntron,
-                intronBuffer['acceptor_rc_splicing'] if 'acceptor_rc_splicing' in intronBuffer else 0,
-                intronBuffer['acceptor_rc_splicing_wrong'] if 'acceptor_rc_splicing_wrong' in intronBuffer else 0,
-                intronBuffer['acceptor_rc_overlapping'] if 'acceptor_rc_overlapping' in intronBuffer else 0,
-                intronBuffer['donor_rc_splicing'] if 'donor_rc_splicing' in intronBuffer else 0,
-                intronBuffer['donor_rc_splicing_wrong'] if 'donor_rc_splicing_wrong' in intronBuffer else 0,
-                intronBuffer['donor_rc_overlapping'] if 'donor_rc_overlapping' in intronBuffer else 0
+                intronBuffer['acceptor_rc_splicing'],
+                intronBuffer['acceptor_rc_splicing_wrong'],
+                intronBuffer['acceptor_rc_overlapping'],
+                intronBuffer['donor_rc_splicing'],
+                intronBuffer['donor_rc_splicing_wrong'],
+                intronBuffer['donor_rc_overlapping']
             ]]), file=out_performance)
 
             intronBuffer = dict()
@@ -356,12 +369,12 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition,
         condition,
         prevTid,
         prevIntron,
-        intronBuffer['acceptor_rc_splicing'] if 'acceptor_rc_splicing' in intronBuffer else 0,
-        intronBuffer['acceptor_rc_splicing_wrong'] if 'acceptor_rc_splicing_wrong' in intronBuffer else 0,
-        intronBuffer['acceptor_rc_overlapping'] if 'acceptor_rc_overlapping' in intronBuffer else 0,
-        intronBuffer['donor_rc_splicing'] if 'donor_rc_splicing' in intronBuffer else 0,
-        intronBuffer['donor_rc_splicing_wrong'] if 'donor_rc_splicing_wrong' in intronBuffer else 0,
-        intronBuffer['donor_rc_overlapping'] if 'donor_rc_overlapping' in intronBuffer else 0
+        intronBuffer['acceptor_rc_splicing'],
+        intronBuffer['acceptor_rc_splicing_wrong'],
+        intronBuffer['acceptor_rc_overlapping'],
+        intronBuffer['donor_rc_splicing'],
+        intronBuffer['donor_rc_splicing_wrong'],
+        intronBuffer['donor_rc_overlapping']
     ]]), file=out_performance)
 
     if samout is not None:

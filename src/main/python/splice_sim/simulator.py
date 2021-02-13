@@ -417,32 +417,30 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                     read_strand = "-" if r.is_reverse else "+"
                     if transcript_strand == read_strand: # NOTE: reads that were mapped to opposite strand will be dropped later in post_filtering step!
                         iso = m.transcripts[tid].isoforms[iso_id]
-                        block_tuples, seqerr_pos = parse_art_cigar(r)
+                        block_tuples, seqerr_pos = parse_art_cigar(r) # aligned blocks and seqerrors in amplicon coords
                         read_cigartuples=[]
                         read_cigartuples_len=0
-                        read_spliced=False
                         for (x,y) in block_tuples:
                             start_abs, bid_start = iso.rel2abs_pos(r.reference_start + x)
                             end_abs, bid_end = iso.rel2abs_pos(r.reference_start + y)
-                            if not read_spliced and bid_start != bid_end:
-                                read_spliced=True
                             rc, rl = iso.calc_cigartuples(start_abs, end_abs)
                             read_cigartuples+=rc
                             read_cigartuples_len+=rl
-                        read_cigar  = ','.join(["%i-%i" % (a,b) for (a,b) in read_cigartuples]) # to parse cigar_tuples = [tuple(x.split('-')) for x in read_cigar.split(',')]
+                        read_abs_blocks  = ','.join(["%i-%i" % (a,b) for (a,b) in read_cigartuples]) # to parse cigar_tuples = [tuple(x.split('-')) for x in read_abs_blocks.split(',')]
                         read_name = "%s_%s_%s_%s" % (r.query_name,                                                             
                                                         iso.t.transcript.Chromosome, 
-                                                        read_cigar, 
+                                                        read_abs_blocks, 
                                                         (",".join(str(iso.rel2abs_pos(p)[0]) for p in seqerr_pos) )  if len(seqerr_pos)>0 else 'NA' )
                         qstr = ''.join(map(lambda x: chr( x+33 ), r.query_qualities))
                         # double check whether seq length and calculates CIGAR length match and if not skip read.
                         # FIXME: why does this happen?
-                        if ( read_cigartuples_len != len(r.query_sequence)):
-                            print("Data inconsistent for read %s with cigar %s. Ignoring..." % (read_name, r.cigarstring))
-                            incosistent_data+=1
-                        else:
-                            simulated_read_stats[cond.id,tid]+=1
-                            print("@%s\n%s\n+\n%s" % ( read_name, r.query_sequence, qstr), file=out_fq )
+                        # NOTE: happens for reads with insertions!
+#                         if ( read_cigartuples_len != len(r.query_sequence)):
+#                             print("Data inconsistent for read %s with cigar %s. Ignoring..." % (read_name, r.cigarstring))
+#                             incosistent_data+=1
+#                         else:
+                        simulated_read_stats[cond.id,tid]+=1
+                        print("@%s\n%s\n+\n%s" % ( read_name, r.query_sequence, qstr), file=out_fq )
             if success:
                 removeFile([f_fq_both, f_sam_both])
     

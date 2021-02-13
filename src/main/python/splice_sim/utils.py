@@ -113,7 +113,7 @@ def readidx2genpos_rel( read, idx ):
 def readidx2genpos_abs( read, idx ):
     """ Converts read positions to genomic positions (1-based) by taking all cigar operations into account. """
     pairs = read.get_aligned_pairs(matches_only=True)
-    if len(pairs)<=idx or len(pairs[idx-1])==0:
+    if idx<0 or len(pairs)<=idx or len(pairs[idx-1])==0:
         return None
     return (pairs[idx][1]+1)
  
@@ -148,29 +148,35 @@ def parse_art_cigar(read):
     seqerr_pos=[]
     block_tuples=[]
     off = 0
+    read_off=0
     start=0
-    for op, len in read.cigartuples:
+    for op, l in read.cigartuples:
         if (op == BAM_CMATCH) or (op == BAM_CEQUAL): # M or =
-           off+=len
+           off+=l
+           read_off+=l
         elif op == BAM_CDIFF: # X
-            seqerr_pos+=[readidx2genpos_abs(read, off)]
+            seqerr_pos+=[readidx2genpos_abs(read, read_off)]
             if seqerr_pos[-1] is None:
-                logging.warn("Invalid seqerr position calculated for %s / %i. Ignoring!" % (read.query_name, off))
+                logging.warn("Invalid seqerr position calculated for %s / %i. Ignoring!" % (read.query_name, read_off))
                 del seqerr_pos[-1]
-            off+=len
+            off+=l
+            read_off+=l
         elif op == BAM_CINS: # I
-            seqerr_pos+=[readidx2genpos_abs(read, off)]
-            if seqerr_pos[-1] is None:
-                logging.warn("Invalid seqerr position calculated for %s / %i. Ignoring!" % (read.query_name, off))
-                del seqerr_pos[-1]
-            off+=len
+            # TODO seqerrr reporting does not work for insertions
+            #seqerr_pos+=[readidx2genpos_abs(read, off-1)]
+            #if seqerr_pos[-1] is None:
+            #    logging.warn("Invalid seqerr position calculated for %s / %i. Ignoring!" % (read.query_name, off))
+            #    del seqerr_pos[-1]
+            #off+=l
+            pass
         elif op == BAM_CDEL: # D
             block_tuples+=[(start, off-1)]
-            seqerr_pos+=[readidx2genpos_abs(read, off)]
-            if seqerr_pos[-1] is None:
-                logging.warn("Invalid seqerr position calculated for %s / %i. Ignoring!" % (read.query_name, off))
-                del seqerr_pos[-1]
-            #off+=len
+            # TODO  seqerrr reporting does not work for deletions
+            #seqerr_pos+=[readidx2genpos_abs(read, off)]
+            #if seqerr_pos[-1] is None:
+            #    logging.warn("Invalid seqerr position calculated for %s / %i. Ignoring!" % (read.query_name, off))
+            #    del seqerr_pos[-1]
+            off+=l
             start=off
         else:
             print("UNSUPPORTED CIGAR operator %i" % op)

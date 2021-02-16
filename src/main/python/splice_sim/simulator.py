@@ -432,13 +432,10 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                                                         read_abs_blocks, 
                                                         (",".join(str(iso.rel2abs_pos(p)[0]) for p in seqerr_pos) )  if len(seqerr_pos)>0 else 'NA' )
                         qstr = ''.join(map(lambda x: chr( x+33 ), r.query_qualities))
-                        # double check whether seq length and calculates CIGAR length match and if not skip read.
-                        # FIXME: why does this happen?
-                        # NOTE: happens for reads with insertions!
-#                         if ( read_cigartuples_len != len(r.query_sequence)):
-#                             print("Data inconsistent for read %s with cigar %s. Ignoring..." % (read_name, r.cigarstring))
-#                             incosistent_data+=1
-#                         else:
+                        # skip reads with too-long read names. Samtools maximum length of read name is 254.
+                        if len(read_name)>254:
+                            incosistent_data+=1
+                            continue
                         simulated_read_stats[cond.id,tid]+=1
                         print("@%s\n%s\n+\n%s" % ( read_name, r.query_sequence, qstr), file=out_fq )
             if success:
@@ -447,7 +444,7 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
         else:
             logging.warn("Will not re-create existing file %s" % (f_fq+".gz"))
     if incosistent_data > 0:
-        logging.warn("Dropped %i simulated reads due to inconsistent data" % incosistent_data)
+        logging.warn("Dropped %i simulated reads due to too long read_name" % incosistent_data)
     
     # write simulated reead stats
     f_srs = outdir + 'simulated_read_stats.tsv'

@@ -63,7 +63,7 @@ if __name__ == '__main__':
 
     parser["evaluate"] = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
     parser["evaluate"].add_argument("-c", "--config", type=existing_file, required=True, dest="config_file", metavar="config_file", help="JSON config file")
-    parser["evaluate"].add_argument("-o", "--outdir", type=str, required=False, dest="outdir", metavar="outdir", help="output directory (default i current dir)")
+    parser["evaluate"].add_argument("-o", "--outdir", type=str, required=False, dest="outdir", metavar="outdir", help="output directory (default is current dir)")
     parser["evaluate"].add_argument("--overwrite", required=False, action="store_true", default=False, dest="overwrite", help="If set, existing files will be overwritten")
    
     print(LOGO)

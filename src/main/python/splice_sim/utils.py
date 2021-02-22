@@ -40,6 +40,13 @@ BAM_CBACK=9
 COMP_TABLE = {
     "A": 'T', "C": 'G', "T": 'A', "G": 'C'
     }
+# Colors for read classifications
+colors = {"exonexonfalse" : "228,26,28",
+          "exonexontrue" : "55,126,184",
+          "exonintron" : "77,175,74",
+          "garbage" : "255,127,0",
+          "intron" : "200,200,200"
+}
 def reverse_complement(seq):
     """ Calculate reverse complement DNA sequence """
     rev=[]
@@ -785,4 +792,15 @@ def createIgvGenome(outdir, id, fasta, bed=None, alias=None):
         if localalias is not None:
             f.write(localalias, os.path.basename(localalias))
             removeFile(localalias)
-        
+
+def partitionDict(dictionary, chunks=2):
+
+    partition = [dict() for idx in range(chunks)]
+    idx = 0
+    for k, v in dictionary.items():
+        partition[idx][k] = v
+        if idx < chunks - 1:  # indexes start at 0
+            idx += 1
+        else:
+            idx = 0
+    return partition

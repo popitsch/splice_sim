@@ -1,5 +1,5 @@
 '''
-@author: niko.popitsch@imba.oeaw.ac.at
+@author: niko.popitsch@imba.oeaw.ac.at, tobias.neumann@imp.ac.at
 '''
 
 from collections import *
@@ -12,6 +12,7 @@ from utils import *
 import random
 import math
 import gzip
+from intervaltree import Interval, IntervalTree
 import logging
 from model import Model, Condition, Isoform, Transcript
 from iterator import *
@@ -188,6 +189,201 @@ def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_read
                         index=True, 
                         override=True, 
                         delinFile=True)
+
+
+def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition, out_reads, out_performance):
+    """ evaluate the passed BAM file """
+    logging.info("Evaluating %s" % bam_file)
+    performance = Counter()
+
+    chromosomes = m.genome.references
+    dict_chr2idx = {k: v for v, k in enumerate(chromosomes)}
+
+    n_reads = 0
+    samin = pysam.AlignmentFile(bam_file, "rb")
+    samout = pysam.AlignmentFile(bam_out + '.tmp.bam', "wb", template=samin) if bam_out is not None else None
+
+    transcripts = m.transcripts
+
+    performance = Counter()
+
+    #ftxid = open(bam_out + "txs.txt", "w")
+
+    for tid in transcripts:
+
+        t = transcripts[tid]
+
+        #print(tid + "\t" + str(len(t.introns)), file = ftxid)
+
+        for i in range(0, len(t.introns)):
+
+            # readBuffer = list()
+
+            txid = t.introns.iloc[i]['transcript_id']
+            exonnumber = t.introns.iloc[i]['exon_number']
+            chromosome = t.introns.iloc[i]['Chromosome']
+            intronstart = t.introns.iloc[i]['Start']
+            intronend = t.introns.iloc[i]['End']
+
+            intronID = txid + "_" + str(exonnumber)
+
+            iv = Interval(intronstart - 1, intronend + 1)
+            ivTree = IntervalTree()
+            ivTree.add(iv)
+
+            performance[tid, intronID, 'acceptor_rc_splicing'] += 0
+            performance[tid, intronID, 'acceptor_rc_splicing_wrong'] += 0
+            performance[tid, intronID, 'acceptor_rc_overlapping'] += 0
+
+            performance[tid, intronID, 'donor_rc_splicing'] = 0
+            performance[tid, intronID, 'donor_rc_splicing_wrong'] = 0
+            performance[tid, intronID, 'donor_rc_overlapping'] = 0
+
+            # Donor
+
+            donorIterator = SimulatedReadIterator(samin.fetch(contig=chromosome, start=intronstart - 1, stop=intronstart), flagFilter=0)
+
+            for read in donorIterator:
+
+                # if read.name in readBuffer:
+                #     continue
+
+                start = read.start
+                end = read.end
+
+                bamRead = read.bamRead
+
+                color = ""
+
+                if start <= iv.begin:
+
+                    if read.splicing and not read.hasSpliceSite(ivTree) and end > iv.begin:
+
+                        performance[tid, intronID, 'donor_rc_splicing_wrong'] += 1
+                        bamRead.setTag('YC', colors["exonexonfalse"])
+                        if (samout):
+                            samout.write(bamRead)
+
+                    elif read.splicing and read.hasSpliceSite(ivTree) and end > iv.begin:
+
+                        performance[tid, intronID, 'donor_rc_splicing'] += 1
+                        bamRead.setTag('YC', colors["exonexontrue"])
+                        if (samout):
+                            samout.write(bamRead)
+
+                    elif end > iv.begin:
+                        performance[tid, intronID, 'donor_rc_overlapping'] += 1
+                        bamRead.setTag('YC', colors["exonintron"])
+                        if (samout):
+                            samout.write(bamRead)
+                    else:
+                        bamRead.setTag('YC', colors["intron"])
+                        if (samout):
+                            samout.write(bamRead)
+
+                n_reads += 1
+                # readBuffer.append(read.name)
+
+            # Acceptor
+            acceptorIterator = SimulatedReadIterator(samin.fetch(contig=chromosome, start=intronend, stop=intronend + 1), flagFilter=0)
+
+            for read in acceptorIterator:
+
+                # if read.name in readBuffer:
+                #     continue
+
+                start = read.start
+                end = read.end
+
+                bamRead = read.bamRead
+
+                if end >= iv.end:
+
+                    if read.splicing and not read.hasSpliceSite(ivTree) and start < iv.end:
+
+                        performance[tid, intronID, 'acceptor_rc_splicing_wrong'] += 1
+                        bamRead.setTag('YC', colors["exonexonfalse"])
+                        if (samout):
+                            samout.write(bamRead)
+
+                    elif read.splicing and read.hasSpliceSite(ivTree) and start < iv.end:
+
+                        performance[tid, intronID, 'acceptor_rc_splicing'] += 1
+                        bamRead.setTag('YC', colors["exonexontrue"])
+                        if (samout):
+                            samout.write(bamRead)
+
+                    elif start < iv.end:
+                        performance[tid, intronID, 'acceptor_rc_overlapping'] += 1
+                        bamRead.setTag('YC', colors["exonintron"])
+                        if (samout):
+                            samout.write(bamRead)
+                    else:
+                        # Start ends at first exon position of acceptor
+                        pass
+                        # bamRead.setTag('YC', colors["intron"])
+                        # if (samout):
+                        #     samout.write(bamRead)
+
+                n_reads += 1
+                # readBuffer.append(read.name)
+
+    #ftxid.close()
+    print("%s reads:  %i %i %i" % (bam_file, n_reads, samin.mapped, samin.unmapped))
+    samin.close()
+
+    #tids, intron, classes = performance.keys()
+    #tids = set([x for x, y, z in performance.keys()])
+    #introns = set([y for x, y, z in performance.keys()])
+    prevIntron = ""
+    prevTid = ""
+    intronBuffer = dict()
+
+    for tid, intron, classification in performance.keys():
+
+        if intron != prevIntron and prevIntron != "":
+
+            print("\t".join([str(x) for x in [
+                1 if is_converted else 0,
+                mapper,
+                condition,
+                prevTid,
+                prevIntron,
+                intronBuffer['donor_rc_splicing'],
+                intronBuffer['donor_rc_splicing_wrong'],
+                intronBuffer['donor_rc_overlapping'],
+                intronBuffer['acceptor_rc_splicing'],
+                intronBuffer['acceptor_rc_splicing_wrong'],
+                intronBuffer['acceptor_rc_overlapping']
+            ]]), file=out_performance)
+
+            intronBuffer = dict()
+
+        intronBuffer[classification] = performance[tid, intron, classification]
+        prevTid = tid
+        prevIntron = intron
+
+    print("\t".join([str(x) for x in [
+        1 if is_converted else 0,
+        mapper,
+        condition,
+        prevTid,
+        prevIntron,
+        intronBuffer['donor_rc_splicing'],
+        intronBuffer['donor_rc_splicing_wrong'],
+        intronBuffer['donor_rc_overlapping'],
+        intronBuffer['acceptor_rc_splicing'],
+        intronBuffer['acceptor_rc_splicing_wrong'],
+        intronBuffer['acceptor_rc_overlapping']
+    ]]), file=out_performance)
+
+    if samout is not None:
+        samout.close()
+        sambambasortbam(bam_out + '.tmp.bam',
+                        bam_out,
+                        index=True,
+                        override=True,
+                        delinFile=True)
     
 #bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/STAR/small4.5min.STAR.TC.bam'
 # bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/HISAT2_TLA/small4.5min.HISAT2_TLA.TC.bam'
@@ -227,31 +423,54 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
      
     fout = outdir + 'reads.tsv'
     fout2 = outdir + 'tid_performance.tsv'
+    fout3 = outdir + 'splice_site_performance.tsv'
     with open(fout, 'w') as out:
         with open(fout2, 'w') as out2:
-            print("mapped_coords\ttrue_coords\tclassification\ttid\tis_converted\tmapper\tcondition\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\toverlapping_tids\tread_name", file=out)
-            print("is_converted\tmapper\tcondition\tiso\ttid\tTP\tFP\tFN", file=out2)
-            for cond in m.conditions:
-                for mapper in config['mappers'].keys():
-                    bam_ori = simdir + "bam_ori/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".bam"
-                    bam_tc = simdir + "bam_tc/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.bam"
-                    bam_out_dir_ori = outdir + "bam_ori/" + mapper + "/"
+            with open(fout3, 'w') as out3:
+                print("mapped_coords\ttrue_coords\tclassification\ttid\tis_converted\tmapper\tcondition\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\toverlapping_tids\tread_name", file=out)
+                print("is_converted\tmapper\tcondition\tiso\ttid\tTP\tFP\tFN", file=out2)
+                print("is_converted\tmapper\tcondition\ttid\tintron_id\tdonor_rc_splicing\tdonor_rc_splicing_wrong\tdonor_rc_overlapping\tacceptor_rc_splicing\tacceptor_rc_splicing_wrong\tacceptor_rc_overlapping", file=out3)
+                for cond in m.conditions:
+                    for mapper in config['mappers'].keys():
+                        bam_ori = simdir + "bam_ori/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".bam"
+                        bam_tc = simdir + "bam_tc/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.bam"
+                        bam_out_dir_ori = outdir + "bam_ori/" + mapper + "/"
+                        if not os.path.exists(bam_out_dir_ori):
+                            print("Creating dir " + bam_out_dir_ori)
+                            os.makedirs(bam_out_dir_ori)
+                        bam_out_dir_tc = outdir + "bam_tc/" + mapper + "/"
+                        if not os.path.exists(bam_out_dir_tc):
+                            print("Creating dir " + bam_out_dir_tc)
+                            os.makedirs(bam_out_dir_tc)
+                        bam_ori_out = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".mismapped.bam"
+                        bam_ori_out_intron = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".intron.bam"
+                        bam_tc_out =  bam_out_dir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.mismapped.bam"
+                        bam_tc_out_intron = bam_out_dir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.intron.bam"
+                        evaluate_bam(bam_ori, bam_ori_out, False, m, mapper, cond.id, out, out2)
+                        evaluate_splice_sites(bam_ori, bam_ori_out_intron, False, m, mapper, cond.id, out, out3)
+                        evaluate_bam(bam_tc, bam_tc_out, True, m, mapper, cond.id, out, out2)
+                        evaluate_splice_sites(bam_tc, bam_tc_out_intron, True, m, mapper, cond.id, out, out3)
+                    # eval truth
+                    bam_ori_truth  = simdir + "bam_ori/TRUTH/" + config['dataset_name'] + "." + cond.id + ".TRUTH.bam"
+                    bam_tc_truth   = simdir + "bam_tc/TRUTH/"  + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.bam"
+
+                    bam_out_dir_ori = outdir + "bam_ori/TRUTH/"
                     if not os.path.exists(bam_out_dir_ori):
                         print("Creating dir " + bam_out_dir_ori)
-                        os.makedirs(bam_out_dir_ori) 
-                    bam_out_dir_tc = outdir + "bam_tc/" + mapper + "/"
+                        os.makedirs(bam_out_dir_ori)
+                    bam_out_dir_tc = outdir + "bam_tc/TRUTH/"
                     if not os.path.exists(bam_out_dir_tc):
                         print("Creating dir " + bam_out_dir_tc)
-                        os.makedirs(bam_out_dir_tc) 
-                    bam_ori_out = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".mismapped.bam"
-                    bam_tc_out =  bam_out_dir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.mismapped.bam"
-                    evaluate_bam(bam_ori, bam_ori_out, False, m, mapper, cond.id, out, out2)    
-                    evaluate_bam(bam_tc, bam_tc_out, True, m, mapper, cond.id, out, out2)    
-                # eval truth
-                bam_ori_truth  = simdir + "bam_ori/TRUTH/" + config['dataset_name'] + "." + cond.id + ".TRUTH.bam"
-                bam_tc_truth   = simdir + "bam_tc/TRUTH/"  + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.bam"
-                evaluate_bam(bam_ori_truth, None, False, m, 'NA', cond.id, out, out2)    
-                evaluate_bam(bam_tc_truth, None, True, m, 'NA', cond.id, out, out2)    
+                        os.makedirs(bam_out_dir_tc)
+
+                    bam_ori_truth_intron = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + ".TRUTH.intron.bam"
+                    bam_tc_truth_intron = bam_out_dir_tc + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.intron.bam"
+
+                    evaluate_bam(bam_ori_truth, None, False, m, 'NA', cond.id, out, out2)
+                    evaluate_splice_sites(bam_ori_truth, bam_ori_truth_intron, False, m, 'NA', cond.id, out, out3)
+                    evaluate_bam(bam_tc_truth, None, True, m, 'NA', cond.id, out, out2)
+                    evaluate_splice_sites(bam_tc_truth, bam_tc_truth_intron, True, m, 'NA', cond.id, out, out3)
+
     bgzip(fout, delinFile=True, override=True)
     logging.info("All done in %s" % str(datetime.timedelta(seconds=time.time() - startTime)))
     print("All done in", datetime.timedelta(seconds=time.time() - startTime))

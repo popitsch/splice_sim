@@ -447,7 +447,7 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                         simulated_read_stats[cond.id,tid]+=1
                         print("@%s\n%s\n+\n%s" % ( read_name, r.query_sequence, qstr), file=out_fq )
             if success:
-                if get_config(config, ['simulator','keep_sam'], False):
+                if not get_config(config, ['simulator','keep_sam'], False):
                     removeFile([f_fq_both, f_sam_both])
     
         else:

@@ -392,9 +392,10 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
         f_sam_both =  art_out_prefix + ".sam"
         # filtered final output
         f_fq =  tmpdir + config['dataset_name'] + "." + cond.id + ".fq"
+        additional_art_params = config['additional_art_params'] if 'additional_art_params' in config else "" # e.g., --insRate (default: 0.00009)
         if overwrite or not files_exist([f_fq+".gz" ]):
             # NOTE: use 2x coverage as ~50% of reads will be simulated for wrong strand and will be dropped in postprocessing
-            cmd=[art_cmd, "-ss", "HS25", "-i", f, "-l", str(config["readlen"]), "-f", str(cond.coverage * 2), "-na", "--samout", "-o", art_out_prefix ]
+            cmd=[art_cmd, "-ss", "HS25", "-i", f, "-l", str(config["readlen"]), "-f", str(cond.coverage * 2), "-na", "--samout", "-o", art_out_prefix, additional_art_params ]
             if "random_seed" in config:
                 cmd+=["-rs", str(config["random_seed"])]
             success = pipelineStep(f, [f_fq_both, f_sam_both], cmd, shell=True, stdout=artlog, append=True)    

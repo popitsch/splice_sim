@@ -23,7 +23,14 @@ from config_creator import calculate_transcript_data
 def check_config(config):
     for section in ['dataset_name','mappers','genome_fa','gene_gff','conditions','isoform_mode','transcript_data']:
         assert section in config, "Missing configuration section %s" % section
-        
+def get_config(config, keys, default_value): 
+    """ gets value from dict of dicts or default_value if path does not exist """
+    d = config
+    for k in keys:
+        if k not in d:
+            return default_value
+        d = d[k]
+    return d        
         
 #============================================================================
 # Mapping methods
@@ -392,7 +399,7 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
         f_sam_both =  art_out_prefix + ".sam"
         # filtered final output
         f_fq =  tmpdir + config['dataset_name'] + "." + cond.id + ".fq"
-        additional_art_params = config['additional_art_params'] if 'additional_art_params' in config else "" # e.g., --insRate (default: 0.00009)
+        additional_art_params = get_config(config, ['simulator','additional_art_params'],"") # e.g., --insRate (default: 0.00009)
         if overwrite or not files_exist([f_fq+".gz" ]):
             # NOTE: use 2x coverage as ~50% of reads will be simulated for wrong strand and will be dropped in postprocessing
             cmd=[art_cmd, "-ss", "HS25", "-i", f, "-l", str(config["readlen"]), "-f", str(cond.coverage * 2), "-na", "--samout", "-o", art_out_prefix, additional_art_params ]
@@ -440,7 +447,8 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                         simulated_read_stats[cond.id,tid]+=1
                         print("@%s\n%s\n+\n%s" % ( read_name, r.query_sequence, qstr), file=out_fq )
             if success:
-                removeFile([f_fq_both, f_sam_both])
+                if get_config(config, ['simulator','keep_sam'], False):
+                    removeFile([f_fq_both, f_sam_both])
     
         else:
             logging.warn("Will not re-create existing file %s" % (f_fq+".gz"))

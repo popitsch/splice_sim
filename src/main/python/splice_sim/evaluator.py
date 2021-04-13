@@ -8,6 +8,7 @@ import pysam
 import pyranges as pr
 import pandas as pd
 import numpy as np
+from scipy import stats
 from utils import *
 import random
 import math
@@ -191,9 +192,9 @@ def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_read
                         delinFile=True)
 
 
-def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition, out_reads, out_performance):
+def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition, out_performance):
     """ evaluate the passed BAM file """
-    logging.info("Evaluating %s" % bam_file)
+    logging.info("Evaluating splice sites in %s" % bam_file)
     performance = Counter()
 
     chromosomes = m.genome.references
@@ -384,6 +385,129 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition,
                         index=True,
                         override=True,
                         delinFile=True)
+
+def evaluate_coverage_uniformity(bam_file, truth_file, is_converted, m, mapper, condition, out_performance):
+    """ evaluate the passed BAM file """
+    logging.info("Evaluating coverage uniformity in %s" % bam_file)
+
+    chromosomes = m.genome.references
+    dict_chr2idx = {k: v for v, k in enumerate(chromosomes)}
+
+    transcripts = m.transcripts
+
+    performance = Counter()
+
+    for tid in transcripts:
+
+        t = transcripts[tid]
+
+        intronMappedCoverage = None
+        intronTruthCoverage = None
+
+        for i in range(0, len(t.introns)):
+
+            txid = t.introns.iloc[i]['transcript_id']
+            chromosome = t.introns.iloc[i]['Chromosome']
+            start = t.introns.iloc[i]['Start']
+            end = t.introns.iloc[i]['End']
+
+            mappedCoverage = np.empty(end - start + 1, dtype=float)
+            truthCoverage = np.empty(end - start + 1, dtype=float)
+
+            it = BlockedPerPositionIterator([
+                LocationPileupIterator(bam_file, dict_chr2idx, chromosome, start, end),
+                LocationPileupIterator(truth_file, dict_chr2idx, chromosome, start, end)])
+
+            for loc, (mapped, truth) in it:
+
+                truthPositionPileup = 0
+                mappedPositionPileup = 0
+
+                for r in truth.pileups:
+                    if not r.is_del and not r.is_refskip:
+                        truthPositionPileup += 1
+
+                for r in mapped.pileups:
+                    if not r.is_del and not r.is_refskip:
+                        mappedPositionPileup += 1
+
+                truthCoverage[loc.start - start] = truthPositionPileup
+                mappedCoverage[loc.start - start] = mappedPositionPileup
+
+            if intronMappedCoverage is None:
+                intronMappedCoverage = mappedCoverage
+            else:
+                intronMappedCoverage = np.concatenate((intronMappedCoverage, mappedCoverage))
+
+            if intronTruthCoverage is None:
+                intronTruthCoverage = truthCoverage
+            else:
+                intronTruthCoverage = np.concatenate((intronTruthCoverage, truthCoverage))
+
+        truthIntronMean = np.mean(intronTruthCoverage)
+        truthIntronStdev = np.std(intronTruthCoverage)
+        truthIntronGini = gini(intronTruthCoverage)
+        truthIntronKs = stats.kstest(intronTruthCoverage, 'uniform')[1]
+
+        mappedIntronMean = np.mean(intronMappedCoverage)
+        mappedIntronStdev = np.std(intronMappedCoverage)
+        mappedIntronGini = gini(intronMappedCoverage)
+        mappedIntronKs = stats.kstest(intronMappedCoverage, 'uniform')[1]
+
+        exonMappedCoverage = None
+        exonTruthCoverage = None
+
+        for i in range(0, len(t.exons)):
+
+            txid = t.exons.iloc[i]['transcript_id']
+            chromosome = t.exons.iloc[i]['Chromosome']
+            start = t.exons.iloc[i]['Start']
+            end = t.exons.iloc[i]['End']
+
+            mappedCoverage = np.empty(end - start + 1, dtype=float)
+            truthCoverage = np.empty(end - start + 1, dtype=float)
+
+            it = BlockedPerPositionIterator([
+                LocationPileupIterator(bam_file, dict_chr2idx, chromosome, start, end),
+                LocationPileupIterator(truth_file, dict_chr2idx, chromosome, start, end)])
+
+            for loc, (mapped, truth) in it:
+
+                truthPositionPileup = 0
+                mappedPositionPileup = 0
+
+                for r in truth.pileups:
+                    if not r.is_del and not r.is_refskip:
+                        truthPositionPileup += 1
+
+                for r in mapped.pileups:
+                    if not r.is_del and not r.is_refskip:
+                        mappedPositionPileup += 1
+
+                truthCoverage[loc.start - start] = truthPositionPileup
+                mappedCoverage[loc.start - start] = mappedPositionPileup
+
+            if exonMappedCoverage is None:
+                exonMappedCoverage = mappedCoverage
+            else:
+                exonMappedCoverage = np.concatenate((exonMappedCoverage, mappedCoverage))
+
+            if exonTruthCoverage is None:
+                exonTruthCoverage = truthCoverage
+            else:
+                exonTruthCoverage = np.concatenate((exonTruthCoverage, truthCoverage))
+
+        truthExonMean = np.mean(exonTruthCoverage)
+        truthExonStdev = np.std(exonTruthCoverage)
+        truthExonGini = gini(exonTruthCoverage)
+        truthExonKs = stats.kstest(exonTruthCoverage, 'uniform')[1]
+
+        mappedExonMean = np.mean(exonMappedCoverage)
+        mappedExonStdev = np.std(exonMappedCoverage)
+        mappedExonGini = gini(exonMappedCoverage)
+        mappedExonKs = stats.kstest(exonMappedCoverage, 'uniform')[1]
+
+
     
 #bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/STAR/small4.5min.STAR.TC.bam'
 # bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/HISAT2_TLA/small4.5min.HISAT2_TLA.TC.bam'
@@ -431,6 +555,10 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
                 print("is_converted\tmapper\tcondition\tiso\ttid\tTP\tFP\tFN", file=out2)
                 print("is_converted\tmapper\tcondition\ttid\tintron_id\tdonor_rc_splicing\tdonor_rc_splicing_wrong\tdonor_rc_overlapping\tacceptor_rc_splicing\tacceptor_rc_splicing_wrong\tacceptor_rc_overlapping", file=out3)
                 for cond in m.conditions:
+
+                    bam_ori_truth = simdir + "bam_ori/TRUTH/" + config['dataset_name'] + "." + cond.id + ".TRUTH.bam"
+                    bam_tc_truth = simdir + "bam_tc/TRUTH/" + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.bam"
+
                     for mapper in config['mappers'].keys():
                         bam_ori = simdir + "bam_ori/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".bam"
                         bam_tc = simdir + "bam_tc/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.bam"
@@ -446,14 +574,15 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
                         bam_ori_out_intron = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".intron.bam"
                         bam_tc_out =  bam_out_dir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.mismapped.bam"
                         bam_tc_out_intron = bam_out_dir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.intron.bam"
-                        evaluate_bam(bam_ori, bam_ori_out, False, m, mapper, cond.id, out, out2)
-                        evaluate_splice_sites(bam_ori, bam_ori_out_intron, False, m, mapper, cond.id, out, out3)
-                        evaluate_bam(bam_tc, bam_tc_out, True, m, mapper, cond.id, out, out2)
-                        evaluate_splice_sites(bam_tc, bam_tc_out_intron, True, m, mapper, cond.id, out, out3)
-                    # eval truth
-                    bam_ori_truth  = simdir + "bam_ori/TRUTH/" + config['dataset_name'] + "." + cond.id + ".TRUTH.bam"
-                    bam_tc_truth   = simdir + "bam_tc/TRUTH/"  + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.bam"
 
+                        evaluate_bam(bam_ori, bam_ori_out, False, m, mapper, cond.id, out, out2)
+                        evaluate_splice_sites(bam_ori, bam_ori_out_intron, False, m, mapper, cond.id, out3)
+
+                        evaluate_bam(bam_tc, bam_tc_out, True, m, mapper, cond.id, out, out2)
+                        evaluate_splice_sites(bam_tc, bam_tc_out_intron, True, m, mapper, cond.id, out3)
+                        evaluate_coverage_uniformity(bam_tc, bam_tc_truth, True, m, mapper, cond.id, "test_coverage.txt")
+
+                    # eval truth
                     bam_out_dir_ori = outdir + "bam_ori/TRUTH/"
                     if not os.path.exists(bam_out_dir_ori):
                         print("Creating dir " + bam_out_dir_ori)

@@ -17,6 +17,7 @@ import signal
 from subprocess import *
 import subprocess
 import sys
+import numpy as np
 from zipfile import ZipFile
 import gzip
 from shutil import copyfile
@@ -107,6 +108,19 @@ def replace_tokens(s, tok):
         s=s.replace("@"+t+"@", tok[t])
     return(s)
 
+# From https://github.com/oliviaguest/gini
+def gini(array):
+    """Calculate the Gini coefficient of a numpy array."""
+    # based on bottom eq: http://www.statsdirect.com/help/content/image/stat0206_wmf.gif
+    # from: http://www.statsdirect.com/help/default.htm#nonparametric_methods/gini.htm
+    array = array.flatten() #all values are treated equally, arrays must be 1d
+    if np.amin(array) < 0:
+        array -= np.amin(array) #values cannot be negative
+    array += 0.0000001 #values cannot be 0
+    array = np.sort(array) #values must be sorted
+    index = np.arange(1,array.shape[0]+1) #index per array element
+    n = array.shape[0]#number of array elements
+    return ((np.sum((2 * index - n  - 1) * array)) / (n * np.sum(array))) #Gini coefficient
 
 def readidx2genpos_rel( read, idx ):
     """ Converts read positions to genomic positions (1-based) by taking all cigar operations into account. 

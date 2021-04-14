@@ -411,8 +411,8 @@ def evaluate_coverage_uniformity(bam_file, truth_file, is_converted, m, mapper, 
             start = t.introns.iloc[i]['Start']
             end = t.introns.iloc[i]['End']
 
-            mappedCoverage = np.empty(end - start + 1, dtype=float)
-            truthCoverage = np.empty(end - start + 1, dtype=float)
+            mappedCoverage = np.zeros(end - start + 1, dtype=float)
+            truthCoverage = np.zeros(end - start + 1, dtype=float)
 
             it = BlockedPerPositionIterator([
                 LocationPileupIterator(bam_file, dict_chr2idx, chromosome, start, end),
@@ -423,13 +423,15 @@ def evaluate_coverage_uniformity(bam_file, truth_file, is_converted, m, mapper, 
                 truthPositionPileup = 0
                 mappedPositionPileup = 0
 
-                for r in truth.pileups:
-                    if not r.is_del and not r.is_refskip:
-                        truthPositionPileup += 1
+                if truth:
+                    for r in truth.pileups:
+                        if not r.is_del and not r.is_refskip:
+                            truthPositionPileup += 1
 
-                for r in mapped.pileups:
-                    if not r.is_del and not r.is_refskip:
-                        mappedPositionPileup += 1
+                if mapped:
+                    for r in mapped.pileups:
+                        if not r.is_del and not r.is_refskip:
+                            mappedPositionPileup += 1
 
                 truthCoverage[loc.start - start] = truthPositionPileup
                 mappedCoverage[loc.start - start] = mappedPositionPileup
@@ -444,15 +446,27 @@ def evaluate_coverage_uniformity(bam_file, truth_file, is_converted, m, mapper, 
             else:
                 intronTruthCoverage = np.concatenate((intronTruthCoverage, truthCoverage))
 
-        truthIntronMean = np.mean(intronTruthCoverage)
-        truthIntronStdev = np.std(intronTruthCoverage)
-        truthIntronGini = gini(intronTruthCoverage)
-        truthIntronKs = stats.kstest(intronTruthCoverage, 'uniform')[1]
+        if intronTruthCoverage is None:
+            truthIntronMean = np.nan
+            truthIntronStdev = np.nan
+            truthIntronGini = np.nan
+            truthIntronKs = np.nan
+        else :
+            truthIntronMean = np.mean(intronTruthCoverage)
+            truthIntronStdev = np.std(intronTruthCoverage)
+            truthIntronGini = gini(intronTruthCoverage)
+            truthIntronKs = stats.kstest(intronTruthCoverage, 'uniform')[1]
 
-        mappedIntronMean = np.mean(intronMappedCoverage)
-        mappedIntronStdev = np.std(intronMappedCoverage)
-        mappedIntronGini = gini(intronMappedCoverage)
-        mappedIntronKs = stats.kstest(intronMappedCoverage, 'uniform')[1]
+        if intronMappedCoverage is None:
+            mappedIntronMean = np.nan
+            mappedIntronStdev = np.nan
+            mappedIntronGini = np.nan
+            mappedIntronKs = np.nan
+        else :
+            mappedIntronMean = np.mean(intronMappedCoverage)
+            mappedIntronStdev = np.std(intronMappedCoverage)
+            mappedIntronGini = gini(intronMappedCoverage)
+            mappedIntronKs = stats.kstest(intronMappedCoverage, 'uniform')[1]
 
         exonMappedCoverage = None
         exonTruthCoverage = None
@@ -464,8 +478,8 @@ def evaluate_coverage_uniformity(bam_file, truth_file, is_converted, m, mapper, 
             start = t.exons.iloc[i]['Start']
             end = t.exons.iloc[i]['End']
 
-            mappedCoverage = np.empty(end - start + 1, dtype=float)
-            truthCoverage = np.empty(end - start + 1, dtype=float)
+            mappedCoverage = np.zeros(end - start + 1, dtype=float)
+            truthCoverage = np.zeros(end - start + 1, dtype=float)
 
             it = BlockedPerPositionIterator([
                 LocationPileupIterator(bam_file, dict_chr2idx, chromosome, start, end),
@@ -476,13 +490,15 @@ def evaluate_coverage_uniformity(bam_file, truth_file, is_converted, m, mapper, 
                 truthPositionPileup = 0
                 mappedPositionPileup = 0
 
-                for r in truth.pileups:
-                    if not r.is_del and not r.is_refskip:
-                        truthPositionPileup += 1
+                if truth:
+                    for r in truth.pileups:
+                        if not r.is_del and not r.is_refskip:
+                            truthPositionPileup += 1
 
-                for r in mapped.pileups:
-                    if not r.is_del and not r.is_refskip:
-                        mappedPositionPileup += 1
+                if mapped:
+                    for r in mapped.pileups:
+                        if not r.is_del and not r.is_refskip:
+                            mappedPositionPileup += 1
 
                 truthCoverage[loc.start - start] = truthPositionPileup
                 mappedCoverage[loc.start - start] = mappedPositionPileup
@@ -497,15 +513,27 @@ def evaluate_coverage_uniformity(bam_file, truth_file, is_converted, m, mapper, 
             else:
                 exonTruthCoverage = np.concatenate((exonTruthCoverage, truthCoverage))
 
-        truthExonMean = np.mean(exonTruthCoverage)
-        truthExonStdev = np.std(exonTruthCoverage)
-        truthExonGini = gini(exonTruthCoverage)
-        truthExonKs = stats.kstest(exonTruthCoverage, 'uniform')[1]
+        if exonTruthCoverage is None:
+            truthExonMean = np.nan
+            truthExonStdev = np.nan
+            truthExonGini = np.nan
+            truthExonKs = np.nan
+        else :
+            truthExonMean = np.mean(exonTruthCoverage)
+            truthExonStdev = np.std(exonTruthCoverage)
+            truthExonGini = gini(exonTruthCoverage)
+            truthExonKs = stats.kstest(exonTruthCoverage, 'uniform')[1]
 
-        mappedExonMean = np.mean(exonMappedCoverage)
-        mappedExonStdev = np.std(exonMappedCoverage)
-        mappedExonGini = gini(exonMappedCoverage)
-        mappedExonKs = stats.kstest(exonMappedCoverage, 'uniform')[1]
+        if exonMappedCoverage is None:
+            mappedExonMean = np.nan
+            mappedExonStdev = np.nan
+            mappedExonGini = np.nan
+            mappedExonKs = np.nan
+        else:
+            mappedExonMean = np.mean(exonMappedCoverage)
+            mappedExonStdev = np.std(exonMappedCoverage)
+            mappedExonGini = gini(exonMappedCoverage)
+            mappedExonKs = stats.kstest(exonMappedCoverage, 'uniform')[1]
 
         print("\t".join([str(x) for x in [
             1 if is_converted else 0,

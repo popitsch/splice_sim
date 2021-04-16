@@ -497,29 +497,42 @@ def evaluate_coverage_uniformity(bam_file, truth_file, is_converted, m, mapper, 
 
         bs = 10
 
-        if intronMappedCoverage.size % bs != 0:
-            intronMappedCoverage10bp = np.concatenate([intronMappedCoverage, np.repeat(np.nan, bs - (intronMappedCoverage.size % bs))]).reshape(-1, bs)
-            intronTruthCoverage10bp = np.concatenate([intronTruthCoverage, np.repeat(np.nan, bs - (intronTruthCoverage.size % bs))]).reshape(-1, bs)
-        else:
-            intronMappedCoverage10bp = intronMappedCoverage.reshape(-1, bs)
-            intronTruthCoverage10bp = intronTruthCoverage.reshape(-1, bs)
+        if not intronMappedCoverage is None and not intronTruthCoverage is None:
 
-        intronMappedCoverage10bp = np.nanmean(intronMappedCoverage10bp, axis = 1)
-        intronTruthCoverage10bp = np.nanmean(intronTruthCoverage10bp, axis = 1)
+            if intronMappedCoverage.size % bs != 0:
+                intronMappedCoverage10bp = np.concatenate([intronMappedCoverage, np.repeat(np.nan, bs - (intronMappedCoverage.size % bs))]).reshape(-1, bs)
+                intronTruthCoverage10bp = np.concatenate([intronTruthCoverage, np.repeat(np.nan, bs - (intronTruthCoverage.size % bs))]).reshape(-1, bs)
+            else:
+                intronMappedCoverage10bp = intronMappedCoverage.reshape(-1, bs)
+                intronTruthCoverage10bp = intronTruthCoverage.reshape(-1, bs)
+
+            intronMappedCoverage10bp = np.nanmean(intronMappedCoverage10bp, axis = 1)
+            intronTruthCoverage10bp = np.nanmean(intronTruthCoverage10bp, axis = 1)
+
+        else :
+
+            intronMappedCoverage10bp = None
+            intronTruthCoverage10bp = None
 
         intronStats10bp = uniformityStats(intronMappedCoverage10bp, intronTruthCoverage10bp)
 
         bs = 100
 
-        if intronMappedCoverage.size % bs != 0:
-            intronMappedCoverage100bp = np.concatenate([intronMappedCoverage, np.repeat(np.nan, bs - (intronMappedCoverage.size % bs))]).reshape(-1, bs)
-            intronTruthCoverage100bp = np.concatenate([intronTruthCoverage, np.repeat(np.nan, bs - (intronTruthCoverage.size % bs))]).reshape(-1, bs)
-        else:
-            intronMappedCoverage100bp = intronMappedCoverage.reshape(-1, bs)
-            intronTruthCoverage100bp = intronTruthCoverage.reshape(-1, bs)
+        if not intronMappedCoverage is None and not intronTruthCoverage is None:
 
-        intronMappedCoverage100bp = np.nanmean(intronMappedCoverage100bp, axis=1)
-        intronTruthCoverage100bp = np.nanmean(intronTruthCoverage100bp, axis=1)
+            if intronMappedCoverage.size % bs != 0:
+                intronMappedCoverage100bp = np.concatenate([intronMappedCoverage, np.repeat(np.nan, bs - (intronMappedCoverage.size % bs))]).reshape(-1, bs)
+                intronTruthCoverage100bp = np.concatenate([intronTruthCoverage, np.repeat(np.nan, bs - (intronTruthCoverage.size % bs))]).reshape(-1, bs)
+            else:
+                intronMappedCoverage100bp = intronMappedCoverage.reshape(-1, bs)
+                intronTruthCoverage100bp = intronTruthCoverage.reshape(-1, bs)
+
+            intronMappedCoverage100bp = np.nanmean(intronMappedCoverage100bp, axis=1)
+            intronTruthCoverage100bp = np.nanmean(intronTruthCoverage100bp, axis=1)
+
+        else :
+            intronMappedCoverage100bp = None
+            intronTruthCoverage100bp = None
 
         intronStats100bp = uniformityStats(intronMappedCoverage100bp, intronTruthCoverage100bp)
 
@@ -572,29 +585,41 @@ def evaluate_coverage_uniformity(bam_file, truth_file, is_converted, m, mapper, 
 
         bs = 10
 
-        if exonMappedCoverage.size % bs != 0:
-            exonMappedCoverage10bp = np.concatenate([exonMappedCoverage, np.repeat(np.nan, bs - (exonMappedCoverage.size % bs))]).reshape(-1, bs)
-            exonTruthCoverage10bp = np.concatenate([exonTruthCoverage, np.repeat(np.nan, bs - (exonTruthCoverage.size % bs))]).reshape(-1, bs)
-        else:
-            exonMappedCoverage10bp = exonMappedCoverage.reshape(-1, bs)
-            exonTruthCoverage10bp = exonTruthCoverage.reshape(-1, bs)
+        if not exonMappedCoverage is None and not exonTruthCoverage is None:
 
-        exonMappedCoverage10bp = np.nanmean(exonMappedCoverage10bp, axis = 1)
-        exonTruthCoverage10bp = np.nanmean(exonTruthCoverage10bp, axis = 1)
+            if exonMappedCoverage.size % bs != 0:
+                exonMappedCoverage10bp = np.concatenate([exonMappedCoverage, np.repeat(np.nan, bs - (exonMappedCoverage.size % bs))]).reshape(-1, bs)
+                exonTruthCoverage10bp = np.concatenate([exonTruthCoverage, np.repeat(np.nan, bs - (exonTruthCoverage.size % bs))]).reshape(-1, bs)
+            else:
+                exonMappedCoverage10bp = exonMappedCoverage.reshape(-1, bs)
+                exonTruthCoverage10bp = exonTruthCoverage.reshape(-1, bs)
+
+            exonMappedCoverage10bp = np.nanmean(exonMappedCoverage10bp, axis = 1)
+            exonTruthCoverage10bp = np.nanmean(exonTruthCoverage10bp, axis = 1)
+
+        else :
+            exonMappedCoverage10bp = None
+            exonTruthCoverage10bp = None
 
         exonStats10bp = uniformityStats(exonMappedCoverage10bp, exonTruthCoverage10bp)
 
         bs = 100
 
-        if exonMappedCoverage.size % bs != 0:
-            exonMappedCoverage100bp = np.concatenate([exonMappedCoverage, np.repeat(np.nan, bs - (exonMappedCoverage.size % bs))]).reshape(-1, bs)
-            exonTruthCoverage100bp = np.concatenate([exonTruthCoverage, np.repeat(np.nan, bs - (exonTruthCoverage.size % bs))]).reshape(-1, bs)
-        else:
-            exonMappedCoverage100bp = exonMappedCoverage.reshape(-1, bs)
-            exonTruthCoverage100bp = exonTruthCoverage.reshape(-1, bs)
+        if not exonMappedCoverage is None and not exonTruthCoverage is None:
 
-        exonMappedCoverage100bp = np.nanmean(exonMappedCoverage100bp, axis=1)
-        exonTruthCoverage100bp = np.nanmean(exonTruthCoverage100bp, axis=1)
+            if exonMappedCoverage.size % bs != 0:
+                exonMappedCoverage100bp = np.concatenate([exonMappedCoverage, np.repeat(np.nan, bs - (exonMappedCoverage.size % bs))]).reshape(-1, bs)
+                exonTruthCoverage100bp = np.concatenate([exonTruthCoverage, np.repeat(np.nan, bs - (exonTruthCoverage.size % bs))]).reshape(-1, bs)
+            else:
+                exonMappedCoverage100bp = exonMappedCoverage.reshape(-1, bs)
+                exonTruthCoverage100bp = exonTruthCoverage.reshape(-1, bs)
+
+            exonMappedCoverage100bp = np.nanmean(exonMappedCoverage100bp, axis=1)
+            exonTruthCoverage100bp = np.nanmean(exonTruthCoverage100bp, axis=1)
+
+        else :
+            exonMappedCoverage100bp = None
+            exonTruthCoverage100bp = None
 
         exonStats100bp = uniformityStats(exonMappedCoverage100bp, exonTruthCoverage100bp)
 

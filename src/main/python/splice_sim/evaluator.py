@@ -8,7 +8,7 @@ import pysam
 import pyranges as pr
 import pandas as pd
 import numpy as np
-from scipy import stats
+from scipy import stats, special
 from utils import *
 import random
 import math
@@ -386,7 +386,54 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition,
                         override=True,
                         delinFile=True)
 
-def evaluate_coverage_uniformity(bam_file, truth_file, is_converted, m, mapper, condition, out_performance):
+def uniformityStats(observed, truth):
+
+    if truth is None:
+        truthWaviness = np.nan
+        truthMean = np.nan
+        truthStdev = np.nan
+        truthGini = np.nan
+        truthKs = np.nan
+        truthChisq = np.nan
+    else:
+        truthWaviness = np.subtract(*np.percentile(np.cumsum(truth), [75, 25]))
+        truthMean = np.mean(truth)
+        truthStdev = np.std(truth)
+        truthGini = gini(truth)
+        truthKs = stats.kstest(truth, 'uniform')[1]
+        truthChisq = stats.chisquare(truth)[1]
+
+    if observed is None:
+        observedWaviness = np.nan
+        observedMean = np.nan
+        observedStdev = np.nan
+        observedGini = np.nan
+        observedKs = np.nan
+        observedChisq = np.nan
+    else:
+        observedWaviness = np.subtract(*np.percentile(np.cumsum(observed), [75, 25]))
+        observedMean = np.mean(observed)
+        observedStdev = np.std(observed)
+        observedGini = gini(observed)
+        observedKs = stats.kstest(observed, 'uniform')[1]
+        observedChisq = stats.chisquare(observed)[1]
+
+    if not truth is None and not observed is None:
+        KlDiv = stats.entropy(observed, truth)
+        Chisq = stats.chisquare(observed, truth)[1]
+        KS = stats.kstest(observed, truth)[1]
+    else :
+        KlDiv = np.nan
+        Chisq = np.nan
+        KS = np.nan
+
+    return {
+        'truth' : [truthMean, truthStdev, truthWaviness, truthGini, truthKs, truthChisq],
+        'observed': [observedMean, observedStdev, observedWaviness, observedGini, observedKs, observedChisq],
+        'global' : [KlDiv, Chisq, KS],
+    }
+
+def evaluate_coverage_uniformity(bam_file, truth_file, is_converted, m, mapper, condition, out_performance, out_performance10bp, out_performance100bp):
     """ evaluate the passed BAM file """
     logging.info("Evaluating coverage uniformity in %s" % bam_file)
 
@@ -446,27 +493,35 @@ def evaluate_coverage_uniformity(bam_file, truth_file, is_converted, m, mapper, 
             else:
                 intronTruthCoverage = np.concatenate((intronTruthCoverage, truthCoverage))
 
-        if intronTruthCoverage is None:
-            truthIntronMean = np.nan
-            truthIntronStdev = np.nan
-            truthIntronGini = np.nan
-            truthIntronKs = np.nan
-        else :
-            truthIntronMean = np.mean(intronTruthCoverage)
-            truthIntronStdev = np.std(intronTruthCoverage)
-            truthIntronGini = gini(intronTruthCoverage)
-            truthIntronKs = stats.kstest(intronTruthCoverage, 'uniform')[1]
+        intronStats = uniformityStats(intronMappedCoverage, intronTruthCoverage)
 
-        if intronMappedCoverage is None:
-            mappedIntronMean = np.nan
-            mappedIntronStdev = np.nan
-            mappedIntronGini = np.nan
-            mappedIntronKs = np.nan
-        else :
-            mappedIntronMean = np.mean(intronMappedCoverage)
-            mappedIntronStdev = np.std(intronMappedCoverage)
-            mappedIntronGini = gini(intronMappedCoverage)
-            mappedIntronKs = stats.kstest(intronMappedCoverage, 'uniform')[1]
+        bs = 10
+
+        if intronMappedCoverage.size % bs != 0:
+            intronMappedCoverage10bp = np.concatenate([intronMappedCoverage, np.repeat(np.nan, bs - (intronMappedCoverage.size % bs))]).reshape(-1, bs)
+            intronTruthCoverage10bp = np.concatenate([intronTruthCoverage, np.repeat(np.nan, bs - (intronTruthCoverage.size % bs))]).reshape(-1, bs)
+        else:
+            intronMappedCoverage10bp = intronMappedCoverage.reshape(-1, bs)
+            intronTruthCoverage10bp = intronTruthCoverage.reshape(-1, bs)
+
+        intronMappedCoverage10bp = np.nanmean(intronMappedCoverage10bp, axis = 1)
+        intronTruthCoverage10bp = np.nanmean(intronTruthCoverage10bp, axis = 1)
+
+        intronStats10bp = uniformityStats(intronMappedCoverage10bp, intronTruthCoverage10bp)
+
+        bs = 100
+
+        if intronMappedCoverage.size % bs != 0:
+            intronMappedCoverage100bp = np.concatenate([intronMappedCoverage, np.repeat(np.nan, bs - (intronMappedCoverage.size % bs))]).reshape(-1, bs)
+            intronTruthCoverage100bp = np.concatenate([intronTruthCoverage, np.repeat(np.nan, bs - (intronTruthCoverage.size % bs))]).reshape(-1, bs)
+        else:
+            intronMappedCoverage100bp = intronMappedCoverage.reshape(-1, bs)
+            intronTruthCoverage100bp = intronTruthCoverage.reshape(-1, bs)
+
+        intronMappedCoverage100bp = np.nanmean(intronMappedCoverage100bp, axis=1)
+        intronTruthCoverage100bp = np.nanmean(intronTruthCoverage100bp, axis=1)
+
+        intronStats100bp = uniformityStats(intronMappedCoverage100bp, intronTruthCoverage100bp)
 
         exonMappedCoverage = None
         exonTruthCoverage = None
@@ -513,50 +568,156 @@ def evaluate_coverage_uniformity(bam_file, truth_file, is_converted, m, mapper, 
             else:
                 exonTruthCoverage = np.concatenate((exonTruthCoverage, truthCoverage))
 
-        if exonTruthCoverage is None:
-            truthExonMean = np.nan
-            truthExonStdev = np.nan
-            truthExonGini = np.nan
-            truthExonKs = np.nan
-        else :
-            truthExonMean = np.mean(exonTruthCoverage)
-            truthExonStdev = np.std(exonTruthCoverage)
-            truthExonGini = gini(exonTruthCoverage)
-            truthExonKs = stats.kstest(exonTruthCoverage, 'uniform')[1]
+        exonStats = uniformityStats(exonMappedCoverage, exonTruthCoverage)
 
-        if exonMappedCoverage is None:
-            mappedExonMean = np.nan
-            mappedExonStdev = np.nan
-            mappedExonGini = np.nan
-            mappedExonKs = np.nan
+        bs = 10
+
+        if exonMappedCoverage.size % bs != 0:
+            exonMappedCoverage10bp = np.concatenate([exonMappedCoverage, np.repeat(np.nan, bs - (exonMappedCoverage.size % bs))]).reshape(-1, bs)
+            exonTruthCoverage10bp = np.concatenate([exonTruthCoverage, np.repeat(np.nan, bs - (exonTruthCoverage.size % bs))]).reshape(-1, bs)
         else:
-            mappedExonMean = np.mean(exonMappedCoverage)
-            mappedExonStdev = np.std(exonMappedCoverage)
-            mappedExonGini = gini(exonMappedCoverage)
-            mappedExonKs = stats.kstest(exonMappedCoverage, 'uniform')[1]
+            exonMappedCoverage10bp = exonMappedCoverage.reshape(-1, bs)
+            exonTruthCoverage10bp = exonTruthCoverage.reshape(-1, bs)
+
+        exonMappedCoverage10bp = np.nanmean(exonMappedCoverage10bp, axis = 1)
+        exonTruthCoverage10bp = np.nanmean(exonTruthCoverage10bp, axis = 1)
+
+        exonStats10bp = uniformityStats(exonMappedCoverage10bp, exonTruthCoverage10bp)
+
+        bs = 100
+
+        if exonMappedCoverage.size % bs != 0:
+            exonMappedCoverage100bp = np.concatenate([exonMappedCoverage, np.repeat(np.nan, bs - (exonMappedCoverage.size % bs))]).reshape(-1, bs)
+            exonTruthCoverage100bp = np.concatenate([exonTruthCoverage, np.repeat(np.nan, bs - (exonTruthCoverage.size % bs))]).reshape(-1, bs)
+        else:
+            exonMappedCoverage100bp = exonMappedCoverage.reshape(-1, bs)
+            exonTruthCoverage100bp = exonTruthCoverage.reshape(-1, bs)
+
+        exonMappedCoverage100bp = np.nanmean(exonMappedCoverage100bp, axis=1)
+        exonTruthCoverage100bp = np.nanmean(exonTruthCoverage100bp, axis=1)
+
+        exonStats100bp = uniformityStats(exonMappedCoverage100bp, exonTruthCoverage100bp)
 
         print("\t".join([str(x) for x in [
             1 if is_converted else 0,
             mapper,
             condition,
             tid,
-            truthExonMean,
-            truthExonStdev,
-            truthExonGini,
-            truthExonKs,
-            truthIntronMean,
-            truthIntronStdev,
-            truthIntronGini,
-            truthIntronKs,
-            mappedExonMean,
-            mappedExonStdev,
-            mappedExonGini,
-            mappedExonKs,
-            mappedIntronMean,
-            mappedIntronStdev,
-            mappedIntronGini,
-            mappedIntronKs
+            exonStats['truth'][0],
+            exonStats['truth'][1],
+            exonStats['truth'][2],
+            exonStats['truth'][3],
+            exonStats['truth'][4],
+            exonStats['truth'][5],
+            exonStats['observed'][0],
+            exonStats['observed'][1],
+            exonStats['observed'][2],
+            exonStats['observed'][3],
+            exonStats['observed'][4],
+            exonStats['observed'][5],
+            exonStats['global'][0],
+            exonStats['global'][1],
+            exonStats['global'][2],
+            intronStats['truth'][0],
+            intronStats['truth'][1],
+            intronStats['truth'][2],
+            intronStats['truth'][3],
+            intronStats['truth'][4],
+            intronStats['truth'][5],
+            intronStats['observed'][0],
+            intronStats['observed'][1],
+            intronStats['observed'][2],
+            intronStats['observed'][3],
+            intronStats['observed'][4],
+            intronStats['observed'][5],
+            intronStats['global'][0],
+            intronStats['global'][1],
+            intronStats['global'][2]
         ]]), file=out_performance)
+
+        print("\t".join([str(x) for x in [
+            1 if is_converted else 0,
+            mapper,
+            condition,
+            tid,
+            exonStats10bp['truth'][0],
+            exonStats10bp['truth'][1],
+            exonStats10bp['truth'][2],
+            exonStats10bp['truth'][3],
+            exonStats10bp['truth'][4],
+            exonStats10bp['truth'][5],
+            exonStats10bp['observed'][0],
+            exonStats10bp['observed'][1],
+            exonStats10bp['observed'][2],
+            exonStats10bp['observed'][3],
+            exonStats10bp['observed'][4],
+            exonStats10bp['observed'][5],
+            exonStats10bp['global'][0],
+            exonStats10bp['global'][1],
+            exonStats10bp['global'][2],
+            intronStats10bp['truth'][0],
+            intronStats10bp['truth'][1],
+            intronStats10bp['truth'][2],
+            intronStats10bp['truth'][3],
+            intronStats10bp['truth'][4],
+            intronStats10bp['truth'][5],
+            intronStats10bp['observed'][0],
+            intronStats10bp['observed'][1],
+            intronStats10bp['observed'][2],
+            intronStats10bp['observed'][3],
+            intronStats10bp['observed'][4],
+            intronStats10bp['observed'][5],
+            intronStats10bp['global'][0],
+            intronStats10bp['global'][1],
+            intronStats10bp['global'][2]
+        ]]), file=out_performance10bp)
+
+        print("\t".join([str(x) for x in [
+            1 if is_converted else 0,
+            mapper,
+            condition,
+            tid,
+            exonStats100bp['truth'][0],
+            exonStats100bp['truth'][1],
+            exonStats100bp['truth'][2],
+            exonStats100bp['truth'][3],
+            exonStats100bp['truth'][4],
+            exonStats100bp['truth'][5],
+            exonStats100bp['observed'][0],
+            exonStats100bp['observed'][1],
+            exonStats100bp['observed'][2],
+            exonStats100bp['observed'][3],
+            exonStats100bp['observed'][4],
+            exonStats100bp['observed'][5],
+            exonStats100bp['global'][0],
+            exonStats100bp['global'][1],
+            exonStats100bp['global'][2],
+            intronStats100bp['truth'][0],
+            intronStats100bp['truth'][1],
+            intronStats100bp['truth'][2],
+            intronStats100bp['truth'][3],
+            intronStats100bp['truth'][4],
+            intronStats100bp['truth'][5],
+            intronStats100bp['observed'][0],
+            intronStats100bp['observed'][1],
+            intronStats100bp['observed'][2],
+            intronStats100bp['observed'][3],
+            intronStats100bp['observed'][4],
+            intronStats100bp['observed'][5],
+            intronStats100bp['global'][0],
+            intronStats100bp['global'][1],
+            intronStats100bp['global'][2]
+        ]]), file=out_performance100bp)
+
+def initializeUniformityHeaders(out) :
+
+    print("is_converted\tmapper\tcondition\ttid", end="\t", file=out)
+    print("true_exon_coverage_mean\ttrue_exon_coverage_stdev\ttrue_exon_coverage_waviness\ttrue_exon_coverage_gini\ttrue_exon_coverage_uniform_ks_test\ttrue_exon_coverage_uniform_chisq_test",end='\t', file=out)
+    print("mapped_exon_coverage_mean\tmapped_exon_coverage_stdev\tmapped_exon_coverage_waviness\tmapped_exon_coverage_gini\tmapped_exon_coverage_uniform_ks_test\tmapped_exon_coverage_uniform_chisq_test",end='\t', file=out)
+    print("exon_KL_deviation\texon_chisq\texon_KS", end='\t', file=out)
+    print("true_intron_coverage_mean\ttrue_intron_coverage_stdev\ttrue_intron_coverage_waviness\ttrue_intron_coverage_gini\ttrue_intron_coverage_uniform_ks_test\ttrue_intron_coverage_uniform_chisq_test",end='\t', file=out)
+    print("mapped_intron_coverage_mean\tmapped_intron_coverage_stdev\tmapped_intron_coverage_waviness\tmapped_intron_coverage_gini\tmapped_intron_coverage_uniform_ks_test\tmapped_intron_coverage_uniform_chisq_test", end='\t', file=out)
+    print("intron_KL_deviation\tintron_chisq\tintron_KS", file=out)
     
 #bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/STAR/small4.5min.STAR.TC.bam'
 # bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/HISAT2_TLA/small4.5min.HISAT2_TLA.TC.bam'
@@ -597,61 +758,68 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
     fout2 = outdir + 'tid_performance.tsv'
     fout3 = outdir + 'splice_site_performance.tsv'
     fout4 = outdir + 'coverage_uniformity_performance.tsv'
+    fout5 = outdir + 'coverage_uniformity_performance.10bp.tsv'
+    fout6 = outdir + 'coverage_uniformity_performance.100bp.tsv'
     with open(fout, 'w') as out:
         with open(fout2, 'w') as out2:
             with open(fout3, 'w') as out3:
                 with open(fout4, 'w') as out4:
-                    print("mapped_coords\ttrue_coords\tclassification\ttid\tis_converted\tmapper\tcondition\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\toverlapping_tids\tread_name", file=out)
-                    print("is_converted\tmapper\tcondition\tiso\ttid\tTP\tFP\tFN", file=out2)
-                    print("is_converted\tmapper\tcondition\ttid\tintron_id\tdonor_rc_splicing\tdonor_rc_splicing_wrong\tdonor_rc_overlapping\tacceptor_rc_splicing\tacceptor_rc_splicing_wrong\tacceptor_rc_overlapping", file=out3)
-                    print("is_converted\tmapper\tcondition\ttid\ttrue_exon_coverage_mean\ttrue_exon_coverage_stdev\ttrue_exon_coverage_gini\ttrue_exon_coverage_uniform_ks_test\ttrue_intron_coverage_mean\ttrue_intron_coverage_stdev\ttrue_intron_coverage_gini\ttrue_intron_coverage_uniform_ks_test\tmapped_exon_coverage_mean\tmapped_exon_coverage_stdev\tmapped_exon_coverage_gini\tmapped_exon_coverage_uniform_ks_test\tmapped_intron_coverage_mean\tmapped_intron_coverage_stdev\tmapped_intron_coverage_gini\tmapped_intron_coverage_uniform_ks_test",file=out4)
+                    with open(fout5, 'w') as out5:
+                        with open(fout6, 'w') as out6:
+                            print("mapped_coords\ttrue_coords\tclassification\ttid\tis_converted\tmapper\tcondition\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\toverlapping_tids\tread_name", file=out)
+                            print("is_converted\tmapper\tcondition\tiso\ttid\tTP\tFP\tFN", file=out2)
+                            print("is_converted\tmapper\tcondition\ttid\tintron_id\tdonor_rc_splicing\tdonor_rc_splicing_wrong\tdonor_rc_overlapping\tacceptor_rc_splicing\tacceptor_rc_splicing_wrong\tacceptor_rc_overlapping", file=out3)
 
-                    for cond in m.conditions:
+                            initializeUniformityHeaders(out4)
+                            initializeUniformityHeaders(out5)
+                            initializeUniformityHeaders(out6)
 
-                        bam_ori_truth = simdir + "bam_ori/TRUTH/" + config['dataset_name'] + "." + cond.id + ".TRUTH.bam"
-                        bam_tc_truth = simdir + "bam_tc/TRUTH/" + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.bam"
+                            for cond in m.conditions:
 
-                        for mapper in config['mappers'].keys():
-                            bam_ori = simdir + "bam_ori/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".bam"
-                            bam_tc = simdir + "bam_tc/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.bam"
-                            bam_out_dir_ori = outdir + "bam_ori/" + mapper + "/"
-                            if not os.path.exists(bam_out_dir_ori):
-                                print("Creating dir " + bam_out_dir_ori)
-                                os.makedirs(bam_out_dir_ori)
-                            bam_out_dir_tc = outdir + "bam_tc/" + mapper + "/"
-                            if not os.path.exists(bam_out_dir_tc):
-                                print("Creating dir " + bam_out_dir_tc)
-                                os.makedirs(bam_out_dir_tc)
-                            bam_ori_out = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".mismapped.bam"
-                            bam_ori_out_intron = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".intron.bam"
-                            bam_tc_out =  bam_out_dir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.mismapped.bam"
-                            bam_tc_out_intron = bam_out_dir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.intron.bam"
+                                bam_ori_truth = simdir + "bam_ori/TRUTH/" + config['dataset_name'] + "." + cond.id + ".TRUTH.bam"
+                                bam_tc_truth = simdir + "bam_tc/TRUTH/" + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.bam"
 
-                            evaluate_bam(bam_ori, bam_ori_out, False, m, mapper, cond.id, out, out2)
-                            evaluate_splice_sites(bam_ori, bam_ori_out_intron, False, m, mapper, cond.id, out3)
-                            evaluate_coverage_uniformity(bam_ori, bam_ori_truth, False, m, mapper, cond.id, out4)
+                                for mapper in config['mappers'].keys():
+                                    bam_ori = simdir + "bam_ori/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".bam"
+                                    bam_tc = simdir + "bam_tc/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.bam"
+                                    bam_out_dir_ori = outdir + "bam_ori/" + mapper + "/"
+                                    if not os.path.exists(bam_out_dir_ori):
+                                        print("Creating dir " + bam_out_dir_ori)
+                                        os.makedirs(bam_out_dir_ori)
+                                    bam_out_dir_tc = outdir + "bam_tc/" + mapper + "/"
+                                    if not os.path.exists(bam_out_dir_tc):
+                                        print("Creating dir " + bam_out_dir_tc)
+                                        os.makedirs(bam_out_dir_tc)
+                                    bam_ori_out = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".mismapped.bam"
+                                    bam_ori_out_intron = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".intron.bam"
+                                    bam_tc_out =  bam_out_dir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.mismapped.bam"
+                                    bam_tc_out_intron = bam_out_dir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.intron.bam"
 
-                            evaluate_bam(bam_tc, bam_tc_out, True, m, mapper, cond.id, out, out2)
-                            evaluate_splice_sites(bam_tc, bam_tc_out_intron, True, m, mapper, cond.id, out3)
-                            evaluate_coverage_uniformity(bam_tc, bam_tc_truth, True, m, mapper, cond.id, out4)
+                                    evaluate_bam(bam_ori, bam_ori_out, False, m, mapper, cond.id, out, out2)
+                                    evaluate_splice_sites(bam_ori, bam_ori_out_intron, False, m, mapper, cond.id, out3)
+                                    evaluate_coverage_uniformity(bam_ori, bam_ori_truth, False, m, mapper, cond.id, out4, out5, out6)
 
-                        # eval truth
-                        bam_out_dir_ori = outdir + "bam_ori/TRUTH/"
-                        if not os.path.exists(bam_out_dir_ori):
-                            print("Creating dir " + bam_out_dir_ori)
-                            os.makedirs(bam_out_dir_ori)
-                        bam_out_dir_tc = outdir + "bam_tc/TRUTH/"
-                        if not os.path.exists(bam_out_dir_tc):
-                            print("Creating dir " + bam_out_dir_tc)
-                            os.makedirs(bam_out_dir_tc)
+                                    evaluate_bam(bam_tc, bam_tc_out, True, m, mapper, cond.id, out, out2)
+                                    evaluate_splice_sites(bam_tc, bam_tc_out_intron, True, m, mapper, cond.id, out3)
+                                    evaluate_coverage_uniformity(bam_tc, bam_tc_truth, True, m, mapper, cond.id, out4, out5, out6)
 
-                        bam_ori_truth_intron = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + ".TRUTH.intron.bam"
-                        bam_tc_truth_intron = bam_out_dir_tc + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.intron.bam"
+                                # eval truth
+                                bam_out_dir_ori = outdir + "bam_ori/TRUTH/"
+                                if not os.path.exists(bam_out_dir_ori):
+                                    print("Creating dir " + bam_out_dir_ori)
+                                    os.makedirs(bam_out_dir_ori)
+                                bam_out_dir_tc = outdir + "bam_tc/TRUTH/"
+                                if not os.path.exists(bam_out_dir_tc):
+                                    print("Creating dir " + bam_out_dir_tc)
+                                    os.makedirs(bam_out_dir_tc)
 
-                        evaluate_bam(bam_ori_truth, None, False, m, 'NA', cond.id, out, out2)
-                        evaluate_splice_sites(bam_ori_truth, bam_ori_truth_intron, False, m, 'NA', cond.id, out3)
-                        evaluate_bam(bam_tc_truth, None, True, m, 'NA', cond.id, out, out2)
-                        evaluate_splice_sites(bam_tc_truth, bam_tc_truth_intron, True, m, 'NA', cond.id, out3)
+                                bam_ori_truth_intron = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + ".TRUTH.intron.bam"
+                                bam_tc_truth_intron = bam_out_dir_tc + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.intron.bam"
+
+                                evaluate_bam(bam_ori_truth, None, False, m, 'NA', cond.id, out, out2)
+                                evaluate_splice_sites(bam_ori_truth, bam_ori_truth_intron, False, m, 'NA', cond.id, out3)
+                                evaluate_bam(bam_tc_truth, None, True, m, 'NA', cond.id, out, out2)
+                                evaluate_splice_sites(bam_tc_truth, bam_tc_truth_intron, True, m, 'NA', cond.id, out3)
 
     bgzip(fout, delinFile=True, override=True)
     logging.info("All done in %s" % str(datetime.timedelta(seconds=time.time() - startTime)))

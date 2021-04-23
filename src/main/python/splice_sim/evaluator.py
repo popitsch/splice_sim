@@ -509,14 +509,17 @@ def calculate_splice_site_mappability(bam_file, truth_file, is_converted, m, map
 
     unmerged = pybedtools.BedTool(tmpBed).sort()
     #merged = unmerged.genome_coverage(bg=True, g='/Volumes/groups/ameres/Niko/ref/genomes/mm10/Mus_musculus.GRCm38.dna.primary_assembly.fa.chrom.sizes').map(unmerged, o = "max")
-    merged = unmerged.genome_coverage(bg=True, g='/groups/ameres/Niko/ref/genomes/mm10/Mus_musculus.GRCm38.dna.primary_assembly.fa.chrom.sizes').map(
-        unmerged, o="max")
+    merged = unmerged.genome_coverage(bg=True, g='/groups/ameres/Niko/ref/genomes/mm10/Mus_musculus.GRCm38.dna.primary_assembly.fa.chrom.sizes').map(unmerged, o="max")
 
     f = open(out_mappability, "w")
-    print(merged, file = f)
+
+    for line in open(merged.fn):
+        chr, start, end, ovlp, score = line.strip().split()
+        print("\t".join([chr, start, end, score]), file = f)
+
     f.close()
 
-    os.remove(tmpBed)
+    #os.remove(tmpBed)
 
 
 def uniformityStats(observed, truth):

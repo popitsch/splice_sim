@@ -9,6 +9,7 @@ import pyranges as pr
 import pandas as pd
 import numpy as np
 from scipy import stats, special
+from sklearn.metrics import mean_squared_error
 from utils import *
 import random
 import math
@@ -419,10 +420,14 @@ def uniformityStats(observed, truth):
         observedChisq = stats.chisquare(observed)[1]
 
     if not truth is None and not observed is None:
+        area = np.trapz(abs(observed - truth)) / np.trapz(truth)
+        rmse = mean_squared_error(observed, truth, squared=False)
         KlDiv = stats.entropy(observed, truth)
         Chisq = stats.chisquare(observed, truth)[1]
         KS = stats.kstest(observed, truth)[1]
     else :
+        area = np.nan
+        rmse = np.nan
         KlDiv = np.nan
         Chisq = np.nan
         KS = np.nan
@@ -430,7 +435,7 @@ def uniformityStats(observed, truth):
     return {
         'truth' : [truthMean, truthStdev, truthWaviness, truthGini, truthKs, truthChisq],
         'observed': [observedMean, observedStdev, observedWaviness, observedGini, observedKs, observedChisq],
-        'global' : [KlDiv, Chisq, KS],
+        'global' : [area, rmse, KlDiv, Chisq, KS],
     }
 
 def evaluate_coverage_uniformity(bam_file, truth_file, is_converted, m, mapper, condition, out_performance, out_performance10bp, out_performance100bp):
@@ -643,6 +648,8 @@ def evaluate_coverage_uniformity(bam_file, truth_file, is_converted, m, mapper, 
             exonStats['global'][0],
             exonStats['global'][1],
             exonStats['global'][2],
+            exonStats['global'][3],
+            exonStats['global'][4],
             intronStats['truth'][0],
             intronStats['truth'][1],
             intronStats['truth'][2],
@@ -657,7 +664,9 @@ def evaluate_coverage_uniformity(bam_file, truth_file, is_converted, m, mapper, 
             intronStats['observed'][5],
             intronStats['global'][0],
             intronStats['global'][1],
-            intronStats['global'][2]
+            intronStats['global'][2],
+            intronStats['global'][3],
+            intronStats['global'][4]
         ]]), file=out_performance)
 
         print("\t".join([str(x) for x in [
@@ -680,6 +689,8 @@ def evaluate_coverage_uniformity(bam_file, truth_file, is_converted, m, mapper, 
             exonStats10bp['global'][0],
             exonStats10bp['global'][1],
             exonStats10bp['global'][2],
+            exonStats10bp['global'][3],
+            exonStats10bp['global'][4],
             intronStats10bp['truth'][0],
             intronStats10bp['truth'][1],
             intronStats10bp['truth'][2],
@@ -694,7 +705,9 @@ def evaluate_coverage_uniformity(bam_file, truth_file, is_converted, m, mapper, 
             intronStats10bp['observed'][5],
             intronStats10bp['global'][0],
             intronStats10bp['global'][1],
-            intronStats10bp['global'][2]
+            intronStats10bp['global'][2],
+            intronStats100bp['global'][3],
+            intronStats100bp['global'][4]
         ]]), file=out_performance10bp)
 
         print("\t".join([str(x) for x in [
@@ -717,6 +730,8 @@ def evaluate_coverage_uniformity(bam_file, truth_file, is_converted, m, mapper, 
             exonStats100bp['global'][0],
             exonStats100bp['global'][1],
             exonStats100bp['global'][2],
+            exonStats100bp['global'][3],
+            exonStats100bp['global'][4],
             intronStats100bp['truth'][0],
             intronStats100bp['truth'][1],
             intronStats100bp['truth'][2],
@@ -731,7 +746,9 @@ def evaluate_coverage_uniformity(bam_file, truth_file, is_converted, m, mapper, 
             intronStats100bp['observed'][5],
             intronStats100bp['global'][0],
             intronStats100bp['global'][1],
-            intronStats100bp['global'][2]
+            intronStats100bp['global'][2],
+            intronStats100bp['global'][3],
+            intronStats100bp['global'][4]
         ]]), file=out_performance100bp)
 
 def initializeUniformityHeaders(out) :
@@ -739,10 +756,10 @@ def initializeUniformityHeaders(out) :
     print("is_converted\tmapper\tcondition\ttid", end="\t", file=out)
     print("true_exon_coverage_mean\ttrue_exon_coverage_stdev\ttrue_exon_coverage_waviness\ttrue_exon_coverage_gini\ttrue_exon_coverage_uniform_ks_test\ttrue_exon_coverage_uniform_chisq_test",end='\t', file=out)
     print("mapped_exon_coverage_mean\tmapped_exon_coverage_stdev\tmapped_exon_coverage_waviness\tmapped_exon_coverage_gini\tmapped_exon_coverage_uniform_ks_test\tmapped_exon_coverage_uniform_chisq_test",end='\t', file=out)
-    print("exon_KL_deviation\texon_chisq\texon_KS", end='\t', file=out)
+    print("exon_AUC\texon_RSME\texon_KL_deviation\texon_chisq\texon_KS", end='\t', file=out)
     print("true_intron_coverage_mean\ttrue_intron_coverage_stdev\ttrue_intron_coverage_waviness\ttrue_intron_coverage_gini\ttrue_intron_coverage_uniform_ks_test\ttrue_intron_coverage_uniform_chisq_test",end='\t', file=out)
     print("mapped_intron_coverage_mean\tmapped_intron_coverage_stdev\tmapped_intron_coverage_waviness\tmapped_intron_coverage_gini\tmapped_intron_coverage_uniform_ks_test\tmapped_intron_coverage_uniform_chisq_test", end='\t', file=out)
-    print("intron_KL_deviation\tintron_chisq\tintron_KS", file=out)
+    print("intron_AUC\tintron_RSME\tintron_KL_deviation\tintron_chisq\tintron_KS", file=out)
     
 #bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/STAR/small4.5min.STAR.TC.bam'
 # bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/HISAT2_TLA/small4.5min.HISAT2_TLA.TC.bam'

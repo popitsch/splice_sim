@@ -387,6 +387,110 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition,
                         override=True,
                         delinFile=True)
 
+
+def get_spliced_fraction(bam, iv, chromosome, start, end, donor = True) :
+
+    itor = SimulatedReadIterator(bam.fetch(contig=chromosome, start=start , stop=end), flagFilter=0)
+
+    spliced = 0
+    unspliced = 0
+
+    for read in itor:
+
+        start = read.start
+        end = read.end
+
+        if donor:
+
+            if start <= iv.begin:
+
+                if read.splicing and end > iv.begin:
+
+                    spliced += 1
+
+                elif end > iv.begin:
+
+                    unspliced += 1
+
+                else:
+                    # Intronic
+                    pass
+
+        else :
+
+            if end >= iv.end:
+
+                if read.splicing and start < iv.end:
+
+                    spliced += 1
+
+                elif start < iv.end:
+
+                    unspliced += 1
+
+    return spliced, unspliced
+
+
+def calculate_splice_site_mappability(bam_file, truth_file, is_converted, m, mapper, condition, out_mappability, readLength):
+    """ evaluate the passed BAM file """
+    logging.info("Calculating mappability for %s" % bam_file)
+
+    chromosomes = m.genome.references
+    dict_chr2idx = {k: v for v, k in enumerate(chromosomes)}
+
+    truthBam = pysam.AlignmentFile(truth_file, "rb")
+    mappedBam = pysam.AlignmentFile(bam_file, "rb")
+
+    transcripts = m.transcripts
+
+    f = open(out_mappability, "w")
+
+    for tid in transcripts:
+
+        t = transcripts[tid]
+
+        for i in range(0, len(t.introns)):
+
+            txid = t.introns.iloc[i]['transcript_id']
+            exonnumber = t.introns.iloc[i]['exon_number']
+            chromosome = t.introns.iloc[i]['Chromosome']
+            intronstart = t.introns.iloc[i]['Start']
+            intronend = t.introns.iloc[i]['End']
+            intronstrand = t.introns.iloc[i]['Strand']
+
+            intronID = txid + "_" + str(exonnumber)
+
+            iv = Interval(intronstart - 1, intronend + 1)
+            ivTree = IntervalTree()
+            ivTree.add(iv)
+
+            # Donor
+            donorTruthSpliced, donorTruthUnspliced = get_spliced_fraction(truthBam, iv, chromosome, intronstart - 1, intronstart, True)
+            donorMappedSpliced, donorMappedUnspliced = get_spliced_fraction(mappedBam, iv, chromosome, intronstart - 1, intronstart, True)
+
+            donorTruthFraction = donorTruthSpliced / (donorTruthSpliced + donorTruthUnspliced)
+            donorMappedFraction = donorMappedSpliced / (donorMappedSpliced + donorMappedUnspliced)
+
+            donorMappability = 1 - abs(donorTruthFraction - donorMappedFraction)
+
+            # Acceptor
+            acceptorTruthSpliced, acceptorTruthUnspliced = get_spliced_fraction(truthBam, iv, chromosome, intronend, intronend + 1, False)
+            acceptorMappedSpliced, acceptorMappedUnspliced = get_spliced_fraction(mappedBam, iv, chromosome, intronend, intronend + 1, False)
+
+            acceptorTruthFraction = acceptorTruthSpliced / (acceptorTruthSpliced + acceptorTruthUnspliced)
+            acceptorMappedFraction = acceptorMappedSpliced / (acceptorMappedSpliced + acceptorMappedUnspliced)
+
+            acceptorMappability = 1 - abs(acceptorTruthFraction - acceptorMappedFraction)
+
+            if intronstrand == "-":
+                print("\t".join([chromosome,str(intronstart - readLength), str(intronstart + readLength), intronID + "_acceptor", str(donorMappability), intronstrand]), file = f)
+                print("\t".join([chromosome, str(intronend - readLength), str(intronend + readLength), intronID + "_donor", str(acceptorMappability), intronstrand]), file = f)
+            else :
+                print("\t".join([chromosome, str(intronstart - readLength), str(intronstart + readLength), intronID + "_donor", str(donorMappability), intronstrand]), file = f)
+                print("\t".join([chromosome, str(intronend - readLength), str(intronend + readLength), intronID + "_acceptor", str(acceptorMappability), intronstrand]), file = f)
+
+    f.close()
+
 def uniformityStats(observed, truth):
 
     if truth is None:
@@ -808,6 +912,7 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
                 with open(fout4, 'w') as out4:
                     with open(fout5, 'w') as out5:
                         with open(fout6, 'w') as out6:
+
                             print("mapped_coords\ttrue_coords\tclassification\ttid\tis_converted\tmapper\tcondition\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\toverlapping_tids\tread_name", file=out)
                             print("is_converted\tmapper\tcondition\tiso\ttid\tTP\tFP\tFN", file=out2)
                             print("is_converted\tmapper\tcondition\ttid\tintron_id\tdonor_rc_splicing\tdonor_rc_splicing_wrong\tdonor_rc_overlapping\tacceptor_rc_splicing\tacceptor_rc_splicing_wrong\tacceptor_rc_overlapping", file=out3)
@@ -834,16 +939,20 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
                                         os.makedirs(bam_out_dir_tc)
                                     bam_ori_out = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".mismapped.bam"
                                     bam_ori_out_intron = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".intron.bam"
+                                    mappability_ori_out = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".SJ_mappability.bed"
                                     bam_tc_out =  bam_out_dir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.mismapped.bam"
                                     bam_tc_out_intron = bam_out_dir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.intron.bam"
+                                    mappability_tc_out = bam_out_dir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.SJ_mappability.bed"
 
                                     evaluate_bam(bam_ori, bam_ori_out, False, m, mapper, cond.id, out, out2)
                                     evaluate_splice_sites(bam_ori, bam_ori_out_intron, False, m, mapper, cond.id, out3)
                                     evaluate_coverage_uniformity(bam_ori, bam_ori_truth, False, m, mapper, cond.id, out4, out5, out6)
+                                    calculate_splice_site_mappability(bam_ori, bam_ori_truth, False, m, mapper, cond.id, mappability_ori_out, config["readlen"])
 
                                     evaluate_bam(bam_tc, bam_tc_out, True, m, mapper, cond.id, out, out2)
                                     evaluate_splice_sites(bam_tc, bam_tc_out_intron, True, m, mapper, cond.id, out3)
                                     evaluate_coverage_uniformity(bam_tc, bam_tc_truth, True, m, mapper, cond.id, out4, out5, out6)
+                                    calculate_splice_site_mappability(bam_tc, bam_tc_truth, False, m, mapper, cond.id, mappability_tc_out, config["readlen"])
 
                                 # eval truth
                                 bam_out_dir_ori = outdir + "bam_ori/TRUTH/"

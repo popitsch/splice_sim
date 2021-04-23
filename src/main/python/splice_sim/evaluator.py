@@ -14,6 +14,7 @@ from utils import *
 import random
 import math
 import gzip
+import pybedtools
 from intervaltree import Interval, IntervalTree
 import logging
 from model import Model, Condition, Isoform, Transcript
@@ -443,7 +444,8 @@ def calculate_splice_site_mappability(bam_file, truth_file, is_converted, m, map
 
     transcripts = m.transcripts
 
-    f = open(out_mappability, "w")
+    tmpBed = out_mappability + ".tmp"
+    f = open(tmpBed, "w")
 
     for tid in transcripts:
 
@@ -504,6 +506,18 @@ def calculate_splice_site_mappability(bam_file, truth_file, is_converted, m, map
                 print("\t".join([chromosome, str(intronend - readLength), str(intronend + readLength), intronID + "_acceptor", str(acceptorMappability), intronstrand]), file = f)
 
     f.close()
+
+    unmerged = pybedtools.BedTool(tmpBed).sort()
+    #merged = unmerged.genome_coverage(bg=True, g='/Volumes/groups/ameres/Niko/ref/genomes/mm10/Mus_musculus.GRCm38.dna.primary_assembly.fa.chrom.sizes').map(unmerged, o = "max")
+    merged = unmerged.genome_coverage(bg=True, g='/groups/ameres/Niko/ref/genomes/mm10/Mus_musculus.GRCm38.dna.primary_assembly.fa.chrom.sizes').map(
+        unmerged, o="max")
+
+    f = open(out_mappability, "w")
+    print(merged, file = f)
+    f.close()
+
+    os.remove(tmpBed)
+
 
 def uniformityStats(observed, truth):
 
@@ -953,10 +967,10 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
                                         os.makedirs(bam_out_dir_tc)
                                     bam_ori_out = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".mismapped.bam"
                                     bam_ori_out_intron = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".intron.bam"
-                                    mappability_ori_out = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".SJ_mappability.bed"
+                                    mappability_ori_out = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".SJ_mappability.bedGraph"
                                     bam_tc_out =  bam_out_dir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.mismapped.bam"
                                     bam_tc_out_intron = bam_out_dir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.intron.bam"
-                                    mappability_tc_out = bam_out_dir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.SJ_mappability.bed"
+                                    mappability_tc_out = bam_out_dir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.SJ_mappability.bedGraph"
 
                                     evaluate_bam(bam_ori, bam_ori_out, False, m, mapper, cond.id, out, out2)
                                     evaluate_splice_sites(bam_ori, bam_ori_out_intron, False, m, mapper, cond.id, out3)

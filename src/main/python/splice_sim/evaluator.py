@@ -468,8 +468,15 @@ def calculate_splice_site_mappability(bam_file, truth_file, is_converted, m, map
             donorTruthSpliced, donorTruthUnspliced = get_spliced_fraction(truthBam, iv, chromosome, intronstart - 1, intronstart, True)
             donorMappedSpliced, donorMappedUnspliced = get_spliced_fraction(mappedBam, iv, chromosome, intronstart - 1, intronstart, True)
 
-            donorTruthFraction = donorTruthSpliced / (donorTruthSpliced + donorTruthUnspliced)
-            donorMappedFraction = donorMappedSpliced / (donorMappedSpliced + donorMappedUnspliced)
+            if donorTruthSpliced + donorTruthUnspliced > 0:
+                donorTruthFraction = donorTruthSpliced / (donorTruthSpliced + donorTruthUnspliced)
+            else :
+                donorTruthFraction = 1
+
+            if donorMappedSpliced + donorMappedUnspliced > 0:
+                donorMappedFraction = donorMappedSpliced / (donorMappedSpliced + donorMappedUnspliced)
+            else :
+                donorMappedFraction = 1
 
             donorMappability = 1 - abs(donorTruthFraction - donorMappedFraction)
 
@@ -477,8 +484,15 @@ def calculate_splice_site_mappability(bam_file, truth_file, is_converted, m, map
             acceptorTruthSpliced, acceptorTruthUnspliced = get_spliced_fraction(truthBam, iv, chromosome, intronend, intronend + 1, False)
             acceptorMappedSpliced, acceptorMappedUnspliced = get_spliced_fraction(mappedBam, iv, chromosome, intronend, intronend + 1, False)
 
-            acceptorTruthFraction = acceptorTruthSpliced / (acceptorTruthSpliced + acceptorTruthUnspliced)
-            acceptorMappedFraction = acceptorMappedSpliced / (acceptorMappedSpliced + acceptorMappedUnspliced)
+            if acceptorTruthSpliced + acceptorTruthUnspliced > 0:
+                acceptorTruthFraction = acceptorTruthSpliced / (acceptorTruthSpliced + acceptorTruthUnspliced)
+            else :
+                acceptorTruthFraction = 1
+
+            if acceptorMappedSpliced + acceptorMappedUnspliced > 0:
+                acceptorMappedFraction = acceptorMappedSpliced / (acceptorMappedSpliced + acceptorMappedUnspliced)
+            else :
+                acceptorMappedFraction = 1
 
             acceptorMappability = 1 - abs(acceptorTruthFraction - acceptorMappedFraction)
 

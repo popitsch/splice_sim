@@ -27,6 +27,7 @@ class Isoform():
         self.fractions = fractions
         self.splicing_status = splicing_status
         self.t = transcript
+        self.aln_block_len=0
         if self.t is not None:
             self.strand = self.t.transcript.Strand
             # extract alignment blocks. Those contain absolute coords and are always ordered by genomic coords 
@@ -37,10 +38,12 @@ class Isoform():
                 if splicing==1:
                     bend=self.t.introns.iloc[idx].Start-1 # last exonic 1-based pos
                     self.aln_blocks+=[(bstart, bend)]
+                    self.aln_block_len+=(bend-bstart+1)
                     bstart=self.t.introns.iloc[idx].End+1 # 1st exonic 1-based pos
             bend=self.t.transcript.End
             self.aln_blocks+=[(bstart, bend)]
-        #print("alignment blocks: %s" % (self.aln_blocks))       
+            self.aln_block_len+=(bend-bstart+1)
+        #print("iso %s, alignment blocks: %s, len: %i" % (self.id, self.aln_blocks, self.aln_block_len))       
     def rel2abs_pos(self, rel_pos):
         """ convert isoform-relative coordinates to genomic coordinates.
             E.g., a rel_pos==0 will return the 1st position of the transcript in genomic coordinates (1-based) """

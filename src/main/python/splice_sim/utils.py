@@ -169,13 +169,12 @@ def parse_art_cigar(read):
             off+=l
             read_off+=l
         elif op == BAM_CINS: # I
-            # TODO seqerrr reporting does not work for insertions
+            # TODO seqerr reporting does not work for insertions
             #seqerr_pos+=[readidx2genpos_abs(read, off-1)]
             #if seqerr_pos[-1] is None:
             #    logging.warn("Invalid seqerr position calculated for %s / %i. Ignoring!" % (read.query_name, off))
             #    del seqerr_pos[-1]
-            #off+=l
-            pass
+            read_off+=l
         elif op == BAM_CDEL: # D
             block_tuples+=[(start, off-1)]
             # TODO  seqerrr reporting does not work for deletions
@@ -191,6 +190,7 @@ def parse_art_cigar(read):
     if read.is_reverse:
         block_tuples = [(y,x) for (x,y) in reversed(block_tuples)]
     return block_tuples, seqerr_pos
+
 
 # FIXME: there is a problem with called subprocessed that do not terminate! This will hang this code!
 # example-cmd:

@@ -8,10 +8,13 @@ import pysam
 import pyranges as pr
 import pandas as pd
 import numpy as np
+from scipy import stats, special
+from sklearn.metrics import mean_squared_error
 from utils import *
 import random
 import math
 import gzip
+import pybedtools
 from intervaltree import Interval, IntervalTree
 import logging
 from model import Model, Condition, Isoform, Transcript
@@ -191,9 +194,9 @@ def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_read
                         delinFile=True)
 
 
-def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition, out_reads, out_performance):
+def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition, out_performance):
     """ evaluate the passed BAM file """
-    logging.info("Evaluating %s" % bam_file)
+    logging.info("Evaluating splice sites in %s" % bam_file)
     performance = Counter()
 
     chromosomes = m.genome.references
@@ -384,10 +387,629 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition,
                         index=True,
                         override=True,
                         delinFile=True)
+
+
+def get_spliced_fraction(bam, iv, chromosome, start, end, donor = True) :
+
+    itor = SimulatedReadIterator(bam.fetch(contig=chromosome, start=start , stop=end), flagFilter=0)
+
+    spliced = 0
+    unspliced = 0
+
+    for read in itor:
+
+        start = read.start
+        end = read.end
+
+        if donor:
+
+            if start <= iv.begin:
+
+                if read.splicing and end > iv.begin:
+
+                    spliced += 1
+
+                elif end > iv.begin:
+
+                    unspliced += 1
+
+                else:
+                    # Intronic
+                    pass
+
+        else :
+
+            if end >= iv.end:
+
+                if read.splicing and start < iv.end:
+
+                    spliced += 1
+
+                elif start < iv.end:
+
+                    unspliced += 1
+
+    return spliced, unspliced
+
+
+def calculate_splice_site_mappability(bam_file, truth_file, is_converted, m, mapper, condition, out_mappability, out_bedGraph, fasta, readLength):
+    """ evaluate the passed BAM file """
+    logging.info("Calculating mappability for %s" % bam_file)
+
+    #genomeMappabilityFile = '/Volumes/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/ref/mappability/mm10.k24.umap.bedgraph.gz'
+    genomeMappabilityFile = '/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/ref/mappability/mm10.k24.umap.bedgraph.gz'
+
+    chromosomes = m.genome.references
+    dict_chr2idx = {k: v for v, k in enumerate(chromosomes)}
+
+    truthBam = pysam.AlignmentFile(truth_file, "rb")
+    mappedBam = pysam.AlignmentFile(bam_file, "rb")
+
+    transcripts = m.transcripts
+
+    tmpBed = out_bedGraph + ".tmp"
+    f = open(tmpBed, "w")
+
+    for tid in transcripts:
+
+        t = transcripts[tid]
+
+        for i in range(0, len(t.introns)):
+
+            txid = t.introns.iloc[i]['transcript_id']
+            exonnumber = t.introns.iloc[i]['exon_number']
+            chromosome = t.introns.iloc[i]['Chromosome']
+            intronstart = t.introns.iloc[i]['Start']
+            intronend = t.introns.iloc[i]['End']
+            intronstrand = t.introns.iloc[i]['Strand']
+
+            intronID = txid + "_" + str(exonnumber)
+
+            iv = Interval(intronstart - 1, intronend + 1)
+            ivTree = IntervalTree()
+            ivTree.add(iv)
+
+            # Donor
+            donorTruthSpliced, donorTruthUnspliced = get_spliced_fraction(truthBam, iv, chromosome, intronstart - 1, intronstart, True)
+            donorMappedSpliced, donorMappedUnspliced = get_spliced_fraction(mappedBam, iv, chromosome, intronstart - 1, intronstart, True)
+
+            if donorTruthSpliced + donorTruthUnspliced > 0:
+                donorTruthFraction = donorTruthSpliced / (donorTruthSpliced + donorTruthUnspliced)
+            else :
+                donorTruthFraction = 1
+
+            if donorMappedSpliced + donorMappedUnspliced > 0:
+                donorMappedFraction = donorMappedSpliced / (donorMappedSpliced + donorMappedUnspliced)
+            else :
+                donorMappedFraction = 1
+
+            donorMappability = 1 - abs(donorTruthFraction - donorMappedFraction)
+
+            # Acceptor
+            acceptorTruthSpliced, acceptorTruthUnspliced = get_spliced_fraction(truthBam, iv, chromosome, intronend, intronend + 1, False)
+            acceptorMappedSpliced, acceptorMappedUnspliced = get_spliced_fraction(mappedBam, iv, chromosome, intronend, intronend + 1, False)
+
+            if acceptorTruthSpliced + acceptorTruthUnspliced > 0:
+                acceptorTruthFraction = acceptorTruthSpliced / (acceptorTruthSpliced + acceptorTruthUnspliced)
+            else :
+                acceptorTruthFraction = 1
+
+            if acceptorMappedSpliced + acceptorMappedUnspliced > 0:
+                acceptorMappedFraction = acceptorMappedSpliced / (acceptorMappedSpliced + acceptorMappedUnspliced)
+            else :
+                acceptorMappedFraction = 1
+
+            acceptorMappability = 1 - abs(acceptorTruthFraction - acceptorMappedFraction)
+
+            donorExonGenomeMappability = np.zeros(readLength, dtype=float)
+            donorExonBaseContent = ""
+
+            it = BlockedPerPositionIterator([
+                LocationTabixPerPositionIterator(
+                    genomeMappabilityFile,
+                    dict_chr2idx, reference=chromosome, start=intronstart - readLength,
+                    end=intronstart - 1, chr_prefix_operator='add', fill=True, fill_value=(0,),
+                    is_zero_based=True),
+                LocationFastaIterator(fasta, dict_chr2idx, chromosome, intronstart - readLength, intronstart - 1)
+                ])
+
+            arrayIndex = 0
+            for loc, (genomeMappability, referenceBase) in it:
+                donorExonGenomeMappability[arrayIndex] = genomeMappability[0]
+                donorExonBaseContent += referenceBase
+                arrayIndex += 1
+
+            donorIntronGenomeMappability = np.zeros(readLength, dtype=float)
+            donorIntronBaseContent = ""
+
+            it = BlockedPerPositionIterator([
+                LocationTabixPerPositionIterator(
+                    genomeMappabilityFile,
+                    dict_chr2idx, reference=chromosome, start=intronstart,
+                    end=intronstart + readLength - 1, chr_prefix_operator='add', fill=True, fill_value=(0,),
+                    is_zero_based=True),
+                LocationFastaIterator(fasta, dict_chr2idx, chromosome, intronstart, intronstart + readLength - 1)
+            ])
+
+            arrayIndex = 0
+            for loc, (genomeMappability, referenceBase) in it:
+                donorIntronGenomeMappability[arrayIndex] = genomeMappability[0]
+                donorIntronBaseContent += referenceBase
+                arrayIndex += 1
+
+            acceptorIntronGenomeMappability = np.zeros(readLength, dtype=float)
+            acceptorIntronBaseContent = ""
+
+            it = BlockedPerPositionIterator([
+                LocationTabixPerPositionIterator(
+                    genomeMappabilityFile,
+                    dict_chr2idx, reference=chromosome, start=intronend - readLength + 1,
+                    end=intronend, chr_prefix_operator='add', fill=True, fill_value=(0,),
+                    is_zero_based=True),
+                LocationFastaIterator(fasta, dict_chr2idx, chromosome, intronend - readLength + 1, intronend)
+            ])
+
+            arrayIndex = 0
+            for loc, (genomeMappability, referenceBase) in it:
+                acceptorIntronGenomeMappability[arrayIndex] = genomeMappability[0]
+                acceptorIntronBaseContent += referenceBase
+                arrayIndex += 1
+
+            acceptorExonGenomeMappability = np.zeros(readLength, dtype=float)
+            acceptorExonBaseContent = ""
+
+            it = BlockedPerPositionIterator([
+                LocationTabixPerPositionIterator(
+                    genomeMappabilityFile,
+                    dict_chr2idx, reference=chromosome, start=intronend + 1,
+                    end=intronend + readLength, chr_prefix_operator='add', fill=True, fill_value=(0,),
+                    is_zero_based=True),
+                LocationFastaIterator(fasta, dict_chr2idx, chromosome, intronend + 1, intronend + readLength)
+            ])
+
+            arrayIndex = 0
+            for loc, (genomeMappability, referenceBase) in it:
+                acceptorExonGenomeMappability[arrayIndex] = genomeMappability[0]
+                acceptorExonBaseContent += referenceBase
+                arrayIndex += 1
+
+            if intronstrand == "-":
+                print("\t".join([chromosome,str(intronstart - readLength), str(intronstart + readLength), intronID + "_acceptor", str(donorMappability), intronstrand]), file = f)
+                print("\t".join([chromosome, str(intronend - readLength), str(intronend + readLength), intronID + "_donor", str(acceptorMappability), intronstrand]), file = f)
+
+                print("\t".join([str(x) for x in [
+                    1 if is_converted else 0,
+                    mapper,
+                    condition,
+                    tid,
+                    intronID,
+                    str(acceptorMappability),
+                    str(np.nanmean(acceptorExonGenomeMappability)),
+                    str(acceptorExonBaseContent.upper().count("A")),
+                    str(np.nanmean(acceptorIntronGenomeMappability)),
+                    str(acceptorIntronBaseContent.upper().count("A")),
+                    str(donorMappability),
+                    str(np.nanmean(donorExonGenomeMappability)),
+                    str(donorExonBaseContent.upper().count("A")),
+                    str(np.nanmean(donorIntronGenomeMappability)),
+                    str(donorIntronBaseContent.upper().count("A")),
+                ]]), file=out_mappability)
+
+            else :
+                print("\t".join([chromosome, str(intronstart - readLength), str(intronstart + readLength), intronID + "_donor", str(donorMappability), intronstrand]), file = f)
+                print("\t".join([chromosome, str(intronend - readLength), str(intronend + readLength), intronID + "_acceptor", str(acceptorMappability), intronstrand]), file = f)
+
+                print("\t".join([str(x) for x in [
+                    1 if is_converted else 0,
+                    mapper,
+                    condition,
+                    tid,
+                    intronID,
+                    str(donorMappability),
+                    str(np.nanmean(donorExonGenomeMappability)),
+                    str(donorExonBaseContent.upper().count("T")),
+                    str(np.nanmean(donorIntronGenomeMappability)),
+                    str(donorIntronBaseContent.upper().count("T")),
+                    str(acceptorMappability),
+                    str(np.nanmean(acceptorExonGenomeMappability)),
+                    str(acceptorExonBaseContent.upper().count("T")),
+                    str(np.nanmean(acceptorIntronGenomeMappability)),
+                    str(acceptorIntronBaseContent.upper().count("T"))
+                ]]), file=out_mappability)
+
+    f.close()
+
+    unmerged = pybedtools.BedTool(tmpBed).sort()
+    #merged = unmerged.genome_coverage(bg=True, g='/Volumes/groups/ameres/Niko/ref/genomes/mm10/Mus_musculus.GRCm38.dna.primary_assembly.fa.chrom.sizes').map(unmerged, o = "max")
+    merged = unmerged.genome_coverage(bg=True, g='/groups/ameres/Niko/ref/genomes/mm10/Mus_musculus.GRCm38.dna.primary_assembly.fa.chrom.sizes').map(unmerged, o="max")
+
+    f = open(out_bedGraph, "w")
+
+    for line in open(merged.fn):
+        chr, start, end, ovlp, score = line.strip().split()
+        print("\t".join([chr, start, end, score]), file = f)
+
+    f.close()
+
+    #os.remove(tmpBed)
+
+
+def uniformityStats(observed, truth):
+
+    if truth is None:
+        truthWaviness = np.nan
+        truthMean = np.nan
+        truthStdev = np.nan
+        truthGini = np.nan
+        truthKs = np.nan
+        truthChisq = np.nan
+    else:
+        truthWaviness = np.subtract(*np.percentile(np.cumsum(truth), [75, 25]))
+        truthMean = np.mean(truth)
+        truthStdev = np.std(truth)
+        truthGini = gini(truth)
+        truthKs = stats.kstest(truth, 'uniform')[1]
+        truthChisq = stats.chisquare(truth)[1]
+
+    if observed is None:
+        observedWaviness = np.nan
+        observedMean = np.nan
+        observedStdev = np.nan
+        observedGini = np.nan
+        observedKs = np.nan
+        observedChisq = np.nan
+    else:
+        observedWaviness = np.subtract(*np.percentile(np.cumsum(observed), [75, 25]))
+        observedMean = np.mean(observed)
+        observedStdev = np.std(observed)
+        observedGini = gini(observed)
+        observedKs = stats.kstest(observed, 'uniform')[1]
+        observedChisq = stats.chisquare(observed)[1]
+
+    if not truth is None and not observed is None:
+        area = np.trapz(abs(observed - truth)) / np.trapz(truth)
+        rmse = mean_squared_error(observed, truth, squared=False)
+        KlDiv = stats.entropy(observed, truth)
+        Chisq = stats.chisquare(observed, truth)[1]
+        KS = stats.kstest(observed, truth)[1]
+    else :
+        area = np.nan
+        rmse = np.nan
+        KlDiv = np.nan
+        Chisq = np.nan
+        KS = np.nan
+
+    return {
+        'truth' : [truthMean, truthStdev, truthWaviness, truthGini, truthKs, truthChisq],
+        'observed': [observedMean, observedStdev, observedWaviness, observedGini, observedKs, observedChisq],
+        'global' : [area, rmse, KlDiv, Chisq, KS],
+    }
+
+def evaluate_coverage_uniformity(bam_file, truth_file, is_converted, m, mapper, condition, out_performance, out_performance10bp, out_performance100bp):
+    """ evaluate the passed BAM file """
+    logging.info("Evaluating coverage uniformity in %s" % bam_file)
+
+    chromosomes = m.genome.references
+    dict_chr2idx = {k: v for v, k in enumerate(chromosomes)}
+
+    transcripts = m.transcripts
+
+    performance = Counter()
+
+    for tid in transcripts:
+
+        t = transcripts[tid]
+
+        intronMappedCoverage = None
+        intronTruthCoverage = None
+
+        for i in range(0, len(t.introns)):
+
+            txid = t.introns.iloc[i]['transcript_id']
+            chromosome = t.introns.iloc[i]['Chromosome']
+            start = t.introns.iloc[i]['Start']
+            end = t.introns.iloc[i]['End']
+
+            mappedCoverage = np.zeros(end - start + 1, dtype=float)
+            truthCoverage = np.zeros(end - start + 1, dtype=float)
+
+            it = BlockedPerPositionIterator([
+                LocationPileupIterator(bam_file, dict_chr2idx, chromosome, start, end),
+                LocationPileupIterator(truth_file, dict_chr2idx, chromosome, start, end)])
+
+            for loc, (mapped, truth) in it:
+
+                truthPositionPileup = 0
+                mappedPositionPileup = 0
+
+                if truth:
+                    for r in truth.pileups:
+                        if not r.is_del and not r.is_refskip:
+                            truthPositionPileup += 1
+
+                if mapped:
+                    for r in mapped.pileups:
+                        if not r.is_del and not r.is_refskip:
+                            mappedPositionPileup += 1
+
+                truthCoverage[loc.start - start] = truthPositionPileup
+                mappedCoverage[loc.start - start] = mappedPositionPileup
+
+            if intronMappedCoverage is None:
+                intronMappedCoverage = mappedCoverage
+            else:
+                intronMappedCoverage = np.concatenate((intronMappedCoverage, mappedCoverage))
+
+            if intronTruthCoverage is None:
+                intronTruthCoverage = truthCoverage
+            else:
+                intronTruthCoverage = np.concatenate((intronTruthCoverage, truthCoverage))
+
+        intronStats = uniformityStats(intronMappedCoverage, intronTruthCoverage)
+
+        bs = 10
+
+        if not intronMappedCoverage is None and not intronTruthCoverage is None:
+
+            if intronMappedCoverage.size % bs != 0:
+                intronMappedCoverage10bp = np.concatenate([intronMappedCoverage, np.repeat(np.nan, bs - (intronMappedCoverage.size % bs))]).reshape(-1, bs)
+                intronTruthCoverage10bp = np.concatenate([intronTruthCoverage, np.repeat(np.nan, bs - (intronTruthCoverage.size % bs))]).reshape(-1, bs)
+            else:
+                intronMappedCoverage10bp = intronMappedCoverage.reshape(-1, bs)
+                intronTruthCoverage10bp = intronTruthCoverage.reshape(-1, bs)
+
+            intronMappedCoverage10bp = np.nanmean(intronMappedCoverage10bp, axis = 1)
+            intronTruthCoverage10bp = np.nanmean(intronTruthCoverage10bp, axis = 1)
+
+        else :
+
+            intronMappedCoverage10bp = None
+            intronTruthCoverage10bp = None
+
+        intronStats10bp = uniformityStats(intronMappedCoverage10bp, intronTruthCoverage10bp)
+
+        bs = 100
+
+        if not intronMappedCoverage is None and not intronTruthCoverage is None:
+
+            if intronMappedCoverage.size % bs != 0:
+                intronMappedCoverage100bp = np.concatenate([intronMappedCoverage, np.repeat(np.nan, bs - (intronMappedCoverage.size % bs))]).reshape(-1, bs)
+                intronTruthCoverage100bp = np.concatenate([intronTruthCoverage, np.repeat(np.nan, bs - (intronTruthCoverage.size % bs))]).reshape(-1, bs)
+            else:
+                intronMappedCoverage100bp = intronMappedCoverage.reshape(-1, bs)
+                intronTruthCoverage100bp = intronTruthCoverage.reshape(-1, bs)
+
+            intronMappedCoverage100bp = np.nanmean(intronMappedCoverage100bp, axis=1)
+            intronTruthCoverage100bp = np.nanmean(intronTruthCoverage100bp, axis=1)
+
+        else :
+            intronMappedCoverage100bp = None
+            intronTruthCoverage100bp = None
+
+        intronStats100bp = uniformityStats(intronMappedCoverage100bp, intronTruthCoverage100bp)
+
+        exonMappedCoverage = None
+        exonTruthCoverage = None
+
+        for i in range(0, len(t.exons)):
+
+            txid = t.exons.iloc[i]['transcript_id']
+            chromosome = t.exons.iloc[i]['Chromosome']
+            start = t.exons.iloc[i]['Start']
+            end = t.exons.iloc[i]['End']
+
+            mappedCoverage = np.zeros(end - start + 1, dtype=float)
+            truthCoverage = np.zeros(end - start + 1, dtype=float)
+
+            it = BlockedPerPositionIterator([
+                LocationPileupIterator(bam_file, dict_chr2idx, chromosome, start, end),
+                LocationPileupIterator(truth_file, dict_chr2idx, chromosome, start, end)])
+
+            for loc, (mapped, truth) in it:
+
+                truthPositionPileup = 0
+                mappedPositionPileup = 0
+
+                if truth:
+                    for r in truth.pileups:
+                        if not r.is_del and not r.is_refskip:
+                            truthPositionPileup += 1
+
+                if mapped:
+                    for r in mapped.pileups:
+                        if not r.is_del and not r.is_refskip:
+                            mappedPositionPileup += 1
+
+                truthCoverage[loc.start - start] = truthPositionPileup
+                mappedCoverage[loc.start - start] = mappedPositionPileup
+
+            if exonMappedCoverage is None:
+                exonMappedCoverage = mappedCoverage
+            else:
+                exonMappedCoverage = np.concatenate((exonMappedCoverage, mappedCoverage))
+
+            if exonTruthCoverage is None:
+                exonTruthCoverage = truthCoverage
+            else:
+                exonTruthCoverage = np.concatenate((exonTruthCoverage, truthCoverage))
+
+        exonStats = uniformityStats(exonMappedCoverage, exonTruthCoverage)
+
+        bs = 10
+
+        if not exonMappedCoverage is None and not exonTruthCoverage is None:
+
+            if exonMappedCoverage.size % bs != 0:
+                exonMappedCoverage10bp = np.concatenate([exonMappedCoverage, np.repeat(np.nan, bs - (exonMappedCoverage.size % bs))]).reshape(-1, bs)
+                exonTruthCoverage10bp = np.concatenate([exonTruthCoverage, np.repeat(np.nan, bs - (exonTruthCoverage.size % bs))]).reshape(-1, bs)
+            else:
+                exonMappedCoverage10bp = exonMappedCoverage.reshape(-1, bs)
+                exonTruthCoverage10bp = exonTruthCoverage.reshape(-1, bs)
+
+            exonMappedCoverage10bp = np.nanmean(exonMappedCoverage10bp, axis = 1)
+            exonTruthCoverage10bp = np.nanmean(exonTruthCoverage10bp, axis = 1)
+
+        else :
+            exonMappedCoverage10bp = None
+            exonTruthCoverage10bp = None
+
+        exonStats10bp = uniformityStats(exonMappedCoverage10bp, exonTruthCoverage10bp)
+
+        bs = 100
+
+        if not exonMappedCoverage is None and not exonTruthCoverage is None:
+
+            if exonMappedCoverage.size % bs != 0:
+                exonMappedCoverage100bp = np.concatenate([exonMappedCoverage, np.repeat(np.nan, bs - (exonMappedCoverage.size % bs))]).reshape(-1, bs)
+                exonTruthCoverage100bp = np.concatenate([exonTruthCoverage, np.repeat(np.nan, bs - (exonTruthCoverage.size % bs))]).reshape(-1, bs)
+            else:
+                exonMappedCoverage100bp = exonMappedCoverage.reshape(-1, bs)
+                exonTruthCoverage100bp = exonTruthCoverage.reshape(-1, bs)
+
+            exonMappedCoverage100bp = np.nanmean(exonMappedCoverage100bp, axis=1)
+            exonTruthCoverage100bp = np.nanmean(exonTruthCoverage100bp, axis=1)
+
+        else :
+            exonMappedCoverage100bp = None
+            exonTruthCoverage100bp = None
+
+        exonStats100bp = uniformityStats(exonMappedCoverage100bp, exonTruthCoverage100bp)
+
+        print("\t".join([str(x) for x in [
+            1 if is_converted else 0,
+            mapper,
+            condition,
+            tid,
+            exonStats['truth'][0],
+            exonStats['truth'][1],
+            exonStats['truth'][2],
+            exonStats['truth'][3],
+            exonStats['truth'][4],
+            exonStats['truth'][5],
+            exonStats['observed'][0],
+            exonStats['observed'][1],
+            exonStats['observed'][2],
+            exonStats['observed'][3],
+            exonStats['observed'][4],
+            exonStats['observed'][5],
+            exonStats['global'][0],
+            exonStats['global'][1],
+            exonStats['global'][2],
+            exonStats['global'][3],
+            exonStats['global'][4],
+            intronStats['truth'][0],
+            intronStats['truth'][1],
+            intronStats['truth'][2],
+            intronStats['truth'][3],
+            intronStats['truth'][4],
+            intronStats['truth'][5],
+            intronStats['observed'][0],
+            intronStats['observed'][1],
+            intronStats['observed'][2],
+            intronStats['observed'][3],
+            intronStats['observed'][4],
+            intronStats['observed'][5],
+            intronStats['global'][0],
+            intronStats['global'][1],
+            intronStats['global'][2],
+            intronStats['global'][3],
+            intronStats['global'][4]
+        ]]), file=out_performance)
+
+        print("\t".join([str(x) for x in [
+            1 if is_converted else 0,
+            mapper,
+            condition,
+            tid,
+            exonStats10bp['truth'][0],
+            exonStats10bp['truth'][1],
+            exonStats10bp['truth'][2],
+            exonStats10bp['truth'][3],
+            exonStats10bp['truth'][4],
+            exonStats10bp['truth'][5],
+            exonStats10bp['observed'][0],
+            exonStats10bp['observed'][1],
+            exonStats10bp['observed'][2],
+            exonStats10bp['observed'][3],
+            exonStats10bp['observed'][4],
+            exonStats10bp['observed'][5],
+            exonStats10bp['global'][0],
+            exonStats10bp['global'][1],
+            exonStats10bp['global'][2],
+            exonStats10bp['global'][3],
+            exonStats10bp['global'][4],
+            intronStats10bp['truth'][0],
+            intronStats10bp['truth'][1],
+            intronStats10bp['truth'][2],
+            intronStats10bp['truth'][3],
+            intronStats10bp['truth'][4],
+            intronStats10bp['truth'][5],
+            intronStats10bp['observed'][0],
+            intronStats10bp['observed'][1],
+            intronStats10bp['observed'][2],
+            intronStats10bp['observed'][3],
+            intronStats10bp['observed'][4],
+            intronStats10bp['observed'][5],
+            intronStats10bp['global'][0],
+            intronStats10bp['global'][1],
+            intronStats10bp['global'][2],
+            intronStats100bp['global'][3],
+            intronStats100bp['global'][4]
+        ]]), file=out_performance10bp)
+
+        print("\t".join([str(x) for x in [
+            1 if is_converted else 0,
+            mapper,
+            condition,
+            tid,
+            exonStats100bp['truth'][0],
+            exonStats100bp['truth'][1],
+            exonStats100bp['truth'][2],
+            exonStats100bp['truth'][3],
+            exonStats100bp['truth'][4],
+            exonStats100bp['truth'][5],
+            exonStats100bp['observed'][0],
+            exonStats100bp['observed'][1],
+            exonStats100bp['observed'][2],
+            exonStats100bp['observed'][3],
+            exonStats100bp['observed'][4],
+            exonStats100bp['observed'][5],
+            exonStats100bp['global'][0],
+            exonStats100bp['global'][1],
+            exonStats100bp['global'][2],
+            exonStats100bp['global'][3],
+            exonStats100bp['global'][4],
+            intronStats100bp['truth'][0],
+            intronStats100bp['truth'][1],
+            intronStats100bp['truth'][2],
+            intronStats100bp['truth'][3],
+            intronStats100bp['truth'][4],
+            intronStats100bp['truth'][5],
+            intronStats100bp['observed'][0],
+            intronStats100bp['observed'][1],
+            intronStats100bp['observed'][2],
+            intronStats100bp['observed'][3],
+            intronStats100bp['observed'][4],
+            intronStats100bp['observed'][5],
+            intronStats100bp['global'][0],
+            intronStats100bp['global'][1],
+            intronStats100bp['global'][2],
+            intronStats100bp['global'][3],
+            intronStats100bp['global'][4]
+        ]]), file=out_performance100bp)
+
+def initializeUniformityHeaders(out) :
+
+    print("is_converted\tmapper\tcondition\ttid", end="\t", file=out)
+    print("true_exon_coverage_mean\ttrue_exon_coverage_stdev\ttrue_exon_coverage_waviness\ttrue_exon_coverage_gini\ttrue_exon_coverage_uniform_ks_test\ttrue_exon_coverage_uniform_chisq_test",end='\t', file=out)
+    print("mapped_exon_coverage_mean\tmapped_exon_coverage_stdev\tmapped_exon_coverage_waviness\tmapped_exon_coverage_gini\tmapped_exon_coverage_uniform_ks_test\tmapped_exon_coverage_uniform_chisq_test",end='\t', file=out)
+    print("exon_AUC\texon_RSME\texon_KL_deviation\texon_chisq\texon_KS", end='\t', file=out)
+    print("true_intron_coverage_mean\ttrue_intron_coverage_stdev\ttrue_intron_coverage_waviness\ttrue_intron_coverage_gini\ttrue_intron_coverage_uniform_ks_test\ttrue_intron_coverage_uniform_chisq_test",end='\t', file=out)
+    print("mapped_intron_coverage_mean\tmapped_intron_coverage_stdev\tmapped_intron_coverage_waviness\tmapped_intron_coverage_gini\tmapped_intron_coverage_uniform_ks_test\tmapped_intron_coverage_uniform_chisq_test", end='\t', file=out)
+    print("intron_AUC\tintron_RSME\tintron_KL_deviation\tintron_chisq\tintron_KS", file=out)
     
 #bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/STAR/small4.5min.STAR.TC.bam'
 # bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_tc/HISAT2_TLA/small4.5min.HISAT2_TLA.TC.bam'
-  
      
 def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
     """ Evaluates a dataset. """
@@ -424,52 +1046,78 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
     fout = outdir + 'reads.tsv'
     fout2 = outdir + 'tid_performance.tsv'
     fout3 = outdir + 'splice_site_performance.tsv'
+    fout4 = outdir + 'coverage_uniformity_performance.tsv'
+    fout5 = outdir + 'coverage_uniformity_performance.10bp.tsv'
+    fout6 = outdir + 'coverage_uniformity_performance.100bp.tsv'
+    fout7 = outdir + 'mappability.tsv'
     with open(fout, 'w') as out:
         with open(fout2, 'w') as out2:
             with open(fout3, 'w') as out3:
-                print("mapped_coords\ttrue_coords\tclassification\ttid\tis_converted\tmapper\tcondition\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\toverlapping_tids\tread_name", file=out)
-                print("is_converted\tmapper\tcondition\tiso\ttid\tTP\tFP\tFN", file=out2)
-                print("is_converted\tmapper\tcondition\ttid\tintron_id\tdonor_rc_splicing\tdonor_rc_splicing_wrong\tdonor_rc_overlapping\tacceptor_rc_splicing\tacceptor_rc_splicing_wrong\tacceptor_rc_overlapping", file=out3)
-                for cond in m.conditions:
-                    for mapper in config['mappers'].keys():
-                        bam_ori = simdir + "bam_ori/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".bam"
-                        bam_tc = simdir + "bam_tc/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.bam"
-                        bam_out_dir_ori = outdir + "bam_ori/" + mapper + "/"
-                        if not os.path.exists(bam_out_dir_ori):
-                            print("Creating dir " + bam_out_dir_ori)
-                            os.makedirs(bam_out_dir_ori)
-                        bam_out_dir_tc = outdir + "bam_tc/" + mapper + "/"
-                        if not os.path.exists(bam_out_dir_tc):
-                            print("Creating dir " + bam_out_dir_tc)
-                            os.makedirs(bam_out_dir_tc)
-                        bam_ori_out = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".mismapped.bam"
-                        bam_ori_out_intron = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".intron.bam"
-                        bam_tc_out =  bam_out_dir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.mismapped.bam"
-                        bam_tc_out_intron = bam_out_dir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.intron.bam"
-                        evaluate_bam(bam_ori, bam_ori_out, False, m, mapper, cond.id, out, out2)
-                        evaluate_splice_sites(bam_ori, bam_ori_out_intron, False, m, mapper, cond.id, out, out3)
-                        evaluate_bam(bam_tc, bam_tc_out, True, m, mapper, cond.id, out, out2)
-                        evaluate_splice_sites(bam_tc, bam_tc_out_intron, True, m, mapper, cond.id, out, out3)
-                    # eval truth
-                    bam_ori_truth  = simdir + "bam_ori/TRUTH/" + config['dataset_name'] + "." + cond.id + ".TRUTH.bam"
-                    bam_tc_truth   = simdir + "bam_tc/TRUTH/"  + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.bam"
+                with open(fout4, 'w') as out4:
+                    with open(fout5, 'w') as out5:
+                        with open(fout6, 'w') as out6:
+                            with open(fout7, 'w') as out7:
 
-                    bam_out_dir_ori = outdir + "bam_ori/TRUTH/"
-                    if not os.path.exists(bam_out_dir_ori):
-                        print("Creating dir " + bam_out_dir_ori)
-                        os.makedirs(bam_out_dir_ori)
-                    bam_out_dir_tc = outdir + "bam_tc/TRUTH/"
-                    if not os.path.exists(bam_out_dir_tc):
-                        print("Creating dir " + bam_out_dir_tc)
-                        os.makedirs(bam_out_dir_tc)
+                                print("mapped_coords\ttrue_coords\tclassification\ttid\tis_converted\tmapper\tcondition\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\toverlapping_tids\tread_name", file=out)
+                                print("is_converted\tmapper\tcondition\tiso\ttid\tTP\tFP\tFN", file=out2)
+                                print("is_converted\tmapper\tcondition\ttid\tintron_id\tdonor_rc_splicing\tdonor_rc_splicing_wrong\tdonor_rc_overlapping\tacceptor_rc_splicing\tacceptor_rc_splicing_wrong\tacceptor_rc_overlapping", file=out3)
+                                print("is_converted\tmapper\tcondition\ttid\tintron_id\tdonor_sj_mappability\tdonor_exon_mean_mappability\tdonor_exon_T_content\tdonor_intron_mean_mappability\tdonor_intron_T_content\tacceptor_sj_mappability\tacceptor_exon_mean_mappability\tacceptor_exon_T_content\tacceptor_intron_mean_mappability\tacceptor_intron_T_content",
+                                    file=out7)
 
-                    bam_ori_truth_intron = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + ".TRUTH.intron.bam"
-                    bam_tc_truth_intron = bam_out_dir_tc + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.intron.bam"
+                                initializeUniformityHeaders(out4)
+                                initializeUniformityHeaders(out5)
+                                initializeUniformityHeaders(out6)
 
-                    evaluate_bam(bam_ori_truth, None, False, m, 'NA', cond.id, out, out2)
-                    evaluate_splice_sites(bam_ori_truth, bam_ori_truth_intron, False, m, 'NA', cond.id, out, out3)
-                    evaluate_bam(bam_tc_truth, None, True, m, 'NA', cond.id, out, out2)
-                    evaluate_splice_sites(bam_tc_truth, bam_tc_truth_intron, True, m, 'NA', cond.id, out, out3)
+                                for cond in m.conditions:
+
+                                    bam_ori_truth = simdir + "bam_ori/TRUTH/" + config['dataset_name'] + "." + cond.id + ".TRUTH.bam"
+                                    bam_tc_truth = simdir + "bam_tc/TRUTH/" + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.bam"
+
+                                    for mapper in config['mappers'].keys():
+                                        bam_ori = simdir + "bam_ori/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".bam"
+                                        bam_tc = simdir + "bam_tc/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.bam"
+                                        bam_out_dir_ori = outdir + "bam_ori/" + mapper + "/"
+                                        if not os.path.exists(bam_out_dir_ori):
+                                            print("Creating dir " + bam_out_dir_ori)
+                                            os.makedirs(bam_out_dir_ori)
+                                        bam_out_dir_tc = outdir + "bam_tc/" + mapper + "/"
+                                        if not os.path.exists(bam_out_dir_tc):
+                                            print("Creating dir " + bam_out_dir_tc)
+                                            os.makedirs(bam_out_dir_tc)
+                                        bam_ori_out = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".mismapped.bam"
+                                        bam_ori_out_intron = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".intron.bam"
+                                        mappability_ori_out = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".SJ_mappability.bedGraph"
+                                        bam_tc_out =  bam_out_dir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.mismapped.bam"
+                                        bam_tc_out_intron = bam_out_dir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.intron.bam"
+                                        mappability_tc_out = bam_out_dir_tc + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.SJ_mappability.bedGraph"
+
+                                        evaluate_bam(bam_ori, bam_ori_out, False, m, mapper, cond.id, out, out2)
+                                        evaluate_splice_sites(bam_ori, bam_ori_out_intron, False, m, mapper, cond.id, out3)
+                                        evaluate_coverage_uniformity(bam_ori, bam_ori_truth, False, m, mapper, cond.id, out4, out5, out6)
+                                        calculate_splice_site_mappability(bam_ori, bam_ori_truth, False, m, mapper, cond.id, out7, mappability_ori_out, config["genome_fa"], config["readlen"])
+
+                                        evaluate_bam(bam_tc, bam_tc_out, True, m, mapper, cond.id, out, out2)
+                                        evaluate_splice_sites(bam_tc, bam_tc_out_intron, True, m, mapper, cond.id, out3)
+                                        evaluate_coverage_uniformity(bam_tc, bam_tc_truth, True, m, mapper, cond.id, out4, out5, out6)
+                                        calculate_splice_site_mappability(bam_tc, bam_tc_truth, True, m, mapper, cond.id, out7, mappability_tc_out, config["genome_fa"], config["readlen"])
+
+                                    # eval truth
+                                    bam_out_dir_ori = outdir + "bam_ori/TRUTH/"
+                                    if not os.path.exists(bam_out_dir_ori):
+                                        print("Creating dir " + bam_out_dir_ori)
+                                        os.makedirs(bam_out_dir_ori)
+                                    bam_out_dir_tc = outdir + "bam_tc/TRUTH/"
+                                    if not os.path.exists(bam_out_dir_tc):
+                                        print("Creating dir " + bam_out_dir_tc)
+                                        os.makedirs(bam_out_dir_tc)
+
+                                    bam_ori_truth_intron = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + ".TRUTH.intron.bam"
+                                    bam_tc_truth_intron = bam_out_dir_tc + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.intron.bam"
+
+                                    evaluate_bam(bam_ori_truth, None, False, m, 'NA', cond.id, out, out2)
+                                    evaluate_splice_sites(bam_ori_truth, bam_ori_truth_intron, False, m, 'NA', cond.id, out3)
+                                    evaluate_bam(bam_tc_truth, None, True, m, 'NA', cond.id, out, out2)
+                                    evaluate_splice_sites(bam_tc_truth, bam_tc_truth_intron, True, m, 'NA', cond.id, out3)
 
     bgzip(fout, delinFile=True, override=True)
     logging.info("All done in %s" % str(datetime.timedelta(seconds=time.time() - startTime)))

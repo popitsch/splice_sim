@@ -11,7 +11,7 @@ import pysam
 import pyranges as pr
 import pandas as pd
 import numpy as np
-from utils import bgzip, files_exist, pad_n, pipelineStep, reverse_complement, COMP_TABLE, removeFile
+from utils import bgzip, files_exist, pad_n, pipelineStep, reverse_complement, COMP_TABLE, removeFile,sambamba2bam
 import random
 import math
 import gzip

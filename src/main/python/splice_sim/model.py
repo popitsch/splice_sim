@@ -9,9 +9,11 @@ import logging
 
 
 class Condition():
-    def __init__(self, id, timepoint, conversion_rate, coverage ):
+    def __init__(self, id, timepoint, ref, alt, conversion_rate, coverage ):
         self.id = id
         self.timepoint=timepoint
+        self.ref=ref
+        self.alt=alt
         self.conversion_rate=conversion_rate
         self.coverage = coverage
         self.bam="?"
@@ -245,7 +247,12 @@ class Model():
         # init conditions
         self.conditions=[]
         for id in config["conditions"].keys():
-            self.conditions+=[Condition(id, config["conditions"][id][0], config["conditions"][id][1], config["conditions"][id][2] )]
+            self.conditions+=[Condition(id, 
+                                        config["conditions"][id][0], 
+                                        config["conditions"][id][1], 
+                                        config["conditions"][id][2],
+                                        config["conditions"][id][3],
+                                        config["conditions"][id][4] )]
         # load + filter gene gff
         logging.info("Loading gene GFF")
         self.gff = pr.read_gff3(config["gene_gff"])

@@ -292,6 +292,7 @@ def pipelineStep(inputfile, outFile, cmd, shell=False, stdout=None, append=False
                     if files_exist(outFile):
                         logging.warn("Overwriting file %s", outFile)
 
+        print(cmd)
         out = runTask(cmd, shell)         
         if logfile is None:
             logging.info(out)

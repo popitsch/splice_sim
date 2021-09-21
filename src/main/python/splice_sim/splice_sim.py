@@ -14,7 +14,7 @@ from argparse import ArgumentParser, RawDescriptionHelpFormatter
 import os, sys, json, logging, random
 from utils import existing_file
 from collections import OrderedDict
-from simulator import simulate_dataset
+from simulator2 import simulate_dataset
 from evaluator import evaluate_dataset
 
 VERSION = "0.1"

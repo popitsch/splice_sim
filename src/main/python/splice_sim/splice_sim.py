@@ -15,7 +15,7 @@ import os, sys, json, logging, random
 from utils import existing_file
 from collections import OrderedDict
 from simulator2 import simulate_dataset
-from evaluator import evaluate_dataset
+from evaluator2 import evaluate_dataset
 
 VERSION = "0.1"
 LOGO = """

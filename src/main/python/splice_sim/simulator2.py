@@ -591,8 +591,8 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                 f_bam =      tmpdir + config['dataset_name'] + "." + cond.id + "." +    mapper +".bam"
                 f_bam_conv = tmpdir + config['dataset_name'] + "." + cond.id + ".conv."+mapper+".bam"
                 
-                final_bam      = bamdir_all +   config['dataset_name'] + "." + cond.id +      "."+mapper+"_nodup.bam"
-                final_bam_conv = bamdir_conv  + config['dataset_name'] + "." + cond.id + ".conv."+mapper+"_nodup.bam"
+                final_bam      = bamdir_all +   config['dataset_name'] + "." + cond.id +      "."+mapper+".nodup.bam"
+                final_bam_conv = bamdir_conv  + config['dataset_name'] + "." + cond.id + ".conv."+mapper+".nodup.bam"
                 
                 logging.info("Mapping %s reads with %s" % (cond.id, mapper))
                 if mapper == "STAR":

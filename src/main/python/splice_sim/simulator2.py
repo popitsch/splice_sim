@@ -184,6 +184,7 @@ def postfilter_bam( bam_in, bam_out):
     samin = pysam.AlignmentFile(bam_in, "rb")
     mapped_out = pysam.AlignmentFile(bam_out, "wb", template=samin )
     n_reads=0
+    f_reads=0
     for read in samin.fetch(until_eof=True): # NOTE important to add until_eof=True otherwise unmapped reads will be skipped.
         if read.is_secondary or read.is_supplementary:
             f_reads+=1

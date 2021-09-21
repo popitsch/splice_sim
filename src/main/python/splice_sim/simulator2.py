@@ -625,7 +625,7 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                     hisat2_kss=config['mappers'][mapper]['hisat2_kss'] if 'hisat2_kss' in config['mappers'][mapper] else None
                     if write_uncoverted:
                         if overwrite or not files_exist(f_bam):
-                            runHISAT2_TLA(b_all, 
+                            runHISAT2_TLA(f_bam, 
                                     config["genome_fa"], 
                                     fq=f_fq,
                                     idx1=hisat2_idx1,

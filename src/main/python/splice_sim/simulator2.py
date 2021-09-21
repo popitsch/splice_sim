@@ -503,14 +503,21 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
     artlog=tmpdir + config['dataset_name'] + ".art.log" 
     stats=Counter()
     for cond in m.conditions:
+        bamdir_truth = outdir + "bam_ori/TRUTH/"
+        bamdir_truth_conv = outdir + "bam_conv/TRUTH/"
+        if not os.path.exists(bamdir_truth):
+            os.makedirs(bamdir_truth)
+        if not os.path.exists(bamdir_truth_conv):
+            os.makedirs(bamdir_truth_conv)
+                    
         f = tmpdir + config['dataset_name'] + "." + cond.id + ".fa"
         # art output
         art_out_prefix = tmpdir + config['dataset_name'] + "." + cond.id + ".art_output"
         f_fq_art = art_out_prefix + ".fq"
         f_sam_art =  art_out_prefix + ".sam"
         # output BAM/fastq files
-        f_bam = tmpdir + config['dataset_name'] + "." + cond.id + ".simulated.bam"
-        f_bam_conv = tmpdir + config['dataset_name'] + "." + cond.id + ".simulated+conversions.bam"
+        f_bam = bamdir_truth + config['dataset_name'] + "." + cond.id + ".simulated.bam"
+        f_bam_conv = bamdir_truth_conv + config['dataset_name'] + "." + cond.id + ".simulated+conversions.bam"
         f_fq = tmpdir + config['dataset_name'] + "." + cond.id + ".simulated.fq"
         f_fq_conv = tmpdir + config['dataset_name'] + "." + cond.id + ".simulated+conversions.fq"
         additional_art_params = get_config(config, ['simulator','additional_art_params'],"") # e.g., --insRate (default: 0.00009)

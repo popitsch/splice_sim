@@ -1096,12 +1096,12 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
                                         mappability_conv_out = bam_out_dir_conv + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.SJ_mappability.bedGraph"
 
                                         evaluate_bam(bam_ori, bam_ori_out, False, m, mapper, cond.id, out, out2)
-#                                         evaluate_splice_sites(bam_ori, bam_ori_out_intron, False, m, mapper, cond.id, out3)
+                                        evaluate_splice_sites(bam_ori, bam_ori_out_intron, False, m, mapper, cond.id, out3)
 #                                         evaluate_coverage_uniformity(bam_ori, bam_ori_truth, False, m, mapper, cond.id, out4, out5, out6)
 #                                         calculate_splice_site_mappability(bam_ori, bam_ori_truth, False, m, mapper, cond.id, out7, mappability_ori_out, config["genome_fa"], config["readlen"])
 
                                         evaluate_bam(bam_conv, bam_conv_out, True, m, mapper, cond.id, out, out2)
-#                                         evaluate_splice_sites(bam_conv, bam_conv_out_intron, True, m, mapper, cond.id, out3)
+                                        evaluate_splice_sites(bam_conv, bam_conv_out_intron, True, m, mapper, cond.id, out3)
 #                                         evaluate_coverage_uniformity(bam_conv, bam_conv_truth, True, m, mapper, cond.id, out4, out5, out6)
 #                                         calculate_splice_site_mappability(bam_conv, bam_conv_truth, True, m, mapper, cond.id, out7, mappability_conv_out, config["genome_fa"], config["readlen"])
 

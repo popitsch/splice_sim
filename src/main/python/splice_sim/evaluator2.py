@@ -27,9 +27,8 @@ def calc_coverage(true_chr, read_chr, true_pos, read_pos):
     cov = len(true_pos & read_pos) / len(true_pos)
     return cov
 
-def classify_read(read, overlapping_tids, is_converted, mapper, condition, dict_chr2idx, performance, out_reads, sam_out):
+def classify_read(read, overlapping_tids, is_converted, mapper, condition, dict_chr2idx, performance, out_reads, sam_out, overlap_cutoff = 0.8):
     """ Classifies a read """
-    overlap_cutoff = 10 #0.8 * m.readlen 
     read_name = read.query_name
     true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted = read.query_name.split('_')               
     read_chr = 'NA' if read.is_unmapped else read.reference_name
@@ -108,11 +107,11 @@ def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_read
             for loc, (read, annos) in it:
                 n_reads+=1
                 overlapping_tids = [t[0] for (_, (_, t)) in annos[0]]
-                if read.query_name=="ENSMUST00000119947.1_+_mat_4-5_16_37883024-37883123_NA_19,31,70,87":
-                    print(read, mapper, condition)
-                    print(annos)
-                    print(overlapping_tids)
-                    print(df)
+#                 if read.query_name=="ENSMUST00000119947.1_+_mat_4-5_16_37883024-37883123_NA_19,31,70,87":
+#                     print(read, mapper, condition)
+#                     print(annos)
+#                     print(overlapping_tids)
+#                     print(df)
 
                 performance = classify_read(read, overlapping_tids, is_converted, mapper, condition, dict_chr2idx, performance, out_reads, samout)
     tids= set([x for x, y, z in performance.keys()])

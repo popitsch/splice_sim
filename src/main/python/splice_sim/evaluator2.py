@@ -34,16 +34,16 @@ def classify_read(read, overlapping_tids, is_converted, mapper, condition, dict_
     read_chr = 'NA' if read.is_unmapped else read.reference_name
     read_coord = 'NA' if read.is_unmapped else '%s:%i-%i' % (read.reference_name, read.reference_start, read.reference_end)
     
-    read_pos=set([x for _,x in read.get_aligned_pairs() if x is not None])
+    read_pos=set([b for a,b in read.get_aligned_pairs() if a is not None])
     
     # recreate true read
     true_read = pysam.AlignedSegment()
     true_read.cigarstring=true_cigar
     true_read.reference_start=int(true_start)
-    true_pos = set([x for _,x in true_read.get_aligned_pairs() if x is not None])
+    true_pos = set([b for a,b in true_read.get_aligned_pairs() if a is not None])
     
     overlap = calc_coverage(true_chr, read_chr, true_pos, read_pos)
-    
+
     true_coord = "%s:%i-%i" % ( true_chr, min(true_pos),  max(true_pos))
     
     # read strongly overlaps with real location; FIXME: check strand!

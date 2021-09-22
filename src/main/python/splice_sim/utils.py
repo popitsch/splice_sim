@@ -68,17 +68,7 @@ def calc_cov_a(a,b):
     if cov<0:
         cov=0
     return cov
-def calc_coverage(true_chr, read_chr, true_tuples, read_tuples):
-    """ Calculate the coverage (number of bases) of a mapped read with the passed aligned blocks (r.get_blocks()) wrt. the passed true tuples. """
-    if true_chr != read_chr:
-        return 0
-    # note: intervals are non-overlapping and there are usually very few (1-2) intervals per set
-    cov=0
-    for a in true_tuples:
-        for b in read_tuples:
-            #print(a,b,calc_cov_a(a,b))
-            cov+=calc_cov_a(a,b)
-    return cov
+
 def pad_n(seq, minlen):
     """ Add up-/downstream padding with N's to ensure a given minimum length of the passed sequence """ 
     ret = seq

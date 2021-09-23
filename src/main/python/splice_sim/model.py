@@ -293,3 +293,37 @@ class Model():
             bgzip(out_file, override=True, delinFile=True, index=True, threads=self.threads)
         out_file=out_file+".gz"
         return out_file
+    def save(self, f_model, recursion_limit=10000):
+        """ save model to disk """
+        sys.setrecursionlimit(recursion_limit)
+        # save as picke
+        with open(f_model, 'wb') as handle:
+            pickle.dump((self), handle, protocol=pickle.HIGHEST_PROTOCOL)
+        print("Model written to %s" % f_model)
+
+
+# if __name__ == '__main__':
+#     import json, pickle
+#     
+#     config_dir=' '
+#     config = json.load(open(config_dir+'config.LOCAL.json'), object_pairs_hook=OrderedDict)
+#     # read transcript data from external file if not in config
+#     if 'transcripts' in config:
+#         logging.info("Reading transcript configuration from config file.")
+#     else:
+#         assert "transcript_data" in config, "Transcript data needs to be configured either in config file ('transcripts' section) or in an external file referenced via 'transcript_data'"
+#         tfile = config['transcript_data']
+#         if not os.path.isabs(tfile):
+#             tfile = config_dir+"/"+tfile
+#         if not files_exist(tfile):
+#             logging.info("Creating external transcript config file %s" % tfile)
+#             calculate_transcript_data(config, config_dir, outdir)
+#             
+#         logging.info("Reading transcript configuration from external config file %s" % tfile)
+#         tdata = json.load(open(tfile), object_pairs_hook=OrderedDict)
+#         config["transcripts"]=tdata
+#     m=Model(config)
+#     print(m)
+#     f_model = config_dir+"big3_2.model"
+#     print("Model saved to " + f_model)
+#     m.save(f_model)

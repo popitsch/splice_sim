@@ -382,7 +382,7 @@ def add_read_modifications(in_bam, out_bam, ref, alt, conversion_rate, tag_tc="x
             r.set_tag(tag=tag_tc, value=n_modified, value_type="i")
             if n_modified>=0:
                 # set blue read color intensity relative to number of tc conversions!
-                intensity = min(255, 200.0*(1-n_modified/n_convertible))
+                intensity = min(255, 200.0*(1-n_modified/n_convertible)) if n_convertible>0 else 255
                 if r.is_reverse:
                     r.set_tag(tag='YC', value='%i,%i,255' % (intensity,intensity) )
                 else:

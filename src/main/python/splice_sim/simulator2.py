@@ -286,9 +286,7 @@ def transcript2genome_bam(transcript_bam_file, mod, out_bam):
                     while diff>=0:
                         if op==8:
                             #FIXME seq err stretehes that are spliced are partially ignored
-                            print('ignoring seq diff X')
-                            continue
-                        # we need to insert a splice cigartuple
+                            print('ignoring seq diff X for ' + r.query_name+', '+r.cigarstring) # we need to insert a splice cigartuple
                         matchlen=l-diff
                         genome_cigatuples+=[(op, matchlen)]
                         gpos+=matchlen
@@ -301,7 +299,7 @@ def transcript2genome_bam(transcript_bam_file, mod, out_bam):
                         # N-block
                         nblock=next(ablocks, None)
                         if nblock is None:
-                            print("ERR: no more ablocks in iso " + iso + ", " + ','.join(iso.aln_blocks)+", read " + r.query_name)
+                            print("ERR: no more ablocks in iso " + iso + ", " + ','.join(iso.aln_blocks)+", read " + r.query_name+', '+r.cigarstring)
                             continue
                         n_len = nblock[0]-ablock[1]-1
                         genome_cigatuples+=[(3, n_len)]

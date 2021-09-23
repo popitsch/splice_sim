@@ -208,7 +208,6 @@ def transcript2genome_bam(transcript_bam_file, mod, out_bam):
     dict_idx2chr = {v: k for v, k in enumerate(chromosomes)}
     dict_chr2len = {c: mod.genome.get_reference_length(c) for c in mod.genome.references}
     logging.info("Configured conditions: %s" % (", ".join(str(x) for x in mod.conditions)) )
-
     header = { 'HD': {'VN': '1.4'}, 
                'SQ': [{'LN': l, 'SN': c} for c,l in dict_chr2len.items()] }
     stats=Counter()
@@ -243,7 +242,6 @@ def transcript2genome_bam(transcript_bam_file, mod, out_bam):
                     r_cigartuples=r.cigartuples
                     r_query_sequence=r.query_sequence
                     r_query_qualities=r.query_qualities
-                
                 # consume r_pos bases and find 1st alignment block
                 ablock=next(ablocks, None) # genome coords
                 off=r_pos
@@ -283,9 +281,9 @@ def transcript2genome_bam(transcript_bam_file, mod, out_bam):
                     else:
                         sys.exit("unsupported CIGAR op %i" % op)
                     diff=gpos+inc_pos-ablock[1]
-                    while diff>=0:
-                        if op==8:
-                            #FIXME seq err stretehes that are spliced are partially ignored
+                    while diff>0:
+                        if op==8 and l>1:
+                            #FIXME seq err stretc1Ghes that are spliced are partially ignored
                             print('ignoring seq diff X for ' + r.query_name+', '+r.cigarstring) # we need to insert a splice cigartuple
                         matchlen=l-diff
                         genome_cigatuples+=[(op, matchlen)]
@@ -299,16 +297,17 @@ def transcript2genome_bam(transcript_bam_file, mod, out_bam):
                         # N-block
                         nblock=next(ablocks, None)
                         if nblock is None:
-                            print("ERR: no more ablocks in iso " + iso + ", " + ','.join(iso.aln_blocks)+", read " + r.query_name+', '+r.cigarstring)
-                            continue
-                        n_len = nblock[0]-ablock[1]-1
-                        genome_cigatuples+=[(3, n_len)]
-                        gpos+=n_len
-                        # update l 
-                        ablock=nblock
-                        l-=matchlen
-                        diff=gpos+inc_pos-ablock[1]
-
+                            print("ERR: no more ablocks in iso " + str(iso) + ", read " + r.query_name+', '+r.cigarstring)
+                            print(iso.aln_blocks)
+                            break
+                        else:
+                            n_len = nblock[0]-ablock[1]-1
+                            genome_cigatuples+=[(3, n_len)]
+                            gpos+=n_len
+                            # update l 
+                            ablock=nblock
+                            l-=matchlen
+                            diff=gpos+inc_pos-ablock[1]
                     genome_cigatuples+=[(op, l)]
                     if op == 8 : # X - store mismatches
                         for i in range(l):
@@ -318,9 +317,7 @@ def transcript2genome_bam(transcript_bam_file, mod, out_bam):
                         seq+=r_query_sequence[rpos:rpos+inc_read]
                         qual+=r_query_qualities[rpos:rpos+inc_read]
                         rpos+=inc_read
-
-                
-                
+                # create read
                 read = pysam.AlignedSegment()
                 read.query_sequence = seq
                 read.query_qualities = qual
@@ -339,17 +336,14 @@ def transcript2genome_bam(transcript_bam_file, mod, out_bam):
                                                     len(mismatches)+n_insertions+n_deletions, # number of seq errors
                                                     0 # number of conversions
                                                     ]])
-                
                 # skip reads with too-long read names. Samtools maximum length of read name is 254.
                 if len(read.query_name)>254:
                     stats['skipped_long_read_name']+=1
                     print('skipping read due to too long read_name %s' % read_name)
                     continue
-
                 bam_out.write(read)
                 stats['output_read']+=1
                 stats['output_read_'+iso.strand]+=1        
-   
     try:
         pysam.sort("-o", out_bam, out_bam+'.tmp.bam') # @UndefinedVariable
         os.remove(out_bam+'.tmp.bam')
@@ -476,7 +470,7 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
     stats=Counter()
     stats["transcripts"]= len(m.transcripts)
     
-    # now write one fasta file per transcript/cond
+    # now write one fasta file per condition with transcript/isoform entries that are proportional to the configured abundance
     logging.info("Calculating isoform data")
     for cond in m.conditions:
         fout = tmpdir + config['dataset_name'] + "." + cond.id + ".fa"

@@ -304,9 +304,9 @@ class Model():
 
 # if __name__ == '__main__':
 #     import json, pickle
-#     
-#     config_dir=' '
-#     config = json.load(open(config_dir+'config.LOCAL.json'), object_pairs_hook=OrderedDict)
+#      
+#     config_dir='/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_2/'
+#     config = json.load(open(config_dir+'config.json'), object_pairs_hook=OrderedDict)
 #     # read transcript data from external file if not in config
 #     if 'transcripts' in config:
 #         logging.info("Reading transcript configuration from config file.")
@@ -318,7 +318,7 @@ class Model():
 #         if not files_exist(tfile):
 #             logging.info("Creating external transcript config file %s" % tfile)
 #             calculate_transcript_data(config, config_dir, outdir)
-#             
+#              
 #         logging.info("Reading transcript configuration from external config file %s" % tfile)
 #         tdata = json.load(open(tfile), object_pairs_hook=OrderedDict)
 #         config["transcripts"]=tdata

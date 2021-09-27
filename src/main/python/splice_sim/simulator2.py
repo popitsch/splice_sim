@@ -655,13 +655,17 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
         logging.info("Mapping reads")
         # print version info
         for mapper in config['mappers'].keys():
+            EXE=None
             if mapper == "STAR":
                 EXE=config['mappers'][mapper]['star_cmd'] if 'star_cmd' in config['mappers'][mapper] else 'STAR'
             elif mapper == "HISAT2_TLA":
                 EXE=config['mappers'][mapper]['hisat2_cmd'] if 'hisat2_cmd' in config['mappers'][mapper] else 'hisat2'
-            elif mapper == "meRanGs":
-                EXE=config['mappers'][mapper]['meRanGs_cmd'] if 'meRanGs_cmd' in config['mappers'][mapper] else 'meRanGs'
-            logging.info("%s version: %s" % ( mapper, get_version(EXE)) )
+            elif mapper == "MERANGS":
+                EXE=config['mappers'][mapper]['merangs_cmd'] if 'merangs_cmd' in config['mappers'][mapper] else 'meRanGs'
+            elif mapper == "HISAT-3N":
+                EXE=config['mappers'][mapper]['hisat-3n_cmd'] if 'hisat-3n_cmd' in config['mappers'][mapper] else 'hisat-3n'
+            if EXE:
+                logging.info("%s version: %s" % ( mapper, get_version(EXE)) )
 
         for cond in m.conditions:
             for mapper in config['mappers'].keys():

@@ -90,6 +90,8 @@ def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_read
     samin = pysam.AlignmentFile(bam_file, "rb") 
     samout = pysam.AlignmentFile(bam_out+'.tmp.bam', "wb", template=samin ) if bam_out is not None else None
     for c, c_len in dict_chr2len.items():
+        if c not in samin.references:
+            continue # no data on this chrom 
         df = m.df[(m.df.Feature == 'transcript') & (m.df.Chromosome == c)]# get annotations
         # check whether df is sorted! 
         l=[x for x in df.Start]

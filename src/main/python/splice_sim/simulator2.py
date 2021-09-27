@@ -126,7 +126,7 @@ def runSTAR(bam, ref, reads1=[], reads2=None,  gtf=None, force=True, run_flagsta
     return success
 
 
-def runHISAT_3N(bam, ref, fq, idx, base_ref='T', base_alt='C', known_splicesites=None, force=True, run_flagstat=False, threads=1, doSort=True, additionalParameters=[], HISAT_3N_EXE='hisat-3n', SAMBAMBA_EXE='sambamba'):
+def runHISAT_3N(bam, fq, idx, base_ref='T', base_alt='C', known_splicesites=None, force=True, run_flagstat=False, threads=1, doSort=True, additionalParameters=[], HISAT_3N_EXE='hisat-3n', SAMBAMBA_EXE='sambamba'):
     """ Run HISAT-3N, see http://daehwankimlab.github.io/hisat2/hisat-3n/ """
     success = True
     if files_exist(bam) and not force:
@@ -138,10 +138,10 @@ def runHISAT_3N(bam, ref, fq, idx, base_ref='T', base_alt='C', known_splicesites
     if fq.endswith(".gz"):
         fq1=os.path.splitext(fq)[0]
         cmd=[ "gunzip", "-c", fq]
+        logging.info(cmd)
         success = success and pipelineStep([fq], [fq1], cmd, shell=True, stdout=fq1)
         todel+=[fq1]
         fq=fq1
-    [[]]
     # run hisat-3n
     sam = bam+".sam"
     cmd=[ HISAT_3N_EXE,
@@ -171,7 +171,7 @@ def runHISAT_3N(bam, ref, fq, idx, base_ref='T', base_alt='C', known_splicesites
     return success
 
 
-def runMERANGS(bam, ref, fq, idx, known_splicesites=None, force=True, run_flagstat=False, threads=1, additionalParameters=[], MERANG_EXE='meRanGs', STAR_EXE='STAR', FASTQTOBAM_EXE='fastqtobam'):
+def runMERANGS(bam, fq, idx, known_splicesites=None, force=True, run_flagstat=False, threads=1, additionalParameters=[], MERANG_EXE='meRanGs', STAR_EXE='STAR', FASTQTOBAM_EXE='fastqtobam'):
     """ Run meRanGs, see http://daehwankimlab.github.io/hisat2/hisat-3n/ """
     success = True
     if files_exist(bam) and not force:
@@ -723,9 +723,8 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                     if write_uncoverted:
                         if overwrite or not files_exist(f_bam):
                             runHISAT_3N(f_bam, 
-                                    config["genome_fa"], 
-                                    fq=f_fq,
-                                    idx=hisat_3n_idx,
+                                    fq,
+                                    hisat_3n_idx,
                                     base_ref=cond.ref,
                                     base_alt=cond.alt,
                                     known_splicesites=hisat_3n_kss,
@@ -738,9 +737,8 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                             logging.warn("Will not re-create existing file %s" % (f_bam))
                     if overwrite or not files_exist(f_bam_conv):
                         runHISAT_3N(f_bam_conv, 
-                            config["genome_fa"], 
-                            fq=f_fq_conv,
-                            idx=hisat_3n_idx,
+                            f_fq_conv,
+                            hisat_3n_idx,
                             base_ref=cond.ref,
                             base_alt=cond.alt,
                             known_splicesites=hisat_3n_kss,
@@ -797,7 +795,7 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                         if overwrite or not files_exist(f_bam):
                             runMERANGS(f_bam, 
                                     merangs_genome_idx, 
-                                    reads1=[f_fq], 
+                                    f_fq, 
                                     gtf=merangs_splice_gtf,
                                     threads=threads, 
                                     MERANGS_EXE=MERANGS_EXE,
@@ -810,7 +808,7 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                     if overwrite or not files_exist(f_bam_conv):
                         runMERANGS(f_bam_conv, 
                                     merangs_genome_idx, 
-                                    reads1=[f_fq_conv], 
+                                    f_fq_conv, 
                                     gtf=merangs_splice_gtf,
                                     threads=threads, 
                                     MERANGS_EXE=MERANGS_EXE,

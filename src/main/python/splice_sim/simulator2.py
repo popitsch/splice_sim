@@ -799,7 +799,6 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                                     threads=threads, 
                                     MERANGS_EXE=MERANGS_EXE,
                                     STAR_EXE=STAR_EXE,
-                                    SAMBAMBA_EXE=sambamba_cmd,
                                     force=overwrite )
                             postfilter_bam(f_bam, final_bam)
                         else:
@@ -812,7 +811,6 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                                     threads=threads, 
                                     MERANGS_EXE=MERANGS_EXE,
                                     STAR_EXE=STAR_EXE,
-                                    SAMBAMBA_EXE=sambamba_cmd,
                                     force=overwrite )
                         postfilter_bam(f_bam_conv, final_bam_conv) 
                     else:

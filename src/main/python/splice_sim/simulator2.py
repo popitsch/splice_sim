@@ -144,7 +144,7 @@ def runHISAT_3N(bam, ref, fq, idx, base_ref='T', base_alt='C', known_splicesites
     [[]]
     # run hisat-3n
     sam = bam+".sam"
-    cmd=[ HISAT2_EXE,
+    cmd=[ HISAT_3N_EXE,
          "--base-change", "%s,%s"%(base_ref, base_alt),
          "--reference", ref,
          "--index", idx,

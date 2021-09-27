@@ -170,7 +170,7 @@ def runHISAT_3N(bam, fq, idx, base_ref='T', base_alt='C', known_splicesites=None
     return success
 
 
-def runMERANGS(bam, fq, idx, known_splicesites=None, force=True, run_flagstat=False, threads=1, additionalParameters=[], MERANG_EXE='meRanGs', STAR_EXE='STAR', FASTQTOBAM_EXE='fastqtobam'):
+def runMERANGS(bam, fq, idx, known_splicesites=None, force=True, run_flagstat=False, threads=1, additionalParameters=[], MERANGS_EXE='meRanGs', STAR_EXE='STAR', FASTQTOBAM_EXE='fastqtobam'):
     """ Run meRanGs, see http://daehwankimlab.github.io/hisat2/hisat-3n/ """
     success = True
     if files_exist(bam) and not force:
@@ -186,7 +186,7 @@ def runMERANGS(bam, fq, idx, known_splicesites=None, force=True, run_flagstat=Fa
     sam_name=Path(bam).stem
     
     todel=[]
-    cmd=[ MERANG_EXE, "align",
+    cmd=[ MERANGS_EXE, "align",
          "-f", fq,
          "-t", str(threads),
          "-S", sam_name+'.sam',

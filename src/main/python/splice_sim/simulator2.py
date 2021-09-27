@@ -668,6 +668,9 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
 
         for cond in m.conditions:
             for mapper in config['mappers'].keys():
+                if mapper not in ["STAR", "HISAT-3N", "HISAT2_TLA", "MERANGS"]:
+                    print("skipping unknown mapper config %s" % mapper)
+                    continue
                 bamdir_all = outdir + "bam_ori/" + mapper + "/"
                 bamdir_conv  = outdir + "bam_conv/" + mapper + "/"
                 if not os.path.exists(bamdir_all):

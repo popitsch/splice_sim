@@ -723,7 +723,7 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                     if write_uncoverted:
                         if overwrite or not files_exist(f_bam):
                             runHISAT_3N(f_bam, 
-                                    fq,
+                                    f_fq,
                                     hisat_3n_idx,
                                     base_ref=cond.ref,
                                     base_alt=cond.alt,

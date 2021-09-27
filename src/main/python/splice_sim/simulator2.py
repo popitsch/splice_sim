@@ -216,7 +216,7 @@ def runMERANGS(bam, fq, idx, known_splicesites=None, force=True, run_flagstat=Fa
         flagstat( bam )        
     return success
 
-@DeprecationWarning
+#@DeprecationWarning
 def runHISAT2_TLA(bam, ref, fq, idx1, idx2, base_ref='T', base_alt='C', known_splicesites=None, force=True, run_flagstat=False, threads=1, doSort=True, additionalParameters=[], HISAT2_EXE='hisat2', SAMBAMBA_EXE='sambamba'):
     """ Run HISAT2_TLA. Depreated """
     success = True

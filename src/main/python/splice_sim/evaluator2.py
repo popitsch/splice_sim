@@ -1078,6 +1078,9 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
                                     bam_conv_truth = simdir + "bam_conv/TRUTH/" + config['dataset_name'] + "." + cond.id + ".simulated+conversions.bam"
 
                                     for mapper in config['mappers'].keys():
+                                        if mapper not in ["STAR", "HISAT-3N", "HISAT2_TLA", "MERANGS"]:
+                                            print("skipping unknown mapper config %s" % mapper)
+                                            continue
                                         bam_ori = simdir + "bam_ori/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".nodup.bam"
                                         bam_conv = simdir + "bam_conv/" + mapper + "/" + config['dataset_name'] + "." + cond.id + ".conv." + mapper + ".nodup.bam"
                                         bam_out_dir_ori = outdir + "bam_ori/" + mapper + "/"

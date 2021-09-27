@@ -146,7 +146,6 @@ def runHISAT_3N(bam, fq, idx, base_ref='T', base_alt='C', known_splicesites=None
     sam = bam+".sam"
     cmd=[ HISAT_3N_EXE,
          "--base-change", "%s,%s"%(base_ref, base_alt),
-         "--reference", ref,
          "--index", idx,
          "-U", fq,
          "--threads", str(threads),

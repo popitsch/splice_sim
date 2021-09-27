@@ -20,6 +20,7 @@ from subprocess import check_output
 from model import Model, Condition, Isoform, Transcript
 from config_creator import calculate_transcript_data
 from transcript2genome_bam import transcript2genome_bam
+from pathlib import Path
 
 def check_config(config):
     for section in ['dataset_name','mappers','genome_fa','gene_gff','conditions','isoform_mode','transcript_data']:
@@ -125,8 +126,100 @@ def runSTAR(bam, ref, reads1=[], reads2=None,  gtf=None, force=True, run_flagsta
     return success
 
 
-def runHISAT2_TLA(bam, ref, fq, idx1, idx2, known_splicesites=None, force=True, run_flagstat=False, threads=1, doSort=True, additionalParameters=[], HISAT2_EXE='hisat2', SAMBAMBA_EXE='sambamba'):
-    """ Run HISAT2_TLA """
+def runHISAT_3N(bam, ref, fq, idx, base_ref='T', base_alt='C', known_splicesites=None, force=True, run_flagstat=False, threads=1, doSort=True, additionalParameters=[], HISAT_3N_EXE='hisat-3n', SAMBAMBA_EXE='sambamba'):
+    """ Run HISAT-3N, see http://daehwankimlab.github.io/hisat2/hisat-3n/ """
+    success = True
+    if files_exist(bam) and not force:
+        logging.warn("BAM file " + bam + " already exists! use -f to recreate.")
+        return True
+    
+    todel=[]
+    # temporary unzip as hisat2 cannot read gzipped inputs
+    if fq.endswith(".gz"):
+        fq1=os.path.splitext(fq)[0]
+        cmd=[ "gunzip", "-c", fq]
+        success = success and pipelineStep([fq], [fq1], cmd, shell=True, stdout=fq1)
+        todel+=[fq1]
+        fq=fq1
+    [[]]
+    # run hisat-3n
+    sam = bam+".sam"
+    cmd=[ HISAT2_EXE,
+         "--base-change", "%s,%s"%(base_ref, base_alt),
+         "--reference", ref,
+         "--index", idx,
+         "-U", fq,
+         "--threads", str(threads),
+         "-S", sam
+        ]
+    if known_splicesites is not None:
+        cmd+=[ "--known-splicesite-infile", known_splicesites ]
+    logging.info(cmd)
+    success = success and pipelineStep([fq], sam, cmd, shell=True)
+    
+    # sort + index
+    success = success and sambamba2bam(sam, bam, 
+                              sort=doSort, 
+                              index=True, 
+                              delinFile=True,
+                              ncpu=threads, 
+                              EXE=SAMBAMBA_EXE) 
+    
+    removeFile(todel)
+    if run_flagstat:            
+        flagstat( bam )        
+    return success
+
+
+def runMERANGS(bam, ref, fq, idx, known_splicesites=None, force=True, run_flagstat=False, threads=1, additionalParameters=[], MERANG_EXE='meRanGs', STAR_EXE='STAR', FASTQTOBAM_EXE='fastqtobam'):
+    """ Run meRanGs, see http://daehwankimlab.github.io/hisat2/hisat-3n/ """
+    success = True
+    if files_exist(bam) and not force:
+        logging.warn("BAM file " + bam + " already exists! use -f to recreate.")
+        return True
+    # get base name for FQ
+    fq_name=Path(fq).stem
+    if fq_name.endswith('fq'):
+        fq_name=Path(fq_name).stem
+    udir=str(Path(bam).parent.absolute())+"/meRanGs_unaligned_reads" # dir for storing unaligned reads 
+    
+    # get base name for sam
+    sam_name=Path(bam).stem
+    
+    todel=[]
+    cmd=[ MERANG_EXE, "align",
+         "-f", fq,
+         "-t", str(threads),
+         "-S", sam_name+'.sam',
+         "-un", "-ud", udir,  # Report unaligned reads
+         #"-MM", "-star_outFilterMultimapNmax", "20"  # Save multimappers?
+         "-id", idx,
+         "-mbp", # m‐Bias plot (for QC only)
+         "-starcmd", STAR_EXE, # STAR cmd to use
+         "-star_outSAMattributes", "NH HI AS nM MD"  # @see http://samtools.github.io/hts-specs/SAMtags.pdf
+         ] + additionalParameters
+    if known_splicesites is not None:
+        cmd+=[ "-star_sjdbGTFfile", known_splicesites ]
+    logging.info(cmd)
+    success = success and pipelineStep([fq], sam, cmd, shell=True)
+        
+    # converted unaligned FASTQ to BAM
+    ureadsfq=udir+'/'+fq_name+'_unmapped.fq.gz'
+    cmd=[ FASTQTOBAM_EXE, "gz=1", ureadsfq]
+    logging.info(cmd)
+    success = success and pipelineStep([ureadsfq], sam, cmd, shell=True, stdout=udir+'/'+fq_name+'_unmapped.bam')
+    
+    # merge aligend and unaligned bams
+    cmd=[ 'samtools', 'merge', bam, sam_name+'_sorted.bam', udir+'/'+fq_name+'_unmapped.bam']
+    logging.info(cmd)
+    success = success and pipelineStep([sam_name+'_sorted.bam', udir+'/'+fq_name+'_unmapped.bam'], bam, cmd, shell=True)
+    if run_flagstat:            
+        flagstat( bam )        
+    return success
+
+@DeprecationWarning
+def runHISAT2_TLA(bam, ref, fq, idx1, idx2, base_ref='T', base_alt='C', known_splicesites=None, force=True, run_flagstat=False, threads=1, doSort=True, additionalParameters=[], HISAT2_EXE='hisat2', SAMBAMBA_EXE='sambamba'):
+    """ Run HISAT2_TLA. Depreated """
     success = True
     if files_exist(bam) and not force:
         logging.warn("BAM file " + bam + " already exists! use -f to recreate.")
@@ -145,7 +238,7 @@ def runHISAT2_TLA(bam, ref, fq, idx1, idx2, known_splicesites=None, force=True, 
     sam = bam+".sam"
     cmd=[ HISAT2_EXE,
          "--TLA",
-         "--base-change", "TC",
+         "--base-change", "%s%s"%(base_ref, base_alt),
          "--reference", ref,
          "--index1", idx1,
          "--index2", idx2,
@@ -284,7 +377,7 @@ def transcript2genome_bam(transcript_bam_file, mod, out_bam):
                     while diff>0:
                         if op==8 and l>1:
                             #FIXME seq err stretc1Ghes that are spliced are partially ignored
-                            print('ignoring seq diff X for ' + r.query_name+', '+r.cigarstring) # we need to insert a splice cigartuple
+                            print('ignoring seq diff stretch for ' + r.query_name+', '+r.cigarstring) # TODO we need to insert a splice cigartuple
                         matchlen=l-diff
                         genome_cigatuples+=[(op, matchlen)]
                         gpos+=matchlen
@@ -297,7 +390,7 @@ def transcript2genome_bam(transcript_bam_file, mod, out_bam):
                         # N-block
                         nblock=next(ablocks, None)
                         if nblock is None:
-                            print("ERR: no more ablocks in iso " + str(iso) + ", read " + r.query_name+', '+r.cigarstring)
+                            print("ERR: no more ablocks in iso " + str(iso) + ", read " + r.query_name+', '+r.cigarstring) # should not happen :-/
                             print(iso.aln_blocks)
                             break
                         else:
@@ -618,8 +711,43 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                             force=overwrite )  
                         postfilter_bam(f_bam_conv, final_bam_conv) 
                     else:
-                        logging.warn("Will not re-create existing file %s" % (f_bam_conv))            
-                elif mapper == "HISAT2_TLA":
+                        logging.warn("Will not re-create existing file %s" % (f_bam_conv))       
+                elif mapper == "HISAT-3N":
+                    HISAT_3N_EXE=config['mappers'][mapper]['hisat-3n_cmd'] if 'hisat-3n_cmd' in config['mappers'][mapper] else 'hisat-3n'
+                    hisat_3n_idx=config['mappers'][mapper]['hisat-3n_idx']
+                    hisat_3n_kss=config['mappers'][mapper]['hisat-3n_kss'] if 'hisat-3n_kss' in config['mappers'][mapper] else None
+                    if write_uncoverted:
+                        if overwrite or not files_exist(f_bam):
+                            runHISAT_3N(f_bam, 
+                                    config["genome_fa"], 
+                                    fq=f_fq,
+                                    idx=hisat_3n_idx,
+                                    base_ref=cond.ref,
+                                    base_alt=cond.alt,
+                                    known_splicesites=hisat_3n_kss,
+                                    threads=threads, 
+                                    HISAT_3N_EXE=HISAT_3N_EXE,
+                                    SAMBAMBA_EXE=sambamba_cmd,
+                                    force=overwrite )
+                            postfilter_bam(f_bam, final_bam)
+                        else:
+                            logging.warn("Will not re-create existing file %s" % (f_bam))
+                    if overwrite or not files_exist(f_bam_conv):
+                        runHISAT_3N(f_bam_conv, 
+                            config["genome_fa"], 
+                            fq=f_fq_conv,
+                            idx=hisat_3n_idx,
+                            base_ref=cond.ref,
+                            base_alt=cond.alt,
+                            known_splicesites=hisat_3n_kss,
+                            threads=threads, 
+                            HISAT_3N_EXE=HISAT_3N_EXE,
+                            SAMBAMBA_EXE=sambamba_cmd,
+                            force=overwrite )
+                        postfilter_bam(f_bam_conv, final_bam_conv) 
+                    else:
+                        logging.warn("Will not re-create existing file %s" % (f_bam_conv))                
+                elif mapper == "HISAT2_TLA": #@DeprecationWarning
                     HISAT2_EXE=config['mappers'][mapper]['hisat2_cmd'] if 'hisat2_cmd' in config['mappers'][mapper] else 'hisat2'
                     hisat2_idx1=config['mappers'][mapper]['hisat2_idx1']
                     hisat2_idx2=config['mappers'][mapper]['hisat2_idx2']
@@ -631,6 +759,8 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                                     fq=f_fq,
                                     idx1=hisat2_idx1,
                                     idx2=hisat2_idx2,
+                                    base_ref=cond.ref,
+                                    base_alt=cond.alt,
                                     known_splicesites=hisat2_kss,
                                     threads=threads, 
                                     HISAT2_EXE=HISAT2_EXE,
@@ -653,11 +783,39 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                         postfilter_bam(f_bam_conv, final_bam_conv) 
                     else:
                         logging.warn("Will not re-create existing file %s" % (f_bam_conv))
-                elif mapper == "meRanGs":
-                    # todo
-                    #runMeRanGs(...) 
-                    # meRanGs align -o . -f BSseq.fastq.gz -t 12 -S RNA-BSseq.sam -un -ud ./meRanGsUnaligned -MM -star_outFilterMultimapNmax 20 -id ../index/BSgenomeIDX -bg -mbgc 10  -mbp
-                    pass 
+                elif mapper == "MERANGS":
+                    # run meRanGs mapper 
+                    MERANGS_EXE=config['mappers'][mapper]['merangs_cmd'] if 'merangs_cmd' in config['mappers'][mapper] else 'meRanGs'
+                    STAR_EXE=config['mappers'][mapper]['star_cmd'] if 'star_cmd' in config['mappers'][mapper] else 'STAR'
+                    merangs_splice_gtf=config['mappers'][mapper]['merangs_splice_gtf'] if 'merang_splice_gtf' in config['mappers'][mapper] else None
+                    merangs_genome_idx=config['mappers'][mapper]['merangs_genome_idx']
+                    if write_uncoverted:
+                        if overwrite or not files_exist(f_bam):
+                            runMERANGS(f_bam, 
+                                    merangs_genome_idx, 
+                                    reads1=[f_fq], 
+                                    gtf=merangs_splice_gtf,
+                                    threads=threads, 
+                                    MERANGS_EXE=MERANGS_EXE,
+                                    STAR_EXE=STAR_EXE,
+                                    SAMBAMBA_EXE=sambamba_cmd,
+                                    force=overwrite )
+                            postfilter_bam(f_bam, final_bam)
+                        else:
+                            logging.warn("Will not re-create existing file %s" % (f_bam))
+                    if overwrite or not files_exist(f_bam_conv):
+                        runMERANGS(f_bam_conv, 
+                                    merangs_genome_idx, 
+                                    reads1=[f_fq_conv], 
+                                    gtf=merangs_splice_gtf,
+                                    threads=threads, 
+                                    MERANGS_EXE=MERANGS_EXE,
+                                    STAR_EXE=STAR_EXE,
+                                    SAMBAMBA_EXE=sambamba_cmd,
+                                    force=overwrite )
+                        postfilter_bam(f_bam_conv, final_bam_conv) 
+                    else:
+                        logging.warn("Will not re-create existing file %s" % (f_bam_conv))      
                 else:
                     logging.warn("Unknown mapper %s configured" % (mapper))
                     

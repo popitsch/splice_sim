@@ -180,14 +180,15 @@ def runMERANGS(bam, fq, idx, known_splicesites=None, force=True, run_flagstat=Fa
     fq_name=Path(fq).stem
     if fq_name.endswith('fq'):
         fq_name=Path(fq_name).stem
-    udir=str(Path(bam).parent.absolute())+"/meRanGs_unaligned_reads" # dir for storing unaligned reads 
+    bdir=str(Path(bam).parent.absolute())+"/"
+    udir=bdir+"meRanGs_unaligned_reads" # dir for storing unaligned reads 
     
     # get base name for sam
     sam_name=Path(bam).stem
     
     todel=[]
     cmd=[ MERANGS_EXE, "align",
-         "-o", str(Path(bam).parent.absolute())+"/",
+         "-o", bdir,
          "-f", fq,
          "-t", str(threads),
          "-S", sam_name+'.sam',
@@ -201,7 +202,7 @@ def runMERANGS(bam, fq, idx, known_splicesites=None, force=True, run_flagstat=Fa
     if known_splicesites is not None:
         cmd+=[ "-star_sjdbGTFfile", known_splicesites ]
     logging.info(cmd)
-    success = success and pipelineStep([fq], sam_name+'_sorted.bam', cmd, shell=True)
+    success = success and pipelineStep([fq], bdir+sam_name+'_sorted.bam', cmd, shell=True)
         
     # converted unaligned FASTQ to BAM
     ureadsfq=udir+'/'+fq_name+'_unmapped.fq.gz'
@@ -210,9 +211,9 @@ def runMERANGS(bam, fq, idx, known_splicesites=None, force=True, run_flagstat=Fa
     success = success and pipelineStep([ureadsfq], udir+'/'+fq_name+'_unmapped.bam', cmd, shell=True, stdout=udir+'/'+fq_name+'_unmapped.bam')
     
     # merge aligend and unaligned bams
-    cmd=[ 'samtools', 'merge', bam, sam_name+'_sorted.bam', udir+'/'+fq_name+'_unmapped.bam']
+    cmd=[ 'samtools', 'merge', bam, bdir+sam_name+'_sorted.bam', udir+'/'+fq_name+'_unmapped.bam']
     logging.info(cmd)
-    success = success and pipelineStep([sam_name+'_sorted.bam', udir+'/'+fq_name+'_unmapped.bam'], bam, cmd, shell=True)
+    success = success and pipelineStep([bdir+sam_name+'_sorted.bam', udir+'/'+fq_name+'_unmapped.bam'], bam, cmd, shell=True)
     if run_flagstat:            
         flagstat( bam )        
     return success

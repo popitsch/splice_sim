@@ -793,8 +793,8 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                     if write_uncoverted:
                         if overwrite or not files_exist(f_bam):
                             runMERANGS(f_bam, 
-                                    merangs_genome_idx, 
                                     f_fq, 
+                                    merangs_genome_idx, 
                                     known_splicesites=merangs_splice_gtf,
                                     threads=threads, 
                                     MERANGS_EXE=MERANGS_EXE,
@@ -805,8 +805,8 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                             logging.warn("Will not re-create existing file %s" % (f_bam))
                     if overwrite or not files_exist(f_bam_conv):
                         runMERANGS(f_bam_conv, 
-                                    merangs_genome_idx, 
                                     f_fq_conv, 
+                                    merangs_genome_idx, 
                                     known_splicesites=merangs_splice_gtf,
                                     threads=threads, 
                                     MERANGS_EXE=MERANGS_EXE,

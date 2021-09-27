@@ -187,6 +187,7 @@ def runMERANGS(bam, fq, idx, known_splicesites=None, force=True, run_flagstat=Fa
     
     todel=[]
     cmd=[ MERANGS_EXE, "align",
+         "-o", str(Path(bam).parent.absolute())+"/",
          "-f", fq,
          "-t", str(threads),
          "-S", sam_name+'.sam',

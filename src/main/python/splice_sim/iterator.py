@@ -733,3 +733,15 @@ class SimulatedReadIterator:
         simulatedRead = SimulatedRead(name, chromosome, start + 1, end, spliced, spliceSites, read)
 
         return simulatedRead
+    
+    
+    
+def get_chrom_dicts_from_bam(bam_file):
+    """ returns dicts to translate chrom/chrom_idx and chrom lengths """
+    samfile = pysam.AlignmentFile(bam_file, "rb")  # @UndefinedVariable
+    chromosomes = samfile.header.references
+    dict_chr2idx = {k: v for v, k in enumerate(chromosomes)}
+    dict_idx2chr = {v: k for v, k in enumerate(chromosomes)}
+    dict_chr2len = {c: samfile.header.get_reference_length(c) for c in chromosomes}
+    samfile.close()
+    return dict_chr2idx, dict_idx2chr, dict_chr2len

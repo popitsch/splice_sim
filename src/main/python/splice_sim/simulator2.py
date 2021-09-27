@@ -200,13 +200,13 @@ def runMERANGS(bam, fq, idx, known_splicesites=None, force=True, run_flagstat=Fa
     if known_splicesites is not None:
         cmd+=[ "-star_sjdbGTFfile", known_splicesites ]
     logging.info(cmd)
-    success = success and pipelineStep([fq], sam, cmd, shell=True)
+    success = success and pipelineStep([fq], sam_name+'_sorted.bam', cmd, shell=True)
         
     # converted unaligned FASTQ to BAM
     ureadsfq=udir+'/'+fq_name+'_unmapped.fq.gz'
     cmd=[ FASTQTOBAM_EXE, "gz=1", ureadsfq]
     logging.info(cmd)
-    success = success and pipelineStep([ureadsfq], sam_name+'_sorted.bam', cmd, shell=True, stdout=udir+'/'+fq_name+'_unmapped.bam')
+    success = success and pipelineStep([ureadsfq], udir+'/'+fq_name+'_unmapped.bam', cmd, shell=True, stdout=udir+'/'+fq_name+'_unmapped.bam')
     
     # merge aligend and unaligned bams
     cmd=[ 'samtools', 'merge', bam, sam_name+'_sorted.bam', udir+'/'+fq_name+'_unmapped.bam']

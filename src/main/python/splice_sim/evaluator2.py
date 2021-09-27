@@ -82,10 +82,7 @@ def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_read
     """ evaluate the passed BAM file """
     logging.info("Evaluating %s" % bam_file)
     performance = Counter()
-    chromosomes = m.genome.references
-    dict_chr2idx = {k: v for v, k in enumerate(chromosomes)}
-    dict_idx2chr = {v: k for v, k in enumerate(chromosomes)}
-    dict_chr2len = {c: m.genome.get_reference_length(c) for c in m.genome.references}
+    dict_chr2idx, dict_idx2chr, dict_chr2len=get_chrom_dicts_from_bam(bam_file)
     n_reads=0
     samin = pysam.AlignmentFile(bam_file, "rb") 
     samout = pysam.AlignmentFile(bam_out+'.tmp.bam', "wb", template=samin ) if bam_out is not None else None
@@ -1101,12 +1098,12 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
                                         mappability_conv_out = bam_out_dir_conv + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.SJ_mappability.bedGraph"
 
                                         evaluate_bam(bam_ori, bam_ori_out, False, m, mapper, cond.id, out, out2)
-                                        evaluate_splice_sites(bam_ori, bam_ori_out_intron, False, m, mapper, cond.id, out3)
+#                                         evaluate_splice_sites(bam_ori, bam_ori_out_intron, False, m, mapper, cond.id, out3)
 #                                         evaluate_coverage_uniformity(bam_ori, bam_ori_truth, False, m, mapper, cond.id, out4, out5, out6)
 #                                         calculate_splice_site_mappability(bam_ori, bam_ori_truth, False, m, mapper, cond.id, out7, mappability_ori_out, config["genome_fa"], config["readlen"])
 
                                         evaluate_bam(bam_conv, bam_conv_out, True, m, mapper, cond.id, out, out2)
-                                        evaluate_splice_sites(bam_conv, bam_conv_out_intron, True, m, mapper, cond.id, out3)
+#                                         evaluate_splice_sites(bam_conv, bam_conv_out_intron, True, m, mapper, cond.id, out3)
 #                                         evaluate_coverage_uniformity(bam_conv, bam_conv_truth, True, m, mapper, cond.id, out4, out5, out6)
 #                                         calculate_splice_site_mappability(bam_conv, bam_conv_truth, True, m, mapper, cond.id, out7, mappability_conv_out, config["genome_fa"], config["readlen"])
 

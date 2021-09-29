@@ -401,12 +401,13 @@ def get_spliced_fraction(bam, tid, iv, chromosome, start, end, donor = True) :
     return splicedTP, unsplicedTP, splicedFP, unsplicedFP
 
 
-def calculate_splice_site_mappability(bam_file, truth_file, is_converted, m, mapper, condition, out_mappability, out_bedGraph, fasta, readLength):
+def calculate_splice_site_mappability(config, bam_file, truth_file, is_converted, m, mapper, condition, out_mappability, out_bedGraph, fasta, readLength):
     """ evaluate the passed BAM file """
     logging.info("Calculating mappability for %s" % bam_file)
 
+    genomeMappabilityFile = config['genome_mappability']
     #genomeMappabilityFile = '/Volumes/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/ref/mappability/mm10.k24.umap.bedgraph.gz'
-    genomeMappabilityFile = '/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/ref/mappability/mm10.k24.umap.bedgraph.gz'
+    #genomeMappabilityFile = '/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/ref/mappability/mm10.k24.umap.bedgraph.gz'
 
     chromosomes = m.genome.references
     dict_chr2idx = {k: v for v, k in enumerate(chromosomes)}
@@ -623,8 +624,9 @@ def calculate_splice_site_mappability(bam_file, truth_file, is_converted, m, map
     f.close()
 
     unmerged = pybedtools.BedTool(tmpBed).sort()
+    merged = unmerged.genome_coverage(bg=True,g=config['genome_chromosome_sizes']).map(unmerged, o="max")
     #merged = unmerged.genome_coverage(bg=True, g='/Volumes/groups/ameres/Niko/ref/genomes/mm10/Mus_musculus.GRCm38.dna.primary_assembly.fa.chrom.sizes').map(unmerged, o = "max")
-    merged = unmerged.genome_coverage(bg=True, g='/groups/ameres/Niko/ref/genomes/mm10/Mus_musculus.GRCm38.dna.primary_assembly.fa.chrom.sizes').map(unmerged, o="max")
+    #merged = unmerged.genome_coverage(bg=True, g='/groups/ameres/Niko/ref/genomes/mm10/Mus_musculus.GRCm38.dna.primary_assembly.fa.chrom.sizes').map(unmerged, o="max")
 
     f = open(out_bedGraph, "w")
 
@@ -634,7 +636,7 @@ def calculate_splice_site_mappability(bam_file, truth_file, is_converted, m, map
 
     f.close()
 
-    #os.remove(tmpBed)
+    os.remove(tmpBed)
 
 
 def uniformityStats(observed, truth):
@@ -691,6 +693,7 @@ def uniformityStats(observed, truth):
 def evaluate_coverage_uniformity(bam_file, truth_file, is_converted, m, mapper, condition, out_performance, out_performance10bp, out_performance100bp):
     """ evaluate the passed BAM file """
     logging.info("Evaluating coverage uniformity in %s" % bam_file)
+    np.seterr(divide='ignore', invalid='ignore')
 
     chromosomes = m.genome.references
     dict_chr2idx = {k: v for v, k in enumerate(chromosomes)}
@@ -1098,32 +1101,32 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
                                         mappability_conv_out = bam_out_dir_conv + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.SJ_mappability.bedGraph"
 
                                         evaluate_bam(bam_ori, bam_ori_out, False, m, mapper, cond.id, out, out2)
-#                                         evaluate_splice_sites(bam_ori, bam_ori_out_intron, False, m, mapper, cond.id, out3)
-#                                         evaluate_coverage_uniformity(bam_ori, bam_ori_truth, False, m, mapper, cond.id, out4, out5, out6)
-#                                         calculate_splice_site_mappability(bam_ori, bam_ori_truth, False, m, mapper, cond.id, out7, mappability_ori_out, config["genome_fa"], config["readlen"])
+                                        evaluate_splice_sites(bam_ori, bam_ori_out_intron, False, m, mapper, cond.id, out3)
+                                        evaluate_coverage_uniformity(bam_ori, bam_ori_truth, False, m, mapper, cond.id, out4, out5, out6)
+                                        calculate_splice_site_mappability(config, bam_ori, bam_ori_truth, False, m, mapper, cond.id, out7, mappability_ori_out, config["genome_fa"], config["readlen"])
 
                                         evaluate_bam(bam_conv, bam_conv_out, True, m, mapper, cond.id, out, out2)
-#                                         evaluate_splice_sites(bam_conv, bam_conv_out_intron, True, m, mapper, cond.id, out3)
-#                                         evaluate_coverage_uniformity(bam_conv, bam_conv_truth, True, m, mapper, cond.id, out4, out5, out6)
-#                                         calculate_splice_site_mappability(bam_conv, bam_conv_truth, True, m, mapper, cond.id, out7, mappability_conv_out, config["genome_fa"], config["readlen"])
+                                        evaluate_splice_sites(bam_conv, bam_conv_out_intron, True, m, mapper, cond.id, out3)
+                                        evaluate_coverage_uniformity(bam_conv, bam_conv_truth, True, m, mapper, cond.id, out4, out5, out6)
+                                        calculate_splice_site_mappability(config, bam_conv, bam_conv_truth, True, m, mapper, cond.id, out7, mappability_conv_out, config["genome_fa"], config["readlen"])
 
-#                                     # eval truth
-#                                     bam_out_dir_ori = outdir + "bam_ori/TRUTH/"
-#                                     if not os.path.exists(bam_out_dir_ori):
-#                                         print("Creating dir " + bam_out_dir_ori)
-#                                         os.makedirs(bam_out_dir_ori)
-#                                     bam_out_dir_conv = outdir + "bam_conv/TRUTH/"
-#                                     if not os.path.exists(bam_out_dir_conv):
-#                                         print("Creating dir " + bam_out_dir_conv)
-#                                         os.makedirs(bam_out_dir_conv)
-# 
-#                                     bam_ori_truth_intron = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + ".TRUTH.intron.bam"
-#                                     bam_conv_truth_intron = bam_out_dir_conv + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.intron.bam"
-# 
-#                                     evaluate_bam(bam_ori_truth, None, False, m, 'NA', cond.id, out, out2)
-#                                     evaluate_splice_sites(bam_ori_truth, bam_ori_truth_intron, False, m, 'NA', cond.id, out3)
-#                                     evaluate_bam(bam_conv_truth, None, True, m, 'NA', cond.id, out, out2)
-#                                     evaluate_splice_sites(bam_conv_truth, bam_conv_truth_intron, True, m, 'NA', cond.id, out3)
+                                    # eval truth
+                                    bam_out_dir_ori = outdir + "bam_ori/TRUTH/"
+                                    if not os.path.exists(bam_out_dir_ori):
+                                        print("Creating dir " + bam_out_dir_ori)
+                                        os.makedirs(bam_out_dir_ori)
+                                    bam_out_dir_conv = outdir + "bam_conv/TRUTH/"
+                                    if not os.path.exists(bam_out_dir_conv):
+                                        print("Creating dir " + bam_out_dir_conv)
+                                        os.makedirs(bam_out_dir_conv)
+
+                                    bam_ori_truth_intron = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + ".TRUTH.intron.bam"
+                                    bam_conv_truth_intron = bam_out_dir_conv + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.intron.bam"
+
+                                    evaluate_bam(bam_ori_truth, None, False, m, 'NA', cond.id, out, out2)
+                                    evaluate_splice_sites(bam_ori_truth, bam_ori_truth_intron, False, m, 'NA', cond.id, out3)
+                                    evaluate_bam(bam_conv_truth, None, True, m, 'NA', cond.id, out, out2)
+                                    evaluate_splice_sites(bam_conv_truth, bam_conv_truth_intron, True, m, 'NA', cond.id, out3)
 
     bgzip(fout, delinFile=True, override=True)
     logging.info("All done in %s" % str(datetime.timedelta(seconds=time.time() - startTime)))

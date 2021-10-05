@@ -113,6 +113,16 @@ def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_read
 #                     print(df)
 
                 performance = classify_read(read, overlapping_tids, is_converted, mapper, condition, dict_chr2idx, performance, out_reads, samout)
+             
+    # add unmapped reads
+    for read in samin.fetch(contig=None, until_eof=True):
+        if not read.is_unmapped:
+            continue
+        n_reads+=1
+        performance = classify_read(read, [], is_converted, mapper, condition, dict_chr2idx, performance, out_reads, samout)
+    print("%s reads:  %i %i %i" % (bam_file, n_reads, samin.mapped, samin.unmapped))
+
+    # write tid performance table
     tids= set([x for x, y, z in performance.keys()])
     isos= set([y for x, y, z in performance.keys()])
     for tid in tids:
@@ -126,14 +136,7 @@ def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_read
                  performance[tid, iso, 'TP'], 
                  performance[tid, iso, 'FP'], 
                  performance[tid, iso, 'FN'] ]]), file=out_performance) 
-             
-    # add unmapped reads
-    for read in samin.fetch(contig=None, until_eof=True):
-        if not read.is_unmapped:
-            continue
-        n_reads+=1
-        performance = classify_read(read, [], is_converted, mapper, condition, dict_chr2idx, performance, out_reads, samout)
-    print("%s reads:  %i %i %i" % (bam_file, n_reads, samin.mapped, samin.unmapped))
+
     samin.close()
     if samout is not None:
         samout.close()
@@ -143,6 +146,7 @@ def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_read
                         override=True, 
                         delinFile=True)
 
+    
 
 def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition, out_performance):
     """ evaluate the passed BAM file """
@@ -1060,7 +1064,6 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
                     with open(fout5, 'w') as out5:
                         with open(fout6, 'w') as out6:
                             with open(fout7, 'w') as out7:
-
                                 print("mapped_coords\ttrue_coords\tclassification\ttid\tis_converted\tmapper\tcondition\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\toverlapping_tids\tread_name", file=out)
                                 print("is_converted\tmapper\tcondition\tiso\ttid\tTP\tFP\tFN", file=out2)
                                 print("is_converted\tmapper\tcondition\ttid\tintron_id\tdonor_rc_splicing\tdonor_rc_splicing_wrong\tdonor_rc_overlapping\tacceptor_rc_splicing\tacceptor_rc_splicing_wrong\tacceptor_rc_overlapping", file=out3)
@@ -1092,20 +1095,23 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
                                             os.makedirs(bam_out_dir_conv)
                                         bam_ori_out = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".mismapped.bam"
                                         bam_ori_out_intron = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".intron.bam"
-                                        mappability_ori_out = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".SJ_mappability.bedGraph"
-                                        bam_conv_out =  bam_out_dir_conv + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.mismapped.bam"
-                                        bam_conv_out_intron = bam_out_dir_conv + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.intron.bam"
-                                        mappability_conv_out = bam_out_dir_conv + config['dataset_name'] + "." + cond.id + "." + mapper + ".TC.SJ_mappability.bedGraph"
+                                        mappability_tid_ori_out = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".tid_mappability.bedGraph"
+                                        mappability_SJ_ori_out = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".SJ_mappability.bedGraph"
+                                        bam_conv_out =  bam_out_dir_conv + config['dataset_name'] + "." + cond.id + "." + mapper + ".conv.mismapped.bam"
+                                        bam_conv_out_intron = bam_out_dir_conv + config['dataset_name'] + "." + cond.id + "." + mapper + ".conv.intron.bam"
+                                        mappability_tid_conv_out = bam_out_dir_conv + config['dataset_name'] + "." + cond.id + "." + mapper + ".conv.tid_mappability.bedGraph"
+                                        mappability_SJ_conv_out = bam_out_dir_conv + config['dataset_name'] + "." + cond.id + "." + mapper + ".conv.SJ_mappability.bedGraph"
 
-                                        evaluate_bam(bam_ori, bam_ori_out, False, m, mapper, cond.id, out, out2)
+                                        evaluate_bam(bam_ori, bam_ori_out, False, m, mapper, cond.id)
+                                        
 #                                         evaluate_splice_sites(bam_ori, bam_ori_out_intron, False, m, mapper, cond.id, out3)
 #                                         evaluate_coverage_uniformity(bam_ori, bam_ori_truth, False, m, mapper, cond.id, out4, out5, out6)
-#                                         calculate_splice_site_mappability(bam_ori, bam_ori_truth, False, m, mapper, cond.id, out7, mappability_ori_out, config["genome_fa"], config["readlen"])
+#                                         calculate_splice_site_mappability(bam_ori, bam_ori_truth, False, m, mapper, cond.id, out7, mappability_SJ_ori_out, config["genome_fa"], config["readlen"])
 
                                         evaluate_bam(bam_conv, bam_conv_out, True, m, mapper, cond.id, out, out2)
 #                                         evaluate_splice_sites(bam_conv, bam_conv_out_intron, True, m, mapper, cond.id, out3)
 #                                         evaluate_coverage_uniformity(bam_conv, bam_conv_truth, True, m, mapper, cond.id, out4, out5, out6)
-#                                         calculate_splice_site_mappability(bam_conv, bam_conv_truth, True, m, mapper, cond.id, out7, mappability_conv_out, config["genome_fa"], config["readlen"])
+#                                         calculate_splice_site_mappability(bam_conv, bam_conv_truth, True, m, mapper, cond.id, out7, mappability_SJ_conv_out, config["genome_fa"], config["readlen"])
 
 #                                     # eval truth
 #                                     bam_out_dir_ori = outdir + "bam_ori/TRUTH/"

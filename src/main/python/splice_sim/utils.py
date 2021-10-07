@@ -357,6 +357,8 @@ def add_md_tag(in_bam, genome_fa, threads=1):
     tmpfile=in_bam+'+md.bam'
     success = pipelineStep(in_bam, None, ["samtools", "calmd", "-@",str(threads), "-b", in_bam, genome_fa], shell=True, stdout=tmpfile)
     if success:
+        success = indexBam(in_bam, override=True)
+    if success:
         os.replace(tmpfile, in_bam)
     return success
     

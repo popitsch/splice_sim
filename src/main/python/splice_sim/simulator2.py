@@ -11,7 +11,7 @@ import pysam
 import pyranges as pr
 import pandas as pd
 import numpy as np
-from utils import bgzip, files_exist, pad_n, pipelineStep, reverse_complement, COMP_TABLE, removeFile,sambamba2bam
+from utils import bgzip, files_exist, pad_n, pipelineStep, reverse_complement, COMP_TABLE, removeFile,sambamba2bam, add_md_tag
 import random
 import math
 import gzip
@@ -474,6 +474,9 @@ def add_read_modifications(in_bam, out_bam, ref, alt, conversion_rate, tag_tc="x
             quals=r.query_qualities # save qualities as they will be deleted if query sequence is set
             r.query_sequence, n_convertible, n_modified=modify_bases(ref, alt, r.query_sequence, r.is_reverse, conversion_rate)
             r.set_tag(tag=tag_tc, value=n_modified, value_type="i")
+            nm=r.get_tag('NM') if r.has_tag('NM') else 0
+            r.set_tag(tag='NM', value=nm+1, value_type="i") # update NM tag
+            r.set_tag(tag=tag_tc, value=n_modified, value_type="i")
             if n_modified>=0:
                 # set blue read color intensity relative to number of tc conversions!
                 intensity = min(255, 200.0*(1-n_modified/n_convertible)) if n_convertible>0 else 255
@@ -631,6 +634,10 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
             # convert to FASTQ
             bam_to_fastq(f_bam_conv,  f_fq_conv)
             bgzip(f_fq_conv, threads=threads)
+            
+            # add MD tag to bams
+            add_md_tag(f_bam)
+            add_md_tag(f_bam_conv)
                 
             if success:
                 if not get_config(config, ['simulator','keep_sam'], False):

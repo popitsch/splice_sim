@@ -352,6 +352,14 @@ def runFASTQC(inFile, outFolder, threads=1, additionalParameters="", override=Fa
         
     return success
 
+def add_md_tag(in_bam, genome_fa, threads=1):
+    """ adds a MD tag via samtools calmd """
+    tmpfile=in_bam+'+md.bam'
+    success = pipelineStep(in_bam, None, ["samtools", "calmd", "-@",str(threads), "-b", in_bam, genome_fa], shell=True, stdout=tmpfile)
+    if success:
+        os.replace(tmpfile, in_bam)
+    return success
+    
 def indexBam(inFileBam, override=False):
     success = True
     idxFile = inFileBam + ".bai"

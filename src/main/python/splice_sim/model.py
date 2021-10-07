@@ -318,7 +318,7 @@ class Model():
 #         if not files_exist(tfile):
 #             logging.info("Creating external transcript config file %s" % tfile)
 #             calculate_transcript_data(config, config_dir, outdir)
-#              
+#               
 #         logging.info("Reading transcript configuration from external config file %s" % tfile)
 #         tdata = json.load(open(tfile), object_pairs_hook=OrderedDict)
 #         config["transcripts"]=tdata

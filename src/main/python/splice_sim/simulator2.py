@@ -317,6 +317,7 @@ def transcript2genome_bam(transcript_bam_file, mod, out_bam):
                 stats['wrong_strand_reads']+=1
             else: # NOTE: reads that were mapped to opposite strand will be dropped later in post_filtering step!
                 iso = mod.transcripts[tid].isoforms[iso_id]
+                is_converted = 1 if random.uniform(0, 1) < mod.transcripts[tid].unmodified_rna_fraction else 0 # is this read chosen from the zero-distribution or the binomial? 
                 ablocks=iter(iso.aln_blocks)
                 genome_cigatuples=[]
                 seq=""
@@ -428,7 +429,8 @@ def transcript2genome_bam(transcript_bam_file, mod, out_bam):
                                                     read.reference_start,
                                                     read.cigarstring, # cigarstring for calculating aligned blocks
                                                     len(mismatches)+n_insertions+n_deletions, # number of seq errors
-                                                    0 # number of conversions
+                                                    0, # number of conversions
+                                                    is_converted # is converted flag
                                                     ]])
                 # skip reads with too-long read names. Samtools maximum length of read name is 254.
                 if len(read.query_name)>254:
@@ -447,8 +449,8 @@ def transcript2genome_bam(transcript_bam_file, mod, out_bam):
     return(stats)
     
     
-def modify_bases(ref, alt, seq, is_reverse, conversion_rate, unmodified_rna_fraction):
-    """ introduces nucleotide conversions using a ZIB model.
+def modify_bases(ref, alt, seq, is_reverse, conversion_rate ):
+    """ introduces nucleotide conversions.
         returns the new sequence and the converted positions (always! 5'-3' as shown in genome browser)
         positions are 0-based """
     if is_reverse:
@@ -457,17 +459,16 @@ def modify_bases(ref, alt, seq, is_reverse, conversion_rate, unmodified_rna_frac
     convseq=""
     n_modified=0
     n_convertible=0
-    is_unmodified=random.uniform(0, 1) < unmodified_rna_fraction
     for i,c in enumerate(seq):
         if c == ref:
             n_convertible+=1
-            if not is_unmodified and random.uniform(0, 1) < conversion_rate:
+            if random.uniform(0, 1) < conversion_rate:
                 c=alt.lower()
                 n_modified+=1
         convseq+=c
-    return convseq, n_convertible, n_modified, is_unmodified
+    return convseq, n_convertible, n_modified
 
-def add_read_modifications(in_bam, out_bam, ref, alt, conversion_rate, unmodified_rna_fraction, tag_tc="xc", tag_mod="xm"):
+def add_read_modifications(in_bam, out_bam, ref, alt, conversion_rate, tag_tc="xc", tag_mod="xm"):
     """ modify single nucleotides in reads. This is done by a mixed zero-inflated model: one zero-generating model and one binomial model with probability derived from the given conversion rate.
         The unmodified_rna_fraction probability used used to choose which distribution a read is chosen from. 
     """
@@ -475,13 +476,17 @@ def add_read_modifications(in_bam, out_bam, ref, alt, conversion_rate, unmodifie
     with pysam.AlignmentFile(out_bam+'.tmp.bam', "wb", header=sam.header) as bam_out:
         for r in sam.fetch(until_eof=True):
             quals=r.query_qualities # save qualities as they will be deleted if query sequence is set
-            r.query_sequence, n_convertible, n_modified, is_unmodified=modify_bases(ref, alt, r.query_sequence, r.is_reverse, conversion_rate, unmodified_rna_fraction)
+            true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted  = r.query_name.split('_')
+            if int(is_converted)==1: # read chosen from binomial; modify its bases
+                r.query_sequence, n_convertible, n_modified=modify_bases(ref, alt, r.query_sequence, r.is_reverse, conversion_rate, unmodified_rna_fraction)
+            else:
+                n_convertible=r.query_sequence.count(ref)
+                n_modified=0
             r.set_tag(tag=tag_tc, value=n_modified, value_type="i")
             nm=r.get_tag('NM') if r.has_tag('NM') else 0
             r.set_tag(tag='NM', value=nm+1, value_type="i") # update NM tag
             r.set_tag(tag=tag_tc, value=n_modified, value_type="i")
-            r.set_mod(tag=tag_mod, value=0 if is_unmodified else 1, value_type="i")
-            is_unmodified
+            r.set_mod(tag=tag_mod, value=1 if is_converted else 0, value_type="i")
             if n_modified>=0:
                 # set blue read color intensity relative to number of tc conversions!
                 intensity = min(255, 200.0*(1-n_modified/n_convertible)) if n_convertible>0 else 255
@@ -489,9 +494,8 @@ def add_read_modifications(in_bam, out_bam, ref, alt, conversion_rate, unmodifie
                     r.set_tag(tag='YC', value='%i,%i,255' % (intensity,intensity) )
                 else:
                     r.set_tag(tag='YC', value='255,%i,%i' % (intensity,intensity) )
-            true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted = r.query_name.split('_')
             n_converted=n_modified
-            r.query_name='_'.join([str(x) for x in [true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted]])
+            r.query_name='_'.join([str(x) for x in [true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted]])
             r.query_qualities=quals
             bam_out.write(r)
     try:

@@ -1074,7 +1074,7 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
                     with open(fout5, 'w') as out5:
                         with open(fout6, 'w') as out6:
                             with open(fout7, 'w') as out7:
-                                with open(fout7, 'w') as out8:
+                                with open(fout8, 'w') as out8:
                                     print("mapped_coords\ttrue_coords\tclassification\ttid\tis_converted_bam\tmapper\tcondition_id\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\tis_converted_read\toverlapping_tids\tread_name", file=out)
                                     print("is_converted_bam\tmapper\tcondition_id\tiso\ttid\tTP\tFP\tFN", file=out2)
                                     print("is_converted_bam\tmapper\tcondition\ttid\tintron_id\tdonor_rc_splicing\tdonor_rc_splicing_wrong\tdonor_rc_overlapping\tacceptor_rc_splicing\tacceptor_rc_splicing_wrong\tacceptor_rc_overlapping", file=out3)

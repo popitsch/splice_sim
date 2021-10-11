@@ -20,6 +20,9 @@ import logging
 from model import Model, Condition, Isoform, Transcript
 from iterator import *
 
+def basename(f):
+    return os.path.splitext(os.path.basename(f))[0]
+
 def calc_coverage(true_chr, read_chr, true_pos, read_pos):
     """ Calculate the coverage (number of bases) of a read and its simulation origin """
     if true_chr != read_chr:
@@ -1089,20 +1092,20 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
                                     for cond in m.conditions:
     
                                         bam_ori_truth = simdir + "bam_ori/TRUTH/" + config['dataset_name'] + "." + cond.id + ".simulated.bam"
-                                        print('\t'.join([str(x) for x in [bam_ori_truth, 0, 'NA', cond.id, cond.timepoint, cond.conversion_rate, cond.coverage ]]), file=out8)
+                                        print('\t'.join([str(x) for x in [basename(bam_ori_truth), 0, 'NA', cond.id, cond.timepoint, cond.conversion_rate, cond.coverage ]]), file=out8)
                                         
                                         bam_conv_truth = simdir + "bam_conv/TRUTH/" + config['dataset_name'] + "." + cond.id + ".simulated+conversions.bam"
-                                        print('\t'.join([str(x) for x in [bam_conv_truth, 1, 'NA', cond.id, cond.timepoint, cond.conversion_rate, cond.coverage ]]), file=out8)
+                                        print('\t'.join([str(x) for x in [basename(bam_conv_truth), 1, 'NA', cond.id, cond.timepoint, cond.conversion_rate, cond.coverage ]]), file=out8)
     
                                         for mapper in config['mappers'].keys():
                                             if mapper not in ["STAR", "HISAT-3N", "HISAT2_TLA", "MERANGS"]:
                                                 print("skipping unknown mapper config %s" % mapper)
                                                 continue
                                             bam_ori = simdir + "bam_ori/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".nodup.bam"
-                                            print('\t'.join([str(x) for x in [bam_ori, 0, mapper, cond.id, cond.timepoint, cond.conversion_rate, cond.coverage ]]), file=out8)
+                                            print('\t'.join([str(x) for x in [basename(bam_ori), 0, mapper, cond.id, cond.timepoint, cond.conversion_rate, cond.coverage ]]), file=out8)
                                             
                                             bam_conv = simdir + "bam_conv/" + mapper + "/" + config['dataset_name'] + "." + cond.id + ".conv." + mapper + ".nodup.bam"
-                                            print('\t'.join([str(x) for x in [bam_conv, 1, mapper, cond.id, cond.timepoint, cond.conversion_rate, cond.coverage ]]), file=out8)
+                                            print('\t'.join([str(x) for x in [basename(bam_conv), 1, mapper, cond.id, cond.timepoint, cond.conversion_rate, cond.coverage ]]), file=out8)
                                             
                                             bam_out_dir_ori = outdir + "bam_ori/" + mapper + "/"
                                             if not os.path.exists(bam_out_dir_ori):

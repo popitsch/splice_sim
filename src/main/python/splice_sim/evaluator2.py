@@ -52,7 +52,9 @@ def classify_read(read, overlapping_tids, is_converted_bam, mapper, condition, d
     else:
         performance[true_tid, true_isoform, 'FN'] += 1
         print('\t'.join([str(x) for x in (read_coord, true_coord, 'FN', 'NA', 
-                                          1 if is_converted_bam else 0, mapper, condition, overlap, true_tid, 
+                                          1 if is_converted_bam else 0, mapper, 
+                                          condition.id, condition.timepoint,condition.conversion_rate, condition.conversion_rate, 
+                                          overlap, true_tid, 
                                           true_strand, true_isoform, read_tag, true_chr,n_seqerr, n_converted,
                                           is_converted_read, 
                                           ','.join(overlapping_tids) if len(overlapping_tids) > 0 else 'NA', 
@@ -60,7 +62,9 @@ def classify_read(read, overlapping_tids, is_converted_bam, mapper, condition, d
         for tid in overlapping_tids:
             performance[tid, true_isoform, 'FP'] += 1/len(overlapping_tids)
             print('\t'.join([str(x) for x in (read_coord, true_coord, 'FP', tid, 
-                                              1 if is_converted_bam else 0, mapper, condition, overlap, true_tid, 
+                                              1 if is_converted_bam else 0, mapper, 
+                                              condition.id, condition.timepoint,condition.conversion_rate, condition.conversion_rate
+                                              , overlap, true_tid, 
                                               true_strand, true_isoform, read_tag, true_chr,n_seqerr, n_converted, 
                                               is_converted_read,
                                               ','.join(overlapping_tids) if len(overlapping_tids) > 0 else 'NA', 
@@ -132,7 +136,10 @@ def evaluate_bam(bam_file, bam_out, is_converted_bam, m, mapper, condition, out_
              print("\t".join([str(x) for x in [
                  1 if is_converted_bam else 0, 
                  mapper, 
-                 condition, 
+                 condition.id,
+                 condition.timepoint,
+                 condition.conversion_rate,
+                 condition.coverage, 
                  iso, 
                  tid, 
                  performance[tid, iso, 'TP'], 
@@ -1069,8 +1076,8 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
                     with open(fout5, 'w') as out5:
                         with open(fout6, 'w') as out6:
                             with open(fout7, 'w') as out7:
-                                print("mapped_coords\ttrue_coords\tclassification\ttid\tis_converted_bam\tmapper\tcondition\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\tis_converted_read\toverlapping_tids\tread_name", file=out)
-                                print("is_converted_bam\tmapper\tcondition\tiso\ttid\tTP\tFP\tFN", file=out2)
+                                print("mapped_coords\ttrue_coords\tclassification\ttid\tis_converted_bam\tmapper\tcondition_id\tcondition_tp\tcondition_cr\tcondition_cov\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\tis_converted_read\toverlapping_tids\tread_name", file=out)
+                                print("is_converted_bam\tmapper\tcondition_id\tcondition_tp\tcondition_cr\tcondition_cov\tiso\ttid\tTP\tFP\tFN", file=out2)
                                 print("is_converted_bam\tmapper\tcondition\ttid\tintron_id\tdonor_rc_splicing\tdonor_rc_splicing_wrong\tdonor_rc_overlapping\tacceptor_rc_splicing\tacceptor_rc_splicing_wrong\tacceptor_rc_overlapping", file=out3)
                                 print("is_converted_bam\tmapper\tcondition\ttid\tintron_id\tdonor_sj_mappability_TP\tdonor_sj_mappability_FP\tdonor_sj_TP_reads\tdonor_sj_FP_reads\tdonor_exon_mean_mappability\tdonor_exon_T_content\tdonor_intron_mean_mappability\tdonor_intron_T_content\tacceptor_sj_mappability_TP\tacceptor_sj_mappability_FP\tacceptor_TP_reads\tacceptor_FP_reads\tacceptor_exon_mean_mappability\tacceptor_exon_T_content\tacceptor_intron_mean_mappability\tacceptor_intron_T_content",
                                     file=out7)
@@ -1107,12 +1114,12 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
                                         mappability_tid_conv_out = bam_out_dir_conv + config['dataset_name'] + "." + cond.id + "." + mapper + ".conv.tid_mappability.bedGraph"
                                         mappability_SJ_conv_out = bam_out_dir_conv + config['dataset_name'] + "." + cond.id + "." + mapper + ".conv.SJ_mappability.bedGraph"
 
-                                        evaluate_bam(bam_ori, bam_ori_out, False, m, mapper, cond.id, out, out2)
+                                        evaluate_bam(bam_ori, bam_ori_out, False, m, mapper, cond, out, out2)
                                         evaluate_splice_sites(bam_ori, bam_ori_out_intron, False, m, mapper, cond.id, out3)
 #                                         evaluate_coverage_uniformity(bam_ori, bam_ori_truth, False, m, mapper, cond.id, out4, out5, out6)
 #                                         calculate_splice_site_mappability(config, bam_ori, bam_ori_truth, False, m, mapper, cond.id, out7, mappability_ori_out, config["genome_fa"], config["readlen"])
 
-                                        evaluate_bam(bam_conv, bam_conv_out, True, m, mapper, cond.id, out, out2)
+                                        evaluate_bam(bam_conv, bam_conv_out, True, m, mapper, cond, out, out2)
                                         evaluate_splice_sites(bam_conv, bam_conv_out_intron, True, m, mapper, cond.id, out3)
 #                                         evaluate_coverage_uniformity(bam_conv, bam_conv_truth, True, m, mapper, cond.id, out4, out5, out6)
 #                                         calculate_splice_site_mappability(config, bam_conv, bam_conv_truth, True, m, mapper, cond.id, out7, mappability_conv_out, config["genome_fa"], config["readlen"])

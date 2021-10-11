@@ -447,8 +447,8 @@ def transcript2genome_bam(transcript_bam_file, mod, out_bam):
     return(stats)
     
     
-def modify_bases(ref, alt, seq, is_reverse, conversion_rate):
-    """ introduces TC / AG conversions
+def modify_bases(ref, alt, seq, is_reverse, conversion_rate, unmodified_rna_fraction):
+    """ introduces nucleotide conversions using a ZIB model.
         returns the new sequence and the converted positions (always! 5'-3' as shown in genome browser)
         positions are 0-based """
     if is_reverse:
@@ -457,26 +457,31 @@ def modify_bases(ref, alt, seq, is_reverse, conversion_rate):
     convseq=""
     n_modified=0
     n_convertible=0
+    is_unmodified=random.uniform(0, 1) < unmodified_rna_fraction
     for i,c in enumerate(seq):
         if c == ref:
             n_convertible+=1
-            if random.uniform(0, 1) < conversion_rate:
+            if not is_unmodified and random.uniform(0, 1) < conversion_rate:
                 c=alt.lower()
                 n_modified+=1
         convseq+=c
-    return convseq, n_convertible, n_modified
+    return convseq, n_convertible, n_modified, is_unmodified
 
-def add_read_modifications(in_bam, out_bam, ref, alt, conversion_rate, tag_tc="xc"):
-    """ modify single nucleotides in reads """
+def add_read_modifications(in_bam, out_bam, ref, alt, conversion_rate, unmodified_rna_fraction, tag_tc="xc", tag_mod="xm"):
+    """ modify single nucleotides in reads. This is done by a mixed zero-inflated model: one zero-generating model and one binomial model with probability derived from the given conversion rate.
+        The unmodified_rna_fraction probability used used to choose which distribution a read is chosen from. 
+    """
     sam = pysam.AlignmentFile(in_bam, "rb")
     with pysam.AlignmentFile(out_bam+'.tmp.bam', "wb", header=sam.header) as bam_out:
         for r in sam.fetch(until_eof=True):
             quals=r.query_qualities # save qualities as they will be deleted if query sequence is set
-            r.query_sequence, n_convertible, n_modified=modify_bases(ref, alt, r.query_sequence, r.is_reverse, conversion_rate)
+            r.query_sequence, n_convertible, n_modified, is_unmodified=modify_bases(ref, alt, r.query_sequence, r.is_reverse, conversion_rate, unmodified_rna_fraction)
             r.set_tag(tag=tag_tc, value=n_modified, value_type="i")
             nm=r.get_tag('NM') if r.has_tag('NM') else 0
             r.set_tag(tag='NM', value=nm+1, value_type="i") # update NM tag
             r.set_tag(tag=tag_tc, value=n_modified, value_type="i")
+            r.set_mod(tag=tag_mod, value=0 if is_unmodified else 1, value_type="i")
+            is_unmodified
             if n_modified>=0:
                 # set blue read color intensity relative to number of tc conversions!
                 intensity = min(255, 200.0*(1-n_modified/n_convertible)) if n_convertible>0 else 255

@@ -16,6 +16,7 @@ from utils import existing_file
 from collections import OrderedDict
 from simulator2 import simulate_dataset
 from evaluator2 import evaluate_dataset
+from config_creator import calculate_transcript_data
 
 VERSION = "0.1"
 LOGO = """
@@ -45,7 +46,7 @@ usage = '''
 USAGE
 '''
 if __name__ == '__main__':
-    MODULES = ["simulate", "evaluate"]
+    MODULES = ["calculate_transcript_data", "simulate", "evaluate"]
     #============================================================================    
     if len(sys.argv) <= 1 or sys.argv[1] in ['-h', '--help']:
         print("usage: splice_sim.py [-h] " + ",".join(MODULES))
@@ -56,6 +57,12 @@ if __name__ == '__main__':
         sys.exit(1)
         
     parser = {}
+    
+    
+    parser["calculate_transcript_data"] = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
+    parser["calculate_transcript_data"].add_argument("-c", "--config", type=existing_file, required=True, dest="config_file", metavar="config_file", help="JSON config file")
+    parser["calculate_transcript_data"].add_argument("-o", "--outdir", type=str, required=False, dest="outdir", metavar="outdir", help="output directory (default is current dir)")
+    
     parser["simulate"] = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
     parser["simulate"].add_argument("-c", "--config", type=existing_file, required=True, dest="config_file", metavar="config_file", help="JSON config file")
     parser["simulate"].add_argument("-o", "--outdir", type=str, required=False, dest="outdir", metavar="outdir", help="output directory (default is current dir)")
@@ -87,6 +94,8 @@ if __name__ == '__main__':
         random.seed(config["random_seed"])
     logging.info(LOGO)
 
+    if mod == "calculate_transcript_data":
+        calculate_transcript_data(config, cdir, outdir)
     if mod == "simulate":
         simulate_dataset(config, cdir, outdir + 'sim/', args.overwrite)
     if mod == "evaluate":

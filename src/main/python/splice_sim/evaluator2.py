@@ -1089,10 +1089,10 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
                                     for cond in m.conditions:
     
                                         bam_ori_truth = simdir + "bam_ori/TRUTH/" + config['dataset_name'] + "." + cond.id + ".simulated.bam"
-                                        print('\t'.join([str(x) for x in [bam_ori_truth, 0, NA, cond.id, cond.timepoint, cond.conversion_rate, cond.coverage ]]), file=out8)
+                                        print('\t'.join([str(x) for x in [bam_ori_truth, 0, 'NA', cond.id, cond.timepoint, cond.conversion_rate, cond.coverage ]]), file=out8)
                                         
                                         bam_conv_truth = simdir + "bam_conv/TRUTH/" + config['dataset_name'] + "." + cond.id + ".simulated+conversions.bam"
-                                        print('\t'.join([str(x) for x in [bam_conv_truth, 1, NA, cond.id, cond.timepoint, cond.conversion_rate, cond.coverage ]]), file=out8)
+                                        print('\t'.join([str(x) for x in [bam_conv_truth, 1, 'NA', cond.id, cond.timepoint, cond.conversion_rate, cond.coverage ]]), file=out8)
     
                                         for mapper in config['mappers'].keys():
                                             if mapper not in ["STAR", "HISAT-3N", "HISAT2_TLA", "MERANGS"]:

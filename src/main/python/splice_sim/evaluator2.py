@@ -1137,9 +1137,9 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
                                     bam_ori_truth_intron = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + ".TRUTH.intron.bam"
                                     bam_conv_truth_intron = bam_out_dir_conv + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.intron.bam"
 
-                                    evaluate_bam(bam_ori_truth, None, False, m, 'NA', cond.id, out, out2)
+                                    evaluate_bam(bam_ori_truth, None, False, m, 'NA', cond, out, out2)
                                     evaluate_splice_sites(bam_ori_truth, bam_ori_truth_intron, False, m, 'NA', cond.id, out3)
-                                    evaluate_bam(bam_conv_truth, None, True, m, 'NA', cond.id, out, out2)
+                                    evaluate_bam(bam_conv_truth, None, True, m, 'NA', cond, out, out2)
                                     evaluate_splice_sites(bam_conv_truth, bam_conv_truth_intron, True, m, 'NA', cond.id, out3)
 
     bgzip(fout, delinFile=True, override=True)

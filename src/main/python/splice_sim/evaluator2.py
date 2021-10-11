@@ -27,10 +27,10 @@ def calc_coverage(true_chr, read_chr, true_pos, read_pos):
     cov = len(true_pos & read_pos) / len(true_pos)
     return cov
 
-def classify_read(read, overlapping_tids, is_converted, mapper, condition, dict_chr2idx, performance, out_reads, sam_out, overlap_cutoff = 0.8):
+def classify_read(read, overlapping_tids, is_converted_bam, mapper, condition, dict_chr2idx, performance, out_reads, sam_out, overlap_cutoff = 0.8):
     """ Classifies a read """
     read_name = read.query_name
-    true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted = read.query_name.split('_')               
+    true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted_read = read.query_name.split('_')               
     read_chr = 'NA' if read.is_unmapped else read.reference_name
     read_coord = 'NA' if read.is_unmapped else '%s:%i-%i' % (read.reference_name, read.reference_start, read.reference_end)
     
@@ -52,15 +52,17 @@ def classify_read(read, overlapping_tids, is_converted, mapper, condition, dict_
     else:
         performance[true_tid, true_isoform, 'FN'] += 1
         print('\t'.join([str(x) for x in (read_coord, true_coord, 'FN', 'NA', 
-                                          1 if is_converted else 0, mapper, condition, overlap, true_tid, 
-                                          true_strand, true_isoform, read_tag, true_chr,n_seqerr, n_converted, 
+                                          1 if is_converted_bam else 0, mapper, condition, overlap, true_tid, 
+                                          true_strand, true_isoform, read_tag, true_chr,n_seqerr, n_converted,
+                                          is_converted_read, 
                                           ','.join(overlapping_tids) if len(overlapping_tids) > 0 else 'NA', 
                                           read_name)]), file=out_reads)
         for tid in overlapping_tids:
             performance[tid, true_isoform, 'FP'] += 1/len(overlapping_tids)
             print('\t'.join([str(x) for x in (read_coord, true_coord, 'FP', tid, 
-                                              1 if is_converted else 0, mapper, condition, overlap, true_tid, 
+                                              1 if is_converted_bam else 0, mapper, condition, overlap, true_tid, 
                                               true_strand, true_isoform, read_tag, true_chr,n_seqerr, n_converted, 
+                                              is_converted_read,
                                               ','.join(overlapping_tids) if len(overlapping_tids) > 0 else 'NA', 
                                               read_name)]), file=out_reads)
         # write FN/FP reads
@@ -78,7 +80,7 @@ def classify_read(read, overlapping_tids, is_converted, mapper, condition, dict_
             sam_out.write(read)
     return performance
 
-def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_reads, out_performance):
+def evaluate_bam(bam_file, bam_out, is_converted_bam, m, mapper, condition, out_reads, out_performance):
     """ evaluate the passed BAM file """
     logging.info("Evaluating %s" % bam_file)
     performance = Counter()
@@ -93,12 +95,12 @@ def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_read
         # check whether df is sorted! 
         l=[x for x in df.Start]
         assert all(l[i] <= l[i+1] for i in range(len(l)-1)), "DF is not sorted by start coord!"
-        #print("Processing chromosome %s of %s/%s/%s"  % (c,  is_converted, mapper, condition) )
+        #print("Processing chromosome %s of %s/%s/%s"  % (c,  is_converted_bam, mapper, condition) )
         if df.empty: # no transcript on this chrom: all reads are FN
             rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=c_len, max_span=None, flag_filter=0) # max_span=m.max_ilen
             for loc, read in rit:
                 n_reads+=1
-                performance = classify_read(read, [], is_converted, mapper, condition, dict_chr2idx, performance, out_reads, samout)       
+                performance = classify_read(read, [], is_converted_bam, mapper, condition, dict_chr2idx, performance, out_reads, samout)       
         else:
             aits = [BlockLocationIterator(PyrangeIterator(df, dict_chr2idx, 'transcript_id'))]
             rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=c_len, max_span=None, flag_filter=0) # max_span=m.max_ilen
@@ -112,14 +114,14 @@ def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_read
 #                     print(overlapping_tids)
 #                     print(df)
 
-                performance = classify_read(read, overlapping_tids, is_converted, mapper, condition, dict_chr2idx, performance, out_reads, samout)
+                performance = classify_read(read, overlapping_tids, is_converted_bam, mapper, condition, dict_chr2idx, performance, out_reads, samout)
              
     # add unmapped reads
     for read in samin.fetch(contig=None, until_eof=True):
         if not read.is_unmapped:
             continue
         n_reads+=1
-        performance = classify_read(read, [], is_converted, mapper, condition, dict_chr2idx, performance, out_reads, samout)
+        performance = classify_read(read, [], is_converted_bam, mapper, condition, dict_chr2idx, performance, out_reads, samout)
     print("%s reads:  %i %i %i" % (bam_file, n_reads, samin.mapped, samin.unmapped))
 
     # write tid performance table
@@ -128,7 +130,7 @@ def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_read
     for tid in tids:
         for iso in isos:
              print("\t".join([str(x) for x in [
-                 1 if is_converted else 0, 
+                 1 if is_converted_bam else 0, 
                  mapper, 
                  condition, 
                  iso, 
@@ -148,7 +150,7 @@ def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_read
 
     
 
-def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition, out_performance):
+def evaluate_splice_sites(bam_file, bam_out, is_converted_bam, m, mapper, condition, out_performance):
     """ evaluate the passed BAM file """
     logging.info("Evaluating splice sites in %s" % bam_file)
     performance = Counter()
@@ -301,7 +303,7 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition,
         if intron != prevIntron and prevIntron != "":
 
             print("\t".join([str(x) for x in [
-                1 if is_converted else 0,
+                1 if is_converted_bam else 0,
                 mapper,
                 condition,
                 prevTid,
@@ -321,7 +323,7 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted, m, mapper, condition,
         prevIntron = intron
 
     print("\t".join([str(x) for x in [
-        1 if is_converted else 0,
+        1 if is_converted_bam else 0,
         mapper,
         condition,
         prevTid,
@@ -405,7 +407,7 @@ def get_spliced_fraction(bam, tid, iv, chromosome, start, end, donor = True) :
     return splicedTP, unsplicedTP, splicedFP, unsplicedFP
 
 
-def calculate_splice_site_mappability(config, bam_file, truth_file, is_converted, m, mapper, condition, out_mappability, out_bedGraph, fasta, readLength):
+def calculate_splice_site_mappability(config, bam_file, truth_file, is_converted_bam, m, mapper, condition, out_mappability, out_bedGraph, fasta, readLength):
     """ evaluate the passed BAM file """
     logging.info("Calculating mappability for %s" % bam_file)
 
@@ -574,7 +576,7 @@ def calculate_splice_site_mappability(config, bam_file, truth_file, is_converted
                 print("\t".join([chromosome, str(intronend - readLength), str(intronend + readLength), intronID + "_donor", str(acceptorMappabilityTP), intronstrand]), file = f)
 
                 print("\t".join([str(x) for x in [
-                    1 if is_converted else 0,
+                    1 if is_converted_bam else 0,
                     mapper,
                     condition,
                     tid,
@@ -602,7 +604,7 @@ def calculate_splice_site_mappability(config, bam_file, truth_file, is_converted
                 print("\t".join([chromosome, str(intronend - readLength), str(intronend + readLength), intronID + "_acceptor", str(acceptorMappabilityTP), intronstrand]), file = f)
 
                 print("\t".join([str(x) for x in [
-                    1 if is_converted else 0,
+                    1 if is_converted_bam else 0,
                     mapper,
                     condition,
                     tid,
@@ -694,7 +696,7 @@ def uniformityStats(observed, truth):
         'global' : [area, rmse, KlDiv, Chisq, KS],
     }
 
-def evaluate_coverage_uniformity(bam_file, truth_file, is_converted, m, mapper, condition, out_performance, out_performance10bp, out_performance100bp):
+def evaluate_coverage_uniformity(bam_file, truth_file, is_converted_bam, m, mapper, condition, out_performance, out_performance10bp, out_performance100bp):
     """ evaluate the passed BAM file """
     logging.info("Evaluating coverage uniformity in %s" % bam_file)
     np.seterr(divide='ignore', invalid='ignore')
@@ -886,7 +888,7 @@ def evaluate_coverage_uniformity(bam_file, truth_file, is_converted, m, mapper, 
         exonStats100bp = uniformityStats(exonMappedCoverage100bp, exonTruthCoverage100bp)
 
         print("\t".join([str(x) for x in [
-            1 if is_converted else 0,
+            1 if is_converted_bam else 0,
             mapper,
             condition,
             tid,
@@ -927,7 +929,7 @@ def evaluate_coverage_uniformity(bam_file, truth_file, is_converted, m, mapper, 
         ]]), file=out_performance)
 
         print("\t".join([str(x) for x in [
-            1 if is_converted else 0,
+            1 if is_converted_bam else 0,
             mapper,
             condition,
             tid,
@@ -968,7 +970,7 @@ def evaluate_coverage_uniformity(bam_file, truth_file, is_converted, m, mapper, 
         ]]), file=out_performance10bp)
 
         print("\t".join([str(x) for x in [
-            1 if is_converted else 0,
+            1 if is_converted_bam else 0,
             mapper,
             condition,
             tid,
@@ -1010,7 +1012,7 @@ def evaluate_coverage_uniformity(bam_file, truth_file, is_converted, m, mapper, 
 
 def initializeUniformityHeaders(out) :
 
-    print("is_converted\tmapper\tcondition\ttid", end="\t", file=out)
+    print("is_converted_bam\tmapper\tcondition\ttid", end="\t", file=out)
     print("true_exon_coverage_mean\ttrue_exon_coverage_stdev\ttrue_exon_coverage_waviness\ttrue_exon_coverage_gini\ttrue_exon_coverage_uniform_ks_test\ttrue_exon_coverage_uniform_chisq_test",end='\t', file=out)
     print("mapped_exon_coverage_mean\tmapped_exon_coverage_stdev\tmapped_exon_coverage_waviness\tmapped_exon_coverage_gini\tmapped_exon_coverage_uniform_ks_test\tmapped_exon_coverage_uniform_chisq_test",end='\t', file=out)
     print("exon_AUC\texon_RSME\texon_KL_deviation\texon_chisq\texon_KS", end='\t', file=out)
@@ -1067,10 +1069,10 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
                     with open(fout5, 'w') as out5:
                         with open(fout6, 'w') as out6:
                             with open(fout7, 'w') as out7:
-                                print("mapped_coords\ttrue_coords\tclassification\ttid\tis_converted\tmapper\tcondition\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\toverlapping_tids\tread_name", file=out)
-                                print("is_converted\tmapper\tcondition\tiso\ttid\tTP\tFP\tFN", file=out2)
-                                print("is_converted\tmapper\tcondition\ttid\tintron_id\tdonor_rc_splicing\tdonor_rc_splicing_wrong\tdonor_rc_overlapping\tacceptor_rc_splicing\tacceptor_rc_splicing_wrong\tacceptor_rc_overlapping", file=out3)
-                                print("is_converted\tmapper\tcondition\ttid\tintron_id\tdonor_sj_mappability_TP\tdonor_sj_mappability_FP\tdonor_sj_TP_reads\tdonor_sj_FP_reads\tdonor_exon_mean_mappability\tdonor_exon_T_content\tdonor_intron_mean_mappability\tdonor_intron_T_content\tacceptor_sj_mappability_TP\tacceptor_sj_mappability_FP\tacceptor_TP_reads\tacceptor_FP_reads\tacceptor_exon_mean_mappability\tacceptor_exon_T_content\tacceptor_intron_mean_mappability\tacceptor_intron_T_content",
+                                print("mapped_coords\ttrue_coords\tclassification\ttid\tis_converted_bam\tmapper\tcondition\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\tis_converted_read\toverlapping_tids\tread_name", file=out)
+                                print("is_converted_bam\tmapper\tcondition\tiso\ttid\tTP\tFP\tFN", file=out2)
+                                print("is_converted_bam\tmapper\tcondition\ttid\tintron_id\tdonor_rc_splicing\tdonor_rc_splicing_wrong\tdonor_rc_overlapping\tacceptor_rc_splicing\tacceptor_rc_splicing_wrong\tacceptor_rc_overlapping", file=out3)
+                                print("is_converted_bam\tmapper\tcondition\ttid\tintron_id\tdonor_sj_mappability_TP\tdonor_sj_mappability_FP\tdonor_sj_TP_reads\tdonor_sj_FP_reads\tdonor_exon_mean_mappability\tdonor_exon_T_content\tdonor_intron_mean_mappability\tdonor_intron_T_content\tacceptor_sj_mappability_TP\tacceptor_sj_mappability_FP\tacceptor_TP_reads\tacceptor_FP_reads\tacceptor_exon_mean_mappability\tacceptor_exon_T_content\tacceptor_intron_mean_mappability\tacceptor_intron_T_content",
                                     file=out7)
 
                                 initializeUniformityHeaders(out4)

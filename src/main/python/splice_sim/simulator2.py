@@ -476,7 +476,8 @@ def add_read_modifications(in_bam, out_bam, ref, alt, conversion_rate, tag_tc="x
         for r in sam.fetch(until_eof=True):
             quals=r.query_qualities # save qualities as they will be deleted if query sequence is set
             true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted  = r.query_name.split('_')
-            if int(is_converted)==1: # read chosen from binomial; modify its bases
+            is_converted=int(is_converted)==1
+            if is_converted: # read chosen from binomial; modify its bases
                 r.query_sequence, n_convertible, n_modified=modify_bases(ref, alt, r.query_sequence, r.is_reverse, conversion_rate)
             else:
                 n_convertible=r.query_sequence.count(ref)

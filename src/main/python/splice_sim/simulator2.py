@@ -317,7 +317,7 @@ def transcript2genome_bam(transcript_bam_file, mod, out_bam):
                 stats['wrong_strand_reads']+=1
             else: # NOTE: reads that were mapped to opposite strand will be dropped later in post_filtering step!
                 iso = mod.transcripts[tid].isoforms[iso_id]
-                is_converted = 1 if random.uniform(0, 1) < mod.transcripts[tid].unmodified_rna_fraction else 0 # is this read chosen from the zero-distribution or the binomial? 
+                is_converted = 1 if random.uniform(0, 1) < mod.transcripts[tid].unmodified_rna_fraction else 0 # we model reads using ZIB model. Here we decide whether this read is chosen from the zero-distribution or the binomial? 
                 ablocks=iter(iso.aln_blocks)
                 genome_cigatuples=[]
                 seq=""
@@ -469,8 +469,7 @@ def modify_bases(ref, alt, seq, is_reverse, conversion_rate ):
     return convseq, n_convertible, n_modified
 
 def add_read_modifications(in_bam, out_bam, ref, alt, conversion_rate, tag_tc="xc", tag_mod="xm"):
-    """ modify single nucleotides in reads. This is done by a mixed zero-inflated model: one zero-generating model and one binomial model with probability derived from the given conversion rate.
-        The unmodified_rna_fraction probability used used to choose which distribution a read is chosen from. 
+    """ modify single nucleotides in reads. 
     """
     sam = pysam.AlignmentFile(in_bam, "rb")
     with pysam.AlignmentFile(out_bam+'.tmp.bam', "wb", header=sam.header) as bam_out:
@@ -478,7 +477,7 @@ def add_read_modifications(in_bam, out_bam, ref, alt, conversion_rate, tag_tc="x
             quals=r.query_qualities # save qualities as they will be deleted if query sequence is set
             true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted  = r.query_name.split('_')
             if int(is_converted)==1: # read chosen from binomial; modify its bases
-                r.query_sequence, n_convertible, n_modified=modify_bases(ref, alt, r.query_sequence, r.is_reverse, conversion_rate, unmodified_rna_fraction)
+                r.query_sequence, n_convertible, n_modified=modify_bases(ref, alt, r.query_sequence, r.is_reverse, conversion_rate)
             else:
                 n_convertible=r.query_sequence.count(ref)
                 n_modified=0

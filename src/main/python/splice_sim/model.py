@@ -301,11 +301,12 @@ class Model():
         out_file=outdir+"isoform_truth.tsv"
         if not files_exist(out_file+".gz"):
             with open(out_file, 'w') as out:
-                print('\t'.join([str(x) for x in ['tid', 'iso', 'is_labeled', 'condition_id', 'true_fraction', 'splicing_status']]), file=out)
+                print('\t'.join([str(x) for x in ['tid', 'iso', 'is_labeled', 'condition_id', 'true_abundance', 'true_fraction', 'splicing_status']]), file=out)
                 for t in self.transcripts.values():
                     for iso in t.isoforms.values():
                         for i, cond in enumerate(t.cond):
-                            print('\t'.join([str(x) for x in [t.tid, iso.id, iso.is_labeled, cond.id, iso.fractions[i], ','.join([str(y) for y in iso.splicing_status])]]), file=out)
+                            splice_status=','.join([str(y) for y in iso.splicing_status]) if length(iso.splicing_status)>0 else 'NA'
+                            print('\t'.join([str(x) for x in [t.tid, iso.id, iso.is_labeled, cond.id, t.abundance, iso.fractions[i], splice_status]]), file=out)
             bgzip(out_file, override=True, delinFile=True, index=True, threads=self.threads)
         out_file=out_file+".gz"
         return out_file    

@@ -421,6 +421,8 @@ def transcript2genome_bam(transcript_bam_file, mod, out_bam):
                 read.reference_id=dict_chr2idx[iso.t.transcript.Chromosome]
                 read.mapping_quality = 60
                 read.set_tag(tag="NM", value=len(mismatches)+n_insertions+n_deletions, value_type="i")
+                if is_converted_read==0:
+                    r.set_tag(tag='YC', value='200,200,200') # old rna
                 # FIXME add MD tag, see https://samtools.github.io/hts-specs/SAMtags.pdf
                 read.flag = 0 if iso.strand=='+' else 16
                 # read name encodes: true_tid, true_strand, true_isoform, read_tag, true_chr, true_cigar, n_seqerr, n_converted
@@ -494,8 +496,8 @@ def add_read_modifications(in_bam, out_bam, ref, alt, conversion_rate, tag_tc="x
                     r.set_tag(tag='YC', value='%i,%i,255' % (intensity,intensity) )
                 else:
                     r.set_tag(tag='YC', value='255,%i,%i' % (intensity,intensity) )
-            elif is_converted_read==1:
-                r.set_tag(tag='YC', value='200,200,200' % (intensity,intensity) )
+            elif is_converted_read==0:
+                r.set_tag(tag='YC', value='200,200,200') # old rna
             n_converted=n_modified
             r.query_name='_'.join([str(x) for x in [true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted_read]])
             r.query_qualities=quals

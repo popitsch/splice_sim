@@ -164,7 +164,7 @@ class Transcript():
         # set abundance and isoforms
         self.cond = conditions        
         self.abundance = math.ceil(self.config['transcripts'][tid]['abundance']) # abundance is float
-        self.isoforms={}
+        self.isoforms=OrderedDict()
         total_frac = [0] * len(self.cond)
         for iso in self.config['transcripts'][tid]['isoforms'].keys():
             frac=self.config['transcripts'][tid]['isoforms'][iso]['fractions']
@@ -303,7 +303,7 @@ class Model():
             with open(out_file, 'w') as out:
                 print('\t'.join([str(x) for x in ['tid', 'iso', 'is_labeled', 'condition', 'fraction']]), file=out)
                 for tid in self.transcripts.keys():
-                    for iso in self.transcripts[tid].isoforms():
+                    for iid, iso in enumerate(self.transcripts[tid].isoforms):
                         for i, cond in enumerate(t.cond):
                             print('\t'.join([str(x) for x in [t.tid, iso.id, iso.is_labeled, cond.id, iso.fractions[i]]]), file=out)
             bgzip(out_file, override=True, delinFile=True, index=True, threads=self.threads)

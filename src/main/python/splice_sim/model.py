@@ -295,6 +295,21 @@ class Model():
             bgzip(out_file, override=True, delinFile=True, index=True, threads=self.threads)
         out_file=out_file+".gz"
         return out_file
+    def write_isoform_truth(self, outdir):
+        """ Write a TSV file with isoform truth data"""
+        logging.info("Writing isoform truth data")
+        out_file=outdir+"isoform_truth.tsv"
+        if not files_exist(out_file+".gz"):
+            with open(out_file, 'w') as out:
+                print('\t'.join([str(x) for x in ['tid', 'iso', 'is_labeled', 'condition', 'fraction']]), file=out)
+                for t in m.transcripts:
+                    for iso in t.isoforms():
+                        for i, cond in enumerate(t.cond):
+                            print('\t'.join([str(x) for x in [t.tid, iso.id, iso.is_labeled, cond.id, iso.fractions[i]]]), file=out)
+            bgzip(out_file, override=True, delinFile=True, index=True, threads=self.threads)
+        out_file=out_file+".gz"
+        return out_file    
+        
     def save(self, f_model, recursion_limit=10000):
         """ save model to disk """
         sys.setrecursionlimit(recursion_limit)

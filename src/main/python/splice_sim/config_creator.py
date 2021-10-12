@@ -141,10 +141,6 @@ def calc_iso(tid, transcript, introns, rnk, conditions, times):
 
 def calculate_transcript_data(config, config_dir, outdir):
     """ Calculate a data config file """
-    # output file
-    outF = config['transcript_data']
-    if not os.path.isabs(outF):
-        outF = config_dir + outF
         
     mode = config['isoform_mode']      
     logging.info("Calculating transcript configuration with mode %s" % mode)
@@ -154,7 +150,7 @@ def calculate_transcript_data(config, config_dir, outdir):
     # get conditions and labeling times
     conditions = list(config["conditions"].keys())
     times = list(config["conditions"].values())
-    out=OrderedDict()
+    tdata=OrderedDict()
     
     # ------------------------------------------------------------------------------------
     #    from slamstr data
@@ -184,10 +180,10 @@ def calculate_transcript_data(config, config_dir, outdir):
                     # not enough data. skip
                     print("Skipped %s due to too-low number of informative reads" % (tid) )
                 else:
-                    out[tid] = OrderedDict()
-                    out[tid]["gene_name"] = t['gene_name']
-                    out[tid]["abundance"] = abundances[i]
-                    out[tid]["isoforms"] = isoform_data
+                    tdata[tid] = OrderedDict()
+                    tdata[tid]["gene_name"] = t['gene_name']
+                    tdata[tid]["abundance"] = abundances[i]
+                    tdata[tid]["isoforms"] = isoform_data
             else:
                 logging.warn("Skipped %s due to too-low abundance." % (tid) )
     # ------------------------------------------------------------------------------------
@@ -211,10 +207,10 @@ def calculate_transcript_data(config, config_dir, outdir):
                     isoform_data['pre']['splicing_status']=[0] * rnk
                 isoform_data['pre']['fractions']=[0.5] * len(times)
                 # output data
-                out[tid] = OrderedDict()
-                out[tid]["gene_name"] = t['gene_name']
-                out[tid]["abundance"] = abundances[i]
-                out[tid]["isoforms"] = isoform_data
+                tdata[tid] = OrderedDict()
+                tdata[tid]["gene_name"] = t['gene_name']
+                tdata[tid]["abundance"] = abundances[i]
+                tdata[tid]["isoforms"] = isoform_data
             else:
                 logging.warn("Skipped %s due to too-low abundance." % (tid) )
     # ------------------------------------------------------------------------------------
@@ -254,15 +250,22 @@ def calculate_transcript_data(config, config_dir, outdir):
                         isoform_data['pre']['splicing_status']=[0] * rnk
                     isoform_data['pre']['fractions']=[round((1-frac_old_mature) * 0.5,3)] * len(times)
                 # output data
-                out[tid] = OrderedDict()
-                out[tid]["gene_name"] = gene_name
-                out[tid]["abundance"] = abundances[i]
-                out[tid]["isoforms"] = isoform_data
+                tdata[tid] = OrderedDict()
+                tdata[tid]["gene_name"] = gene_name
+                tdata[tid]["abundance"] = abundances[i]
+                tdata[tid]["isoforms"] = isoform_data
             else:
                 logging.warn("Skipped %s due to too-low abundance." % (tid) )
     else:
         logging.error("Unknown mode %s " % (args.mode))  
-        sys.exit(1)     
-    with open(outF, 'w') as config_file:
-        json.dump(out, config_file, indent=2)
+        sys.exit(1)    
+        
+    # Write JSON file
+    outF = config['transcript_data']
+    if not os.path.isabs(outF):
+        outF = config_dir + outF
+    with open(outF, 'w') as out:
+        json.dump(tdata, out, indent=2)
+
+        
     logging.info('Done. Results written to %s' % (outF))

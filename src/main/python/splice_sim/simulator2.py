@@ -569,6 +569,9 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
     m = Model( config )
     logging.info("Configured conditions: %s" % (", ".join(str(x) for x in m.conditions)) )
     
+    # write final isoform model truth file
+    m.write_isoform_truth(outdir)
+    
     # write considered transcripts to GFF
     m.write_gff(outdir)
     

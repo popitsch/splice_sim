@@ -164,7 +164,6 @@ class Transcript():
         # set abundance and isoforms
         self.cond = conditions        
         self.abundance = math.ceil(self.config['transcripts'][tid]['abundance']) # abundance is float
-        self.unmodified_rna_fraction = self.config['transcripts'][tid]['unmodified_rna_fraction']
         self.isoforms={}
         total_frac = [0] * len(self.cond)
         for iso in self.config['transcripts'][tid]['isoforms'].keys():

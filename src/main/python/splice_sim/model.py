@@ -305,7 +305,7 @@ class Model():
                 for t in self.transcripts.values():
                     for iso in t.isoforms.values():
                         for i, cond in enumerate(t.cond):
-                            splice_status=','.join([str(y) for y in iso.splicing_status]) if length(iso.splicing_status)>0 else 'NA'
+                            splice_status=','.join([str(y) for y in iso.splicing_status]) if len(iso.splicing_status)>0 else 'NA'
                             print('\t'.join([str(x) for x in [t.tid, iso.id, iso.is_labeled, cond.id, t.abundance, iso.fractions[i], splice_status]]), file=out)
             bgzip(out_file, override=True, delinFile=True, index=True, threads=self.threads)
         out_file=out_file+".gz"

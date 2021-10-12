@@ -578,6 +578,9 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
     
     # write considered transcripts to GFF
     m.write_gff(outdir)
+
+    # write considered transcripts to tsv
+    m.write_transcript_md(outdir)
     
     # add number of transcripts to stats
     stats=Counter()

@@ -6,6 +6,7 @@ import pysam
 from collections import *
 from utils import *
 import logging
+from test.test_iterlen import NoneLengthHint
 
 
 class Condition():
@@ -124,7 +125,6 @@ class Isoform():
     def __str__(self):
         ret = ("%s_%s @ %s, [%s], [%s]" % (self.t.tid, self.id, self.t.region, ",".join(str(x) for x in self.fractions), ",".join(str(x) for x in self.splicing_status)) )
         return (ret)   
-
 class Transcript():
     def __init__(self, config, tid, df, genome, conditions, max_ilen=None ):
         self.config = config
@@ -229,9 +229,7 @@ class Transcript():
     def __str__(self):
         ret = ("%s" % (self.transcript.transcript_id) )
         return (ret)   
-    
-    
-    
+
 class Model():
     """ builds a model using the passed configuration and conditions. 
         required config keys:
@@ -295,6 +293,21 @@ class Model():
             bgzip(out_file, override=True, delinFile=True, index=True, threads=self.threads)
         out_file=out_file+".gz"
         return out_file
+    def write_transcript_md(self, outdir):
+        """ Write a filtered TSV file containing md about all kept/simulated transcripts """
+        logging.info("Writing filtered gene TSV")
+        out_file=outdir+"gene_anno.tsv"
+        headers=None
+        if not files_exist(out_file+".gz"):
+            with open(out_file, 'w') as out:
+                for t in self.transcripts.values():       
+                    if headers is None:
+                        headers=[h for h in gff.columns if h not in ['Source', 'Feature', 'Score', 'Frame', 'ID', 'havana_gene', 'Parent']]
+                        print('\t'.join(h), file=out)            
+                    print('\t'.join([t.transcript[h] for h in headers]), file=out)
+            bgzip(out_file, override=True, delinFile=True, index=True, threads=self.threads)
+        out_file=out_file+".gz"
+        return out_file
     def write_isoform_truth(self, outdir):
         """ Write a TSV file with isoform truth data"""
         logging.info("Writing isoform truth data")
@@ -310,7 +323,6 @@ class Model():
             bgzip(out_file, override=True, delinFile=True, index=True, threads=self.threads)
         out_file=out_file+".gz"
         return out_file    
-        
     def save(self, f_model, recursion_limit=10000):
         """ save model to disk """
         sys.setrecursionlimit(recursion_limit)

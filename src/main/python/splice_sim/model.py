@@ -302,7 +302,7 @@ class Model():
         if not files_exist(out_file+".gz"):
             with open(out_file, 'w') as out:
                 print('\t'.join([str(x) for x in ['tid', 'iso', 'is_labeled', 'condition', 'fraction']]), file=out)
-                for t in m.transcripts:
+                for t in transcripts:
                     for iso in t.isoforms():
                         for i, cond in enumerate(t.cond):
                             print('\t'.join([str(x) for x in [t.tid, iso.id, iso.is_labeled, cond.id, iso.fractions[i]]]), file=out)

@@ -302,8 +302,8 @@ class Model():
         if not files_exist(out_file+".gz"):
             with open(out_file, 'w') as out:
                 print('\t'.join([str(x) for x in ['tid', 'iso', 'is_labeled', 'condition', 'fraction']]), file=out)
-                for t in self.transcripts:
-                    for iso in t.isoforms():
+                for tid in self.transcripts.keys():
+                    for iso in self.transcripts[tid].isoforms():
                         for i, cond in enumerate(t.cond):
                             print('\t'.join([str(x) for x in [t.tid, iso.id, iso.is_labeled, cond.id, iso.fractions[i]]]), file=out)
             bgzip(out_file, override=True, delinFile=True, index=True, threads=self.threads)

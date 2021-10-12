@@ -302,9 +302,9 @@ class Model():
             with open(out_file, 'w') as out:
                 for t in self.transcripts.values():       
                     if headers is None:
-                        headers=[h for h in t.df.columns if h not in ['Source', 'Feature', 'Score', 'Frame', 'ID', 'havana_gene', 'Parent']]
+                        headers=[str(h) for h in t.df.columns if h not in ['Source', 'Feature', 'Score', 'Frame', 'ID', 'havana_gene', 'Parent']]
                         print('\t'.join(headers), file=out)            
-                    print('\t'.join([t.transcript[h] for h in headers]), file=out)
+                    print('\t'.join([str(t.transcript[h]) for h in headers]), file=out)
             bgzip(out_file, override=True, delinFile=True, index=True, threads=self.threads)
         out_file=out_file+".gz"
         return out_file

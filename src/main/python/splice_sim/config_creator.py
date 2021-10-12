@@ -236,7 +236,7 @@ def calculate_transcript_data(config, config_dir, outdir):
         base_abundance = config["base_abundance"] if 'base_abundance' in config else 10
         abundances = [base_abundance] * len ( transcripts.index )
         min_abundance = config["min_abundance"] if 'min_abundance' in config else 0.0
-        frac_old_mature=math.min(1.0,config["frac_old_mature"]) if 'frac_old_mature' in config else 0.0 # fraction of 'old' (unlabeled), mature isoform
+        frac_old_mature=min(1.0,config["frac_old_mature"]) if 'frac_old_mature' in config else 0.0 # fraction of 'old' (unlabeled), mature isoform
         for i, t in transcripts.iterrows():
             if abundances[i] > min_abundance:
                 tid = t['transcript_id']

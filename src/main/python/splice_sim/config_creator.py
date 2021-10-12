@@ -252,7 +252,7 @@ def calculate_transcript_data(config, config_dir, outdir):
                     isoform_data['pre'] = OrderedDict()
                     if rnk: # at least one intron
                         isoform_data['pre']['splicing_status']=[0] * rnk
-                    isoform_data['pre']['fractions']=[(1-frac_old_mature) * 0.5] * len(times)
+                    isoform_data['pre']['fractions']=[round((1-frac_old_mature) * 0.5,3)] * len(times)
                 # output data
                 out[tid] = OrderedDict()
                 out[tid]["gene_name"] = gene_name

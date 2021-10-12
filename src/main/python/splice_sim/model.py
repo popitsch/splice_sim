@@ -303,7 +303,7 @@ class Model():
             with open(out_file, 'w') as out:
                 print('\t'.join([str(x) for x in ['tid', 'iso', 'is_labeled', 'condition', 'fraction']]), file=out)
                 for tid, t in enumerate(self.transcripts):
-                    for iid, iso in enumerate(self.transcripts[tid].isoforms):
+                    for iid, iso in enumerate(t.isoforms):
                         for i, cond in enumerate(t.cond):
                             print('\t'.join([str(x) for x in [t.tid, iso.id, iso.is_labeled, cond.id, iso.fractions[i]]]), file=out)
             bgzip(out_file, override=True, delinFile=True, index=True, threads=self.threads)

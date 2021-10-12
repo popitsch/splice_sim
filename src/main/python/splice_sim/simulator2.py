@@ -317,7 +317,7 @@ def transcript2genome_bam(transcript_bam_file, mod, out_bam):
                 stats['wrong_strand_reads']+=1
             else: # NOTE: reads that were mapped to opposite strand will be dropped later in post_filtering step!
                 iso = mod.transcripts[tid].isoforms[iso_id]
-                is_converted_read = 1 if random.uniform(0, 1) < mod.transcripts[tid].unmodified_rna_fraction else 0 # we model reads using ZIB model. Here we decide whether this read is chosen from the zero-distribution or the binomial? 
+                is_converted_read = 0 if iso.id=='old' else 0 # we model reads using ZIB model. Here we decide whether this read is chosen from the zero-distribution or the binomial? 
                 ablocks=iter(iso.aln_blocks)
                 genome_cigatuples=[]
                 seq=""

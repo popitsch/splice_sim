@@ -169,8 +169,6 @@ def calculate_transcript_data(config, config_dir, outdir):
         transcript_len=list(ab_table["len"])
         abundance_multiplier = config["abundance_multiplier"] if 'abundance_multiplier' in config else 1.0
         abundances = [(x*readlen*abundance_multiplier)/y for x, y in zip(TAB_ALL, transcript_len)]
-        unmodified_rna_fraction = config["unmodified_rna_fraction"] if 'unmodified_rna_fraction' in config else 0.0
-        unmodified_rna_fraction = [unmodified_rna_fraction] * len ( transcripts.index )
         min_abundance = config["min_abundance"] if 'min_abundance' in config else 0.0
         print("minimum abundance: %f" % (min_abundance) )
         
@@ -189,7 +187,6 @@ def calculate_transcript_data(config, config_dir, outdir):
                     out[tid] = OrderedDict()
                     out[tid]["gene_name"] = t['gene_name']
                     out[tid]["abundance"] = abundances[i]
-                    out[tid]["unmodified_rna_fraction"] = unmodified_rna_fraction[i]
                     out[tid]["isoforms"] = isoform_data
             else:
                 logging.warn("Skipped %s due to too-low abundance." % (tid) )
@@ -202,9 +199,7 @@ def calculate_transcript_data(config, config_dir, outdir):
         assert 'slamstr_transcript_table' in config, "For 1:1_slamstr mode, a slamstr_transcript_table must be provided in a file referenced by the 'slamstr_transcript_table' config property"
         transcripts = pd.read_csv(config["slamstr_transcript_table"],delimiter='\t',encoding='utf-8')
         base_abundance = config["base_abundance"] if 'base_abundance' in config else 10
-        unmodified_rna_fraction = config["unmodified_rna_fraction"] if 'unmodified_rna_fraction' in config else 0.0
         abundances = [base_abundance] * len ( transcripts.index )
-        unmodified_rna_fraction = [unmodified_rna_fraction] * len ( transcripts.index )
         min_abundance = config["min_abundance"] if 'min_abundance' in config else 0.0
         for i, t in transcripts.iterrows():
             if abundances[i] > min_abundance:
@@ -219,7 +214,6 @@ def calculate_transcript_data(config, config_dir, outdir):
                 out[tid] = OrderedDict()
                 out[tid]["gene_name"] = t['gene_name']
                 out[tid]["abundance"] = abundances[i]
-                out[tid]["unmodified_rna_fraction"] = unmodified_rna_fraction[i]
                 out[tid]["isoforms"] = isoform_data
             else:
                 logging.warn("Skipped %s due to too-low abundance." % (tid) )
@@ -240,10 +234,9 @@ def calculate_transcript_data(config, config_dir, outdir):
         transcripts = pd.read_csv(tfile,delimiter='\t',encoding='utf-8')
         logging.info("read %i tids" % len(transcripts))
         base_abundance = config["base_abundance"] if 'base_abundance' in config else 10
-        unmodified_rna_fraction = config["unmodified_rna_fraction"] if 'unmodified_rna_fraction' in config else 0.0
         abundances = [base_abundance] * len ( transcripts.index )
-        unmodified_rna_fraction = [unmodified_rna_fraction] * len ( transcripts.index )
         min_abundance = config["min_abundance"] if 'min_abundance' in config else 0.0
+        frac_old_mature=math.min(1.0,config["frac_old_mature"]) if 'frac_old_mature' in config else 0.0 # fraction of 'old' (unlabeled), mature isoform
         for i, t in transcripts.iterrows():
             if abundances[i] > min_abundance:
                 tid = t['transcript_id']
@@ -251,15 +244,19 @@ def calculate_transcript_data(config, config_dir, outdir):
                 rnk=len(df[df.Feature=='exon'].index)-1
                 gene_name = df[df.Feature=='transcript'].iloc[0]['gene_name']
                 isoform_data=OrderedDict()
-                isoform_data['pre'] = OrderedDict()
-                if rnk:
-                    isoform_data['pre']['splicing_status']=[0] * rnk
-                isoform_data['pre']['fractions']=[0.5] * len(times)
+                if frac_old_mature>0: # add 'old' rna isoform
+                    isoform_data['old'] = OrderedDict()
+                    isoform_data['old']['splicing_status']=[1] * rnk
+                    isoform_data['old']['fractions']=[frac_old_mature] * len(times)
+                if frac_old_mature < 1.0:
+                    isoform_data['pre'] = OrderedDict()
+                    if rnk: # at least one intron
+                        isoform_data['pre']['splicing_status']=[0] * rnk
+                    isoform_data['pre']['fractions']=[(1-frac_old_mature) * 0.5] * len(times)
                 # output data
                 out[tid] = OrderedDict()
                 out[tid]["gene_name"] = gene_name
                 out[tid]["abundance"] = abundances[i]
-                out[tid]["unmodified_rna_fraction"] = unmodified_rna_fraction[i]
                 out[tid]["isoforms"] = isoform_data
             else:
                 logging.warn("Skipped %s due to too-low abundance." % (tid) )

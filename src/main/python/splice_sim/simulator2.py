@@ -19,7 +19,6 @@ import logging
 from subprocess import check_output
 from model import Model, Condition, Isoform, Transcript
 from config_creator import calculate_transcript_data
-from transcript2genome_bam import transcript2genome_bam
 from pathlib import Path
 
 def check_config(config):
@@ -489,15 +488,16 @@ def add_read_modifications(in_bam, out_bam, ref, alt, conversion_rate, tag_tc="x
             r.set_tag(tag='NM', value=nm+1, value_type="i") # update NM tag
             r.set_tag(tag=tag_tc, value=n_modified, value_type="i")
             r.set_tag(tag=tag_isconvread, value=is_converted_read, value_type="i")
-            if n_modified>=0:
+            if is_converted_read==0:
+                r.set_tag(tag='YC', value='200,200,200') # old rna
+            else:
                 # set blue read color intensity relative to number of tc conversions!
                 intensity = min(255, 200.0*(1-n_modified/n_convertible)) if n_convertible>0 else 255
                 if r.is_reverse:
                     r.set_tag(tag='YC', value='%i,%i,255' % (intensity,intensity) )
                 else:
                     r.set_tag(tag='YC', value='255,%i,%i' % (intensity,intensity) )
-            elif is_converted_read==0:
-                r.set_tag(tag='YC', value='200,200,200') # old rna
+
             n_converted=n_modified
             r.query_name='_'.join([str(x) for x in [true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted_read]])
             r.query_qualities=quals

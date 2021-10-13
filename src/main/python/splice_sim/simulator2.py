@@ -284,8 +284,8 @@ def postfilter_bam( bam_in, bam_out, isoform_colors):
             continue
         # map isoform to color
         true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted_read = read.query_name.split('_')   
-        if (true_isoform, strand) in isoform_colors:
-            read.set_tag(tag='YC', value=isoform_colors[true_isoform, strand], value_type="Z")
+        if (true_isoform, true_strand) in isoform_colors:
+            read.set_tag(tag='YC', value=isoform_colors[true_isoform, true_strand], value_type="Z")
         mapped_out.write(read)
         n_reads+=1  
     samin.close()

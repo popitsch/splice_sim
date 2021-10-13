@@ -683,8 +683,8 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
     isoform_colors={}
     if 'isoform_colors' in config:
         for k in config['isoform_colors'].keys():
-            isoform_colors[k,'+']=isoform_colors[k][0]
-            isoform_colors[k,'-']=isoform_colors[k][1]
+            isoform_colors[k,'+']=config['isoform_colors'][k][0]
+            isoform_colors[k,'-']=config['isoform_colors'][k][1]
     
     # map reads if mappers configured
     bams={}

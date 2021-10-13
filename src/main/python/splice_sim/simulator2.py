@@ -272,7 +272,7 @@ def create_tdf(bam, tdf, chrom_sizes, igvtools_cmd='igvtools', logfile="igvtools
     cmd=[igvtools_cmd, "count", "-w", "1", "-z", "7", "--strands", "read", bam, tdf, chrom_sizes]
     return pipelineStep(bam, tdf, cmd, shell=True, stdout=logfile)
 
-def postfilter_bam( bam_in, bam_out):
+def postfilter_bam( bam_in, bam_out, isoform_colors):
     """ Filter secondary+supplementary reads """  
     samin = pysam.AlignmentFile(bam_in, "rb")
     mapped_out = pysam.AlignmentFile(bam_out, "wb", template=samin )
@@ -282,6 +282,10 @@ def postfilter_bam( bam_in, bam_out):
         if read.is_secondary or read.is_supplementary:
             f_reads+=1
             continue
+        # map isoform to color
+        true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted_read = read.query_name.split('_')   
+        if (true_isoform, strand) in isoform_colors:
+            read.set_tag(tag='YC', value=isoform_colors[true_isoform, strand], value_type="Z")
         mapped_out.write(read)
         n_reads+=1  
     samin.close()
@@ -675,6 +679,12 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
             print(t.to_bed(), file=out)
     
     
+    # get isoform_colors from config
+    isoform_colors={}
+    if 'isoform_colors' in config:
+        for k in config['isoform_colors'].keys():
+            isoform_colors[k,'+']=isoform_colors[k][0]
+            isoform_colors[k,'-']=isoform_colors[k][1]
     
     # map reads if mappers configured
     bams={}
@@ -731,7 +741,7 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                                     STAR_EXE=STAR_EXE,
                                     SAMBAMBA_EXE=sambamba_cmd,
                                     force=overwrite )
-                            postfilter_bam(f_bam, final_bam)
+                            postfilter_bam(f_bam, final_bam, isoform_colors)
                         else:
                             logging.warn("Will not re-create existing file %s" % (f_bam))
                     if overwrite or not files_exist(f_bam_conv):
@@ -743,7 +753,7 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                             STAR_EXE=STAR_EXE,
                             SAMBAMBA_EXE=sambamba_cmd,
                             force=overwrite )  
-                        postfilter_bam(f_bam_conv, final_bam_conv) 
+                        postfilter_bam(f_bam_conv, final_bam_conv, isoform_colors) 
                     else:
                         logging.warn("Will not re-create existing file %s" % (f_bam_conv))       
                 elif mapper == "HISAT-3N":
@@ -762,7 +772,7 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                                     HISAT_3N_EXE=HISAT_3N_EXE,
                                     SAMBAMBA_EXE=sambamba_cmd,
                                     force=overwrite )
-                            postfilter_bam(f_bam, final_bam)
+                            postfilter_bam(f_bam, final_bam, isoform_colors)
                         else:
                             logging.warn("Will not re-create existing file %s" % (f_bam))
                     if overwrite or not files_exist(f_bam_conv):
@@ -776,7 +786,7 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                             HISAT_3N_EXE=HISAT_3N_EXE,
                             SAMBAMBA_EXE=sambamba_cmd,
                             force=overwrite )
-                        postfilter_bam(f_bam_conv, final_bam_conv) 
+                        postfilter_bam(f_bam_conv, final_bam_conv, isoform_colors) 
                     else:
                         logging.warn("Will not re-create existing file %s" % (f_bam_conv))                
                 elif mapper == "HISAT2_TLA": #@DeprecationWarning
@@ -798,7 +808,7 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                                     HISAT2_EXE=HISAT2_EXE,
                                     SAMBAMBA_EXE=sambamba_cmd,
                                     force=overwrite )
-                            postfilter_bam(f_bam, final_bam)
+                            postfilter_bam(f_bam, final_bam, isoform_colors)
                         else:
                             logging.warn("Will not re-create existing file %s" % (f_bam))
                     if overwrite or not files_exist(f_bam_conv):
@@ -812,7 +822,7 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                             HISAT2_EXE=HISAT2_EXE,
                             SAMBAMBA_EXE=sambamba_cmd,
                             force=overwrite )
-                        postfilter_bam(f_bam_conv, final_bam_conv) 
+                        postfilter_bam(f_bam_conv, final_bam_conv, isoform_colors) 
                     else:
                         logging.warn("Will not re-create existing file %s" % (f_bam_conv))
                 elif mapper == "MERANGS":
@@ -831,7 +841,7 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                                     MERANGS_EXE=MERANGS_EXE,
                                     STAR_EXE=STAR_EXE,
                                     force=overwrite )
-                            postfilter_bam(f_bam, final_bam)
+                            postfilter_bam(f_bam, final_bam, isoform_colors)
                         else:
                             logging.warn("Will not re-create existing file %s" % (f_bam))
                     if overwrite or not files_exist(f_bam_conv):
@@ -843,7 +853,7 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
                                     MERANGS_EXE=MERANGS_EXE,
                                     STAR_EXE=STAR_EXE,
                                     force=overwrite )
-                        postfilter_bam(f_bam_conv, final_bam_conv) 
+                        postfilter_bam(f_bam_conv, final_bam_conv, isoform_colors) 
                     else:
                         logging.warn("Will not re-create existing file %s" % (f_bam_conv))      
                 else:

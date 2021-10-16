@@ -632,7 +632,7 @@ class AnnotationOverlapIterator():
 
 class SimulatedRead:
 
-    def __init__(self, name, chromosome, start, end, splicing, spliceSites, bamRead):
+    def __init__(self, name, chromosome, start, end, splicing, spliceSites, bamRead, trueTid, trueSpliced):
         # Name of the parsed read
         self.name = name
         # Chromosome
@@ -647,6 +647,10 @@ class SimulatedRead:
         self.spliceSites = spliceSites
         # Pysam read object
         self.bamRead = bamRead
+        # Pysam read object
+        self.trueTid = trueTid
+        # Pysam read object
+        self.trueSpliced = trueSpliced
 
     def hasSpliceSite(self, junction):
         if self.splicing:
@@ -680,6 +684,10 @@ class SimulatedReadIterator:
             read = self._readIterator.__next__()
 
         name = read.query_name
+
+        true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted_read = name.split('_')
+
+        trueSpliced = True if "N" in true_cigar else False
 
         chromosome = read.reference_name
 
@@ -730,7 +738,7 @@ class SimulatedReadIterator:
 
             offset += operation[1]
 
-        simulatedRead = SimulatedRead(name, chromosome, start + 1, end, spliced, spliceSites, read)
+        simulatedRead = SimulatedRead(name, chromosome, start + 1, end, spliced, spliceSites, read, true_tid, trueSpliced)
 
         return simulatedRead
     

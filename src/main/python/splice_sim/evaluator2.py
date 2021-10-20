@@ -173,8 +173,6 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted_bam, m, mapper, condit
 
     performance = Counter()
 
-    #ftxid = open(bam_out + "txs.txt", "w")
-
     for tid in transcripts:
 
         t = transcripts[tid]
@@ -197,16 +195,22 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted_bam, m, mapper, condit
             ivTree = IntervalTree()
             ivTree.add(iv)
 
-            performance[tid, intronID, 'acceptor_rc_splicing'] += 0
+            performance[tid, intronID, 'acceptor_rc_splicing_TP'] += 0
+            performance[tid, intronID, 'acceptor_rc_splicing_FP'] += 0
+            performance[tid, intronID, 'acceptor_rc_overlapping_TP'] += 0
+            performance[tid, intronID, 'acceptor_rc_overlapping_FP'] += 0
             performance[tid, intronID, 'acceptor_rc_splicing_wrong'] += 0
-            performance[tid, intronID, 'acceptor_rc_overlapping'] += 0
 
-            performance[tid, intronID, 'donor_rc_splicing'] = 0
+            performance[tid, intronID, 'donor_rc_splicing_TP'] = 0
+            performance[tid, intronID, 'donor_rc_splicing_FP'] = 0
+            performance[tid, intronID, 'donor_rc_overlapping_TP'] = 0
+            performance[tid, intronID, 'donor_rc_overlapping_FP'] = 0
             performance[tid, intronID, 'donor_rc_splicing_wrong'] = 0
-            performance[tid, intronID, 'donor_rc_overlapping'] = 0
+
+            df = m.df[(m.df.Feature == 'transcript') & (m.df.Chromosome == chromosome) & (m.df.End >= intronstart - 1) & (m.df.Start <= intronend + 1)]  # get annotations
+            annots = df['transcript_id'].tolist()
 
             # Donor
-
             donorIterator = SimulatedReadIterator(samin.fetch(contig=chromosome, start=intronstart - 1, stop=intronstart), flagFilter=0)
 
             for read in donorIterator:
@@ -232,16 +236,32 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted_bam, m, mapper, condit
 
                     elif read.splicing and read.hasSpliceSite(ivTree) and end > iv.begin:
 
-                        performance[tid, intronID, 'donor_rc_splicing'] += 1
-                        bamRead.setTag('YC', colors["exonexontrue"])
-                        if (samout):
-                            samout.write(bamRead)
+                        if read.trueTid == tid and read.trueSpliced:
+
+                            performance[tid, intronID, 'donor_rc_splicing_TP'] += 1
+                            bamRead.setTag('YC', colors["exonexontrue"])
+                            if (samout):
+                                samout.write(bamRead)
+
+                        elif not read.trueTid in annots or not read.trueSpliced:
+
+                            performance[tid, intronID, 'donor_rc_splicing_FP'] += 1
+                            bamRead.setTag('YC', colors["exonexonfalse"])
+                            if (samout):
+                                samout.write(bamRead)
 
                     elif end > iv.begin:
-                        performance[tid, intronID, 'donor_rc_overlapping'] += 1
-                        bamRead.setTag('YC', colors["exonintron"])
-                        if (samout):
-                            samout.write(bamRead)
+
+                        if read.trueTid == tid and not read.trueSpliced:
+                            performance[tid, intronID, 'donor_rc_overlapping_TP'] += 1
+                            bamRead.setTag('YC', colors["exonintron"])
+                            if (samout):
+                                samout.write(bamRead)
+                        elif not read.trueTid in annots or read.trueSpliced:
+                            performance[tid, intronID, 'donor_rc_overlapping_FP'] += 1
+                            bamRead.setTag('YC', colors["exonexonfalse"])
+                            if (samout):
+                                samout.write(bamRead)
                     else:
                         bamRead.setTag('YC', colors["intron"])
                         if (samout):
@@ -274,16 +294,35 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted_bam, m, mapper, condit
 
                     elif read.splicing and read.hasSpliceSite(ivTree) and start < iv.end:
 
-                        performance[tid, intronID, 'acceptor_rc_splicing'] += 1
-                        bamRead.setTag('YC', colors["exonexontrue"])
-                        if (samout):
-                            samout.write(bamRead)
+                        if read.trueTid == tid and read.trueSpliced:
+
+                            performance[tid, intronID, 'acceptor_rc_splicing_TP'] += 1
+                            bamRead.setTag('YC', colors["exonexontrue"])
+                            if (samout):
+                                samout.write(bamRead)
+
+                        elif not read.trueTid in annots or not read.trueSpliced:
+
+                            performance[tid, intronID, 'acceptor_rc_splicing_FP'] += 1
+                            bamRead.setTag('YC', colors["exonexonfalse"])
+                            if (samout):
+                                samout.write(bamRead)
 
                     elif start < iv.end:
-                        performance[tid, intronID, 'acceptor_rc_overlapping'] += 1
-                        bamRead.setTag('YC', colors["exonintron"])
-                        if (samout):
-                            samout.write(bamRead)
+
+                        if read.trueTid == tid and not read.trueSpliced:
+
+                            performance[tid, intronID, 'acceptor_rc_overlapping_TP'] += 1
+                            bamRead.setTag('YC', colors["exonintron"])
+                            if (samout):
+                                samout.write(bamRead)
+
+                        elif not read.trueTid in annots or read.trueSpliced:
+
+                            performance[tid, intronID, 'acceptor_rc_overlapping_FP'] += 1
+                            bamRead.setTag('YC', colors["exonexonfalse"])
+                            if (samout):
+                                samout.write(bamRead)
                     else:
                         # Start ends at first exon position of acceptor
                         pass
@@ -315,12 +354,16 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted_bam, m, mapper, condit
                 condition,
                 prevTid,
                 prevIntron,
-                intronBuffer['donor_rc_splicing'],
+                intronBuffer['donor_rc_splicing_TP'],
+                intronBuffer['donor_rc_splicing_FP'],
+                intronBuffer['donor_rc_overlapping_TP'],
+                intronBuffer['donor_rc_overlapping_FP'],
                 intronBuffer['donor_rc_splicing_wrong'],
-                intronBuffer['donor_rc_overlapping'],
-                intronBuffer['acceptor_rc_splicing'],
-                intronBuffer['acceptor_rc_splicing_wrong'],
-                intronBuffer['acceptor_rc_overlapping']
+                intronBuffer['acceptor_rc_splicing_TP'],
+                intronBuffer['acceptor_rc_splicing_FP'],
+                intronBuffer['acceptor_rc_overlapping_TP'],
+                intronBuffer['acceptor_rc_overlapping_FP'],
+                intronBuffer['acceptor_rc_splicing_wrong']
             ]]), file=out_performance)
 
             intronBuffer = dict()
@@ -335,12 +378,16 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted_bam, m, mapper, condit
         condition,
         prevTid,
         prevIntron,
-        intronBuffer['donor_rc_splicing'],
+        intronBuffer['donor_rc_splicing_TP'],
+        intronBuffer['donor_rc_splicing_FP'],
+        intronBuffer['donor_rc_overlapping_TP'],
+        intronBuffer['donor_rc_overlapping_FP'],
         intronBuffer['donor_rc_splicing_wrong'],
-        intronBuffer['donor_rc_overlapping'],
-        intronBuffer['acceptor_rc_splicing'],
+        intronBuffer['acceptor_rc_splicing_TP'],
+        intronBuffer['acceptor_rc_splicing_FP'],
+        intronBuffer['acceptor_rc_overlapping_TP'],
+        intronBuffer['acceptor_rc_overlapping_FP'],
         intronBuffer['acceptor_rc_splicing_wrong'],
-        intronBuffer['acceptor_rc_overlapping']
     ]]), file=out_performance)
 
     if samout is not None:
@@ -352,9 +399,9 @@ def evaluate_splice_sites(bam_file, bam_out, is_converted_bam, m, mapper, condit
                         delinFile=True)
 
 
-def get_spliced_fraction(bam, tid, iv, chromosome, start, end, donor = True) :
+def get_spliced_fraction(bam, tid, iv, chromosome, start, end, annots, donor = True) :
 
-    itor = SimulatedReadIterator(bam.fetch(contig=chromosome, start=start , stop=end), flagFilter=0)
+    itor = SimulatedReadIterator(bam.fetch(contig=chromosome, start=start, stop=end), flagFilter=0)
 
     splicedTP = 0
     unsplicedTP = 0
@@ -363,10 +410,6 @@ def get_spliced_fraction(bam, tid, iv, chromosome, start, end, donor = True) :
     unsplicedFP = 0
 
     for read in itor:
-
-        readOrigin = read.name.split("_")[0]
-
-        isTPRead = readOrigin == tid
 
         start = read.start
         end = read.end
@@ -377,16 +420,16 @@ def get_spliced_fraction(bam, tid, iv, chromosome, start, end, donor = True) :
 
                 if read.splicing and end > iv.begin:
 
-                    if isTPRead:
+                    if read.trueTid == tid and read.trueSpliced:
                         splicedTP += 1
-                    else :
+                    elif not read.trueTid in annots or not read.trueSpliced:
                         splicedFP += 1
 
                 elif end > iv.begin:
 
-                    if isTPRead:
+                    if read.trueTid == tid and not read.trueSpliced:
                         unsplicedTP += 1
-                    else :
+                    elif not read.trueTid in annots or read.trueSpliced:
                         unsplicedFP += 1
 
                 else:
@@ -399,16 +442,16 @@ def get_spliced_fraction(bam, tid, iv, chromosome, start, end, donor = True) :
 
                 if read.splicing and start < iv.end:
 
-                    if isTPRead:
+                    if read.trueTid == tid and read.trueSpliced:
                         splicedTP += 1
-                    else :
+                    elif not read.trueTid in annots or not read.trueSpliced:
                         splicedFP += 1
 
                 elif start < iv.end:
 
-                    if isTPRead:
+                    if read.trueTid == tid and not read.trueSpliced:
                         unsplicedTP += 1
-                    else :
+                    elif not read.trueTid in annots or read.trueSpliced:
                         unsplicedFP += 1
 
     return splicedTP, unsplicedTP, splicedFP, unsplicedFP
@@ -452,9 +495,12 @@ def calculate_splice_site_mappability(config, bam_file, truth_file, is_converted
             ivTree = IntervalTree()
             ivTree.add(iv)
 
+            df = m.df[(m.df.Feature == 'transcript') & (m.df.Chromosome == chromosome) & (m.df.End >= intronstart - 1) & (m.df.Start <= intronend + 1)]  # get annotations
+            annots = df['transcript_id'].tolist()
+
             # Donor
-            donorTruthSplicedTP, donorTruthUnsplicedTP, donorTruthSplicedFP, donorTruthUnsplicedFP = get_spliced_fraction(truthBam, txid, iv, chromosome, intronstart - 1, intronstart, True)
-            donorMappedSplicedTP, donorMappedUnsplicedTP, donorMappedSplicedFP, donorMappedUnsplicedFP = get_spliced_fraction(mappedBam, txid, iv, chromosome, intronstart - 1, intronstart, True)
+            donorTruthSplicedTP, donorTruthUnsplicedTP, donorTruthSplicedFP, donorTruthUnsplicedFP = get_spliced_fraction(truthBam, txid, iv, chromosome, intronstart - 1, intronstart, annots, True)
+            donorMappedSplicedTP, donorMappedUnsplicedTP, donorMappedSplicedFP, donorMappedUnsplicedFP = get_spliced_fraction(mappedBam, txid, iv, chromosome, intronstart - 1, intronstart, annots, True)
 
             if donorTruthSplicedTP + donorTruthUnsplicedTP > 0:
                 donorTruthFractionTP = donorTruthSplicedTP / (donorTruthSplicedTP + donorTruthUnsplicedTP)
@@ -480,8 +526,8 @@ def calculate_splice_site_mappability(config, bam_file, truth_file, is_converted
             donorMappabilityFP = 1 - abs(donorTruthFractionFP - donorMappedFractionFP)
 
             # Acceptor
-            acceptorTruthSplicedTP, acceptorTruthUnsplicedTP, acceptorTruthSplicedFP, acceptorTruthUnsplicedFP = get_spliced_fraction(truthBam, txid, iv, chromosome, intronend, intronend + 1, False)
-            acceptorMappedSplicedTP, acceptorMappedUnsplicedTP, acceptorMappedSplicedFP, acceptorMappedUnsplicedFP = get_spliced_fraction(mappedBam, txid, iv, chromosome, intronend, intronend + 1, False)
+            acceptorTruthSplicedTP, acceptorTruthUnsplicedTP, acceptorTruthSplicedFP, acceptorTruthUnsplicedFP = get_spliced_fraction(truthBam, txid, iv, chromosome, intronend, intronend + 1, annots, False)
+            acceptorMappedSplicedTP, acceptorMappedUnsplicedTP, acceptorMappedSplicedFP, acceptorMappedUnsplicedFP = get_spliced_fraction(mappedBam, txid, iv, chromosome, intronend, intronend + 1, annots, False)
 
             if acceptorTruthSplicedTP + acceptorTruthUnsplicedTP > 0:
                 acceptorTruthFractionTP = acceptorTruthSplicedTP / (acceptorTruthSplicedTP + acceptorTruthUnsplicedTP)
@@ -506,77 +552,77 @@ def calculate_splice_site_mappability(config, bam_file, truth_file, is_converted
             acceptorMappabilityTP = 1 - abs(acceptorTruthFractionTP - acceptorMappedFractionTP)
             acceptorMappabilityFP = 1 - abs(acceptorTruthFractionFP - acceptorMappedFractionFP)
 
-            donorExonGenomeMappability = np.zeros(readLength, dtype=float)
-            donorExonBaseContent = ""
-
-            it = BlockedPerPositionIterator([
-                LocationTabixPerPositionIterator(
-                    genomeMappabilityFile,
-                    dict_chr2idx, reference=chromosome, start=intronstart - readLength,
-                    end=intronstart - 1, chr_prefix_operator='add', fill=True, fill_value=(0,),
-                    is_zero_based=True),
-                LocationFastaIterator(fasta, dict_chr2idx, chromosome, intronstart - readLength, intronstart - 1)
-                ])
-
-            arrayIndex = 0
-            for loc, (genomeMappability, referenceBase) in it:
-                donorExonGenomeMappability[arrayIndex] = genomeMappability[0]
-                donorExonBaseContent += referenceBase
-                arrayIndex += 1
-
-            donorIntronGenomeMappability = np.zeros(readLength, dtype=float)
-            donorIntronBaseContent = ""
-
-            it = BlockedPerPositionIterator([
-                LocationTabixPerPositionIterator(
-                    genomeMappabilityFile,
-                    dict_chr2idx, reference=chromosome, start=intronstart,
-                    end=intronstart + readLength - 1, chr_prefix_operator='add', fill=True, fill_value=(0,),
-                    is_zero_based=True),
-                LocationFastaIterator(fasta, dict_chr2idx, chromosome, intronstart, intronstart + readLength - 1)
-            ])
-
-            arrayIndex = 0
-            for loc, (genomeMappability, referenceBase) in it:
-                donorIntronGenomeMappability[arrayIndex] = genomeMappability[0]
-                donorIntronBaseContent += referenceBase
-                arrayIndex += 1
-
-            acceptorIntronGenomeMappability = np.zeros(readLength, dtype=float)
-            acceptorIntronBaseContent = ""
-
-            it = BlockedPerPositionIterator([
-                LocationTabixPerPositionIterator(
-                    genomeMappabilityFile,
-                    dict_chr2idx, reference=chromosome, start=intronend - readLength + 1,
-                    end=intronend, chr_prefix_operator='add', fill=True, fill_value=(0,),
-                    is_zero_based=True),
-                LocationFastaIterator(fasta, dict_chr2idx, chromosome, intronend - readLength + 1, intronend)
-            ])
-
-            arrayIndex = 0
-            for loc, (genomeMappability, referenceBase) in it:
-                acceptorIntronGenomeMappability[arrayIndex] = genomeMappability[0]
-                acceptorIntronBaseContent += referenceBase
-                arrayIndex += 1
-
-            acceptorExonGenomeMappability = np.zeros(readLength, dtype=float)
-            acceptorExonBaseContent = ""
-
-            it = BlockedPerPositionIterator([
-                LocationTabixPerPositionIterator(
-                    genomeMappabilityFile,
-                    dict_chr2idx, reference=chromosome, start=intronend + 1,
-                    end=intronend + readLength, chr_prefix_operator='add', fill=True, fill_value=(0,),
-                    is_zero_based=True),
-                LocationFastaIterator(fasta, dict_chr2idx, chromosome, intronend + 1, intronend + readLength)
-            ])
-
-            arrayIndex = 0
-            for loc, (genomeMappability, referenceBase) in it:
-                acceptorExonGenomeMappability[arrayIndex] = genomeMappability[0]
-                acceptorExonBaseContent += referenceBase
-                arrayIndex += 1
+            # donorExonGenomeMappability = np.zeros(readLength, dtype=float)
+            # donorExonBaseContent = ""
+            #
+            # it = BlockedPerPositionIterator([
+            #     LocationTabixPerPositionIterator(
+            #         genomeMappabilityFile,
+            #         dict_chr2idx, reference=chromosome, start=intronstart - readLength,
+            #         end=intronstart - 1, chr_prefix_operator='add', fill=True, fill_value=(0,),
+            #         is_zero_based=True),
+            #     LocationFastaIterator(fasta, dict_chr2idx, chromosome, intronstart - readLength, intronstart - 1)
+            #     ])
+            #
+            # arrayIndex = 0
+            # for loc, (genomeMappability, referenceBase) in it:
+            #     donorExonGenomeMappability[arrayIndex] = genomeMappability[0]
+            #     donorExonBaseContent += referenceBase
+            #     arrayIndex += 1
+            #
+            # donorIntronGenomeMappability = np.zeros(readLength, dtype=float)
+            # donorIntronBaseContent = ""
+            #
+            # it = BlockedPerPositionIterator([
+            #     LocationTabixPerPositionIterator(
+            #         genomeMappabilityFile,
+            #         dict_chr2idx, reference=chromosome, start=intronstart,
+            #         end=intronstart + readLength - 1, chr_prefix_operator='add', fill=True, fill_value=(0,),
+            #         is_zero_based=True),
+            #     LocationFastaIterator(fasta, dict_chr2idx, chromosome, intronstart, intronstart + readLength - 1)
+            # ])
+            #
+            # arrayIndex = 0
+            # for loc, (genomeMappability, referenceBase) in it:
+            #     donorIntronGenomeMappability[arrayIndex] = genomeMappability[0]
+            #     donorIntronBaseContent += referenceBase
+            #     arrayIndex += 1
+            #
+            # acceptorIntronGenomeMappability = np.zeros(readLength, dtype=float)
+            # acceptorIntronBaseContent = ""
+            #
+            # it = BlockedPerPositionIterator([
+            #     LocationTabixPerPositionIterator(
+            #         genomeMappabilityFile,
+            #         dict_chr2idx, reference=chromosome, start=intronend - readLength + 1,
+            #         end=intronend, chr_prefix_operator='add', fill=True, fill_value=(0,),
+            #         is_zero_based=True),
+            #     LocationFastaIterator(fasta, dict_chr2idx, chromosome, intronend - readLength + 1, intronend)
+            # ])
+            #
+            # arrayIndex = 0
+            # for loc, (genomeMappability, referenceBase) in it:
+            #     acceptorIntronGenomeMappability[arrayIndex] = genomeMappability[0]
+            #     acceptorIntronBaseContent += referenceBase
+            #     arrayIndex += 1
+            #
+            # acceptorExonGenomeMappability = np.zeros(readLength, dtype=float)
+            # acceptorExonBaseContent = ""
+            #
+            # it = BlockedPerPositionIterator([
+            #     LocationTabixPerPositionIterator(
+            #         genomeMappabilityFile,
+            #         dict_chr2idx, reference=chromosome, start=intronend + 1,
+            #         end=intronend + readLength, chr_prefix_operator='add', fill=True, fill_value=(0,),
+            #         is_zero_based=True),
+            #     LocationFastaIterator(fasta, dict_chr2idx, chromosome, intronend + 1, intronend + readLength)
+            # ])
+            #
+            # arrayIndex = 0
+            # for loc, (genomeMappability, referenceBase) in it:
+            #     acceptorExonGenomeMappability[arrayIndex] = genomeMappability[0]
+            #     acceptorExonBaseContent += referenceBase
+            #     arrayIndex += 1
 
             if intronstrand == "-":
                 print("\t".join([chromosome,str(intronstart - readLength), str(intronstart + readLength), intronID + "_acceptor", str(donorMappabilityTP), intronstrand]), file = f)
@@ -588,22 +634,26 @@ def calculate_splice_site_mappability(config, bam_file, truth_file, is_converted
                     condition,
                     tid,
                     intronID,
+                    chromosome,
+                    str(intronstart),
+                    str(intronend),
+                    intronstrand,
                     str(acceptorMappabilityTP),
                     str(acceptorMappabilityFP),
                     str(acceptorMappedSplicedTP + acceptorMappedUnsplicedTP),
                     str(acceptorMappedSplicedFP + acceptorMappedUnsplicedFP),
-                    str(np.nanmean(acceptorExonGenomeMappability)),
-                    str(acceptorExonBaseContent.upper().count("A")),
-                    str(np.nanmean(acceptorIntronGenomeMappability)),
-                    str(acceptorIntronBaseContent.upper().count("A")),
+                    #str(np.nanmean(acceptorExonGenomeMappability)),
+                    #str(acceptorExonBaseContent.upper().count("A")),
+                    #str(np.nanmean(acceptorIntronGenomeMappability)),
+                    #str(acceptorIntronBaseContent.upper().count("A")),
                     str(donorMappabilityTP),
                     str(donorMappabilityFP),
                     str(donorMappedSplicedTP + donorMappedUnsplicedTP),
-                    str(donorMappedSplicedFP + donorMappedUnsplicedFP),
-                    str(np.nanmean(donorExonGenomeMappability)),
-                    str(donorExonBaseContent.upper().count("A")),
-                    str(np.nanmean(donorIntronGenomeMappability)),
-                    str(donorIntronBaseContent.upper().count("A")),
+                    str(donorMappedSplicedFP + donorMappedUnsplicedFP)#,
+                    #str(np.nanmean(donorExonGenomeMappability)),
+                    #str(donorExonBaseContent.upper().count("A")),
+                    #str(np.nanmean(donorIntronGenomeMappability)),
+                    #str(donorIntronBaseContent.upper().count("A")),
                 ]]), file=out_mappability)
 
             else :
@@ -616,22 +666,26 @@ def calculate_splice_site_mappability(config, bam_file, truth_file, is_converted
                     condition,
                     tid,
                     intronID,
+                    chromosome,
+                    str(intronstart),
+                    str(intronend),
+                    intronstrand,
                     str(donorMappabilityTP),
                     str(donorMappabilityFP),
                     str(donorMappedSplicedTP + donorMappedUnsplicedTP),
                     str(donorMappedSplicedFP + donorMappedUnsplicedFP),
-                    str(np.nanmean(donorExonGenomeMappability)),
-                    str(donorExonBaseContent.upper().count("T")),
-                    str(np.nanmean(donorIntronGenomeMappability)),
-                    str(donorIntronBaseContent.upper().count("T")),
+                    #str(np.nanmean(donorExonGenomeMappability)),
+                    #str(donorExonBaseContent.upper().count("T")),
+                    #str(np.nanmean(donorIntronGenomeMappability)),
+                    #str(donorIntronBaseContent.upper().count("T")),
                     str(acceptorMappabilityTP),
                     str(acceptorMappabilityFP),
                     str(acceptorMappedSplicedTP + acceptorMappedUnsplicedTP),
-                    str(acceptorMappedSplicedFP + acceptorMappedUnsplicedFP),
-                    str(np.nanmean(acceptorExonGenomeMappability)),
-                    str(acceptorExonBaseContent.upper().count("T")),
-                    str(np.nanmean(acceptorIntronGenomeMappability)),
-                    str(acceptorIntronBaseContent.upper().count("T"))
+                    str(acceptorMappedSplicedFP + acceptorMappedUnsplicedFP)#,
+                    #str(np.nanmean(acceptorExonGenomeMappability)),
+                    #str(acceptorExonBaseContent.upper().count("T")),
+                    #str(np.nanmean(acceptorIntronGenomeMappability)),
+                    # str(acceptorIntronBaseContent.upper().count("T"))
                 ]]), file=out_mappability)
 
     f.close()
@@ -1080,8 +1134,8 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
                                 with open(fout8, 'w') as out8:
                                     print("mapped_coords\ttrue_coords\tclassification\ttid\tis_converted_bam\tmapper\tcondition_id\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\tis_converted_read\toverlapping_tids\tread_name", file=out)
                                     print("is_converted_bam\tmapper\tcondition_id\tiso\ttid\tTP\tFP\tFN", file=out2)
-                                    print("is_converted_bam\tmapper\tcondition\ttid\tintron_id\tdonor_rc_splicing\tdonor_rc_splicing_wrong\tdonor_rc_overlapping\tacceptor_rc_splicing\tacceptor_rc_splicing_wrong\tacceptor_rc_overlapping", file=out3)
-                                    print("is_converted_bam\tmapper\tcondition\ttid\tintron_id\tdonor_sj_mappability_TP\tdonor_sj_mappability_FP\tdonor_sj_TP_reads\tdonor_sj_FP_reads\tdonor_exon_mean_mappability\tdonor_exon_T_content\tdonor_intron_mean_mappability\tdonor_intron_T_content\tacceptor_sj_mappability_TP\tacceptor_sj_mappability_FP\tacceptor_TP_reads\tacceptor_FP_reads\tacceptor_exon_mean_mappability\tacceptor_exon_T_content\tacceptor_intron_mean_mappability\tacceptor_intron_T_content",
+                                    print("is_converted_bam\tmapper\tcondition\ttid\tintron_id\tdonor_rc_splicing_TP\tdonor_rc_splicing_FP\tdonor_rc_overlapping_TP\tdonor_rc_overlapping_FP\tdonor_rc_splicing_wrong\tacceptor_rc_splicing_TP\tacceptor_rc_splicing_FP\tacceptor_rc_overlapping_TP\tacceptor_rc_overlapping_FP\tacceptor_rc_splicing_wrong", file=out3)
+                                    print("is_converted_bam\tmapper\tcondition\ttid\tintron_id\tchromosome\tstart\tend\tstrand\tdonor_sj_mappability_TP\tdonor_sj_mappability_FP\tdonor_sj_TP_reads\tdonor_sj_FP_reads\tacceptor_sj_mappability_TP\tacceptor_sj_mappability_FP\tacceptor_TP_reads\tacceptor_FP_reads",
                                         file=out7)
                                     print("bam\tis_converted_bam\tmapper\tcondition_id\tcondition_tp\tcondition_cr\tcondition_cov", file=out8)
     
@@ -1126,13 +1180,13 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
     
                                             evaluate_bam(bam_ori, bam_ori_out, False, m, mapper, cond, out, out2)
                                             evaluate_splice_sites(bam_ori, bam_ori_out_intron, False, m, mapper, cond.id, out3)
-    #                                         evaluate_coverage_uniformity(bam_ori, bam_ori_truth, False, m, mapper, cond.id, out4, out5, out6)
-    #                                         calculate_splice_site_mappability(config, bam_ori, bam_ori_truth, False, m, mapper, cond.id, out7, mappability_ori_out, config["genome_fa"], config["readlen"])
+                                            # evaluate_coverage_uniformity(bam_ori, bam_ori_truth, False, m, mapper, cond.id, out4, out5, out6)
+                                            calculate_splice_site_mappability(config, bam_ori, bam_ori_truth, False, m, mapper, cond.id, out7, mappability_SJ_ori_out, config["genome_fa"], config["readlen"])
     
                                             evaluate_bam(bam_conv, bam_conv_out, True, m, mapper, cond, out, out2)
                                             evaluate_splice_sites(bam_conv, bam_conv_out_intron, True, m, mapper, cond.id, out3)
-    #                                         evaluate_coverage_uniformity(bam_conv, bam_conv_truth, True, m, mapper, cond.id, out4, out5, out6)
-    #                                         calculate_splice_site_mappability(config, bam_conv, bam_conv_truth, True, m, mapper, cond.id, out7, mappability_conv_out, config["genome_fa"], config["readlen"])
+                                            # evaluate_coverage_uniformity(bam_conv, bam_conv_truth, True, m, mapper, cond.id, out4, out5, out6)
+                                            calculate_splice_site_mappability(config, bam_conv, bam_conv_truth, True, m, mapper, cond.id, out7, mappability_SJ_conv_out, config["genome_fa"], config["readlen"])
     
                                         # eval truth
                                         bam_out_dir_ori = outdir + "bam_ori/TRUTH/"

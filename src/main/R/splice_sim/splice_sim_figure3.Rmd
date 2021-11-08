@@ -1,0 +1,302 @@
+---
+title: "splice_sim figure 3"
+author: "Tobias Neumann"
+always_allow_html: yes
+output:
+  html_document:
+    code_folding: hide
+    toc: yes
+    toc_float: yes
+  word_document:
+    toc: yes
+  pdf_document:
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+library(tidyverse)
+library(gridExtra)
+library(DESeq2)
+library(RColorBrewer)
+library(ggrepel)
+library(GGally)
+library(biomaRt)
+library(pheatmap)
+library(UpSetR)
+library(dupRadar)
+library(Rsamtools)
+library(DT)
+library(ineq)
+library(pracma)
+
+datapal = brewer.pal(5, "Set1")
+
+```
+
+<!-- # Small5 -->
+
+<!-- ```{r} -->
+
+<!-- eva = read_tsv('../../myProjects/slamdunk/splice_sim/small5_2/small5/eva/splice_site_performance.tsv') -->
+
+<!-- eva %>% -->
+<!--   dplyr::filter(is_converted == "0") %>% -->
+<!--   group_by(is_converted, mapper, condition, tid, intron_id) %>% -->
+<!--   tidyr::gather(class, values, 6:11) %>% -->
+<!--   ggplot(aes(x = condition, y = values, fill = mapper)) + -->
+<!--   geom_boxplot() + -->
+<!--   scale_fill_brewer(palette = "Set1") + -->
+<!--   facet_wrap(~class) + -->
+<!--   theme_linedraw() + -->
+<!--   theme( -->
+<!--     panel.grid.major = element_blank(), -->
+<!--     panel.grid.minor = element_blank(), -->
+<!--     legend.title = element_blank() -->
+<!--   ) + ylab("# Reads") + ggtitle("Unconv reads") -->
+
+<!-- eva %>% -->
+<!--   dplyr::filter(is_converted == "1") %>% -->
+<!--   group_by(is_converted, mapper, condition, tid, intron_id) %>% -->
+<!--   tidyr::gather(class, values, 6:11) %>% -->
+<!--   ggplot(aes(x = condition, y = values, fill = mapper)) + -->
+<!--   geom_boxplot() + -->
+<!--   scale_fill_brewer(palette = "Set1") + -->
+<!--   facet_wrap(~class) + -->
+<!--   theme_linedraw() + -->
+<!--   theme( -->
+<!--     panel.grid.major = element_blank(), -->
+<!--     panel.grid.minor = element_blank(), -->
+<!--     legend.title = element_blank() -->
+<!--   ) + ylab("# Reads") + ggtitle("Conv reads") -->
+
+<!-- eva %>% -->
+<!--   mutate(fraction = (donor_rc_splicing + donor_rc_splicing_wrong + acceptor_rc_splicing + acceptor_rc_splicing_wrong) / (donor_rc_overlapping + acceptor_rc_overlapping)) %>% -->
+<!--   dplyr::select(is_converted, mapper, condition, tid, intron_id, fraction) %>% -->
+<!--   ggplot(aes(x = condition, y = fraction, fill = mapper)) + -->
+<!--   geom_boxplot(outlier.shape = NA) + -->
+<!--   scale_fill_brewer(palette = "Set1") + -->
+<!--   facet_wrap(~is_converted) + -->
+<!--   theme_linedraw() + -->
+<!--   theme( -->
+<!--     panel.grid.major = element_blank(), -->
+<!--     panel.grid.minor = element_blank(), -->
+<!--     legend.title = element_blank() -->
+<!--   ) + ylab("Fraction spliced / unspliced") + ylim(0,2) -->
+
+<!-- ``` -->
+
+# slam2
+
+```{r}
+
+eva = read_tsv('/Volumes/Macintosh HD/Users/tobias.neumann/PycharmProjects/splice_sim/src/main/python/splice_sim/eva/splice_site_performance.tsv')
+
+eva %>%
+  dplyr::filter(is_converted_bam == "0") %>%
+  group_by(is_converted_bam, mapper, condition, tid, intron_id) %>%
+  tidyr::gather(class, values, 6:15) %>%
+  ggplot(aes(x = condition, y = values, fill = mapper)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette = "Set1") +
+  facet_wrap(~class) +
+  theme_linedraw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.title = element_blank()
+  ) + ylab("# Reads") + ggtitle("Unconv reads")
+
+eva %>%
+  dplyr::filter(is_converted_bam == "1") %>%
+  group_by(is_converted_bam, mapper, condition, tid, intron_id) %>%
+  tidyr::gather(class, values, 6:15) %>%
+  ggplot(aes(x = condition, y = values, fill = mapper)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette = "Set1") +
+  facet_wrap(~class) +
+  theme_linedraw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.title = element_blank()
+  ) + ylab("# Reads") + ggtitle("Conv reads")
+
+plotTab = eva %>%
+  mutate(fraction = (donor_rc_splicing_TP + acceptor_rc_splicing_TP) / (donor_rc_splicing_TP + acceptor_rc_splicing_TP + donor_rc_overlapping_TP + acceptor_rc_overlapping_TP)) %>%
+  dplyr::select(is_converted_bam, mapper, condition, tid, intron_id, fraction) %>% dplyr::mutate(signal = "TP")
+
+plotTab = rbind(plotTab,
+                eva %>%
+  mutate(fraction = (donor_rc_splicing_TP + acceptor_rc_splicing_TP + donor_rc_splicing_FP + acceptor_rc_splicing_FP) / (donor_rc_splicing_TP + acceptor_rc_splicing_TP + donor_rc_overlapping_TP + acceptor_rc_overlapping_TP + donor_rc_splicing_FP + acceptor_rc_splicing_FP + donor_rc_overlapping_FP + acceptor_rc_overlapping_FP)) %>%
+  dplyr::select(is_converted_bam, mapper, condition, tid, intron_id, fraction) %>%
+    dplyr::mutate(signal = "all"))
+
+plotTab = rbind(plotTab,
+                eva %>%
+  mutate(fraction = (donor_rc_splicing_FP + acceptor_rc_splicing_FP) / (donor_rc_splicing_FP + acceptor_rc_splicing_FP + donor_rc_overlapping_FP + acceptor_rc_overlapping_FP)) %>%
+  dplyr::select(is_converted_bam, mapper, condition, tid, intron_id, fraction) %>%
+    dplyr::mutate(signal = "FP"))
+
+plotTab %>%
+  ggplot(aes(x = condition, y = fraction, fill = mapper)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette = "Set1") +
+  facet_wrap(~is_converted_bam + signal, nrow = 2) +
+  theme_linedraw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.title = element_blank()
+  ) + ylab("Fraction spliced / unspliced") + ylim(0.5,1)
+
+```
+
+# Big3 Biseq
+
+```{r}
+
+eva = read_tsv('../../myProjects/slamdunk/splice_sim/big3_biseq/big3_biseq/eva/splice_site_performance.tsv')
+
+eva %>%
+  dplyr::filter(is_converted_bam == "0") %>%
+  group_by(is_converted_bam, mapper, condition, tid, intron_id) %>%
+  tidyr::gather(class, values, 6:15) %>%
+  ggplot(aes(x = condition, y = values, fill = mapper)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette = "Set1") +
+  facet_wrap(~class) +
+  theme_linedraw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.title = element_blank()
+  ) + ylab("# Reads") + ggtitle("Unconv reads")
+
+eva %>%
+  dplyr::filter(is_converted_bam == "1") %>%
+  group_by(is_converted_bam, mapper, condition, tid, intron_id) %>%
+  tidyr::gather(class, values, 6:15) %>%
+  ggplot(aes(x = condition, y = values, fill = mapper)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette = "Set1") +
+  facet_wrap(~class) +
+  theme_linedraw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.title = element_blank()
+  ) + ylab("# Reads") + ggtitle("Conv reads")
+
+
+plotTab = eva %>%
+  mutate(fraction = (donor_rc_splicing_TP + acceptor_rc_splicing_TP) / (donor_rc_splicing_TP + acceptor_rc_splicing_TP + donor_rc_overlapping_TP + acceptor_rc_overlapping_TP)) %>%
+  dplyr::select(is_converted_bam, mapper, condition, tid, intron_id, fraction) %>% dplyr::mutate(signal = "TP")
+
+plotTab = rbind(plotTab,
+                eva %>%
+  mutate(fraction = (donor_rc_splicing_TP + acceptor_rc_splicing_TP + donor_rc_splicing_FP + acceptor_rc_splicing_FP) / (donor_rc_splicing_TP + acceptor_rc_splicing_TP + donor_rc_overlapping_TP + acceptor_rc_overlapping_TP + donor_rc_splicing_FP + acceptor_rc_splicing_FP + donor_rc_overlapping_FP + acceptor_rc_overlapping_FP)) %>%
+  dplyr::select(is_converted_bam, mapper, condition, tid, intron_id, fraction) %>%
+    dplyr::mutate(signal = "all"))
+
+plotTab = rbind(plotTab,
+                eva %>%
+  mutate(fraction = (donor_rc_splicing_FP + acceptor_rc_splicing_FP) / (donor_rc_splicing_FP + acceptor_rc_splicing_FP + donor_rc_overlapping_FP + acceptor_rc_overlapping_FP)) %>%
+  dplyr::select(is_converted_bam, mapper, condition, tid, intron_id, fraction) %>%
+    dplyr::mutate(signal = "FP"))
+
+plotTab %>%
+  ggplot(aes(x = condition, y = fraction, fill = mapper)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette = "Set1") +
+  facet_wrap(~is_converted_bam + signal, nrow = 2) +
+  theme_linedraw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.title = element_blank()
+  ) + ylab("Fraction spliced / unspliced") + ylim(0,1)
+
+```
+
+# Big3 Slamseq
+
+```{r}
+
+eva = read_tsv('../../myProjects/slamdunk/splice_sim/big3_slamseq/big3_slamseq/eva/splice_site_performance.tsv')
+
+eva %>%
+  dplyr::filter(is_converted_bam == "0") %>%
+  group_by(is_converted_bam, mapper, condition, tid, intron_id) %>%
+  tidyr::gather(class, values, 6:15) %>%
+  ggplot(aes(x = condition, y = values, fill = mapper)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette = "Set1") +
+  facet_wrap(~class) +
+  theme_linedraw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.title = element_blank()
+  ) + ylab("# Reads") + ggtitle("Unconv reads")
+
+eva %>%
+  dplyr::filter(is_converted_bam == "1") %>%
+  group_by(is_converted_bam, mapper, condition, tid, intron_id) %>%
+  tidyr::gather(class, values, 6:15) %>%
+  ggplot(aes(x = condition, y = values, fill = mapper)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette = "Set1") +
+  facet_wrap(~class) +
+  theme_linedraw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.title = element_blank()
+  ) + ylab("# Reads") + ggtitle("Conv reads")
+
+eva %>%
+  mutate(fraction = (donor_rc_splicing + donor_rc_splicing_wrong + acceptor_rc_splicing + acceptor_rc_splicing_wrong) / (donor_rc_overlapping + acceptor_rc_overlapping)) %>%
+  dplyr::select(is_converted, mapper, condition, tid, intron_id, fraction) %>%
+  ggplot(aes(x = condition, y = fraction, fill = mapper)) +
+  geom_boxplot(outlier.shape = NA) +
+  scale_fill_brewer(palette = "Set1") +
+  facet_wrap(~is_converted) +
+  theme_linedraw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.title = element_blank()
+  ) + ylab("Fraction spliced / unspliced") + ylim(0,2)
+
+plotTab = eva %>%
+  mutate(fraction = (donor_rc_splicing_TP + acceptor_rc_splicing_TP) / (donor_rc_splicing_TP + acceptor_rc_splicing_TP + donor_rc_overlapping_TP + acceptor_rc_overlapping_TP)) %>%
+  dplyr::select(is_converted_bam, mapper, condition, tid, intron_id, fraction) %>% dplyr::mutate(signal = "TP")
+
+plotTab = rbind(plotTab,
+                eva %>%
+  mutate(fraction = (donor_rc_splicing_TP + acceptor_rc_splicing_TP + donor_rc_splicing_FP + acceptor_rc_splicing_FP) / (donor_rc_splicing_TP + acceptor_rc_splicing_TP + donor_rc_overlapping_TP + acceptor_rc_overlapping_TP + donor_rc_splicing_FP + acceptor_rc_splicing_FP + donor_rc_overlapping_FP + acceptor_rc_overlapping_FP)) %>%
+  dplyr::select(is_converted_bam, mapper, condition, tid, intron_id, fraction) %>%
+    dplyr::mutate(signal = "all"))
+
+plotTab = rbind(plotTab,
+                eva %>%
+  mutate(fraction = (donor_rc_splicing_FP + acceptor_rc_splicing_FP) / (donor_rc_splicing_FP + acceptor_rc_splicing_FP + donor_rc_overlapping_FP + acceptor_rc_overlapping_FP)) %>%
+  dplyr::select(is_converted_bam, mapper, condition, tid, intron_id, fraction) %>%
+    dplyr::mutate(signal = "FP"))
+
+plotTab %>%
+  ggplot(aes(x = condition, y = fraction, fill = mapper)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette = "Set1") +
+  facet_wrap(~is_converted_bam + signal, nrow = 2) +
+  theme_linedraw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.title = element_blank()
+  ) + ylab("Fraction spliced / unspliced") + ylim(0,1)
+
+```

@@ -1,0 +1,977 @@
+---
+title: "splice_sim figure 4"
+author: "Tobias Neumann"
+always_allow_html: yes
+output:
+  html_document:
+    code_folding: hide
+    toc: yes
+    toc_float: yes
+  word_document:
+    toc: yes
+  pdf_document:
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+library(tidyverse)
+library(gridExtra)
+library(DESeq2)
+library(RColorBrewer)
+library(ggrepel)
+library(GGally)
+library(biomaRt)
+library(pheatmap)
+library(UpSetR)
+library(dupRadar)
+library(Rsamtools)
+library(DT)
+library(ineq)
+library(pracma)
+
+datapal = brewer.pal(5, "Set1")
+
+```
+
+# Big3 old
+
+```{r}
+
+mart <- useDataset("mmusculus_gene_ensembl", useMart("ensembl"))
+
+mappability = read_tsv('/Volumes/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/big3/big3/eva/mappability.tsv')
+mappability = mappability %>%
+  mutate(tid = sub("\\..*","",tid))
+
+gene_symbols = getBM(filters= "ensembl_transcript_id", attributes= c("ensembl_transcript_id", "mgi_symbol"),values=mappability$tid,mart= mart)
+
+mappability$gene_symbol = gene_symbols$mgi_symbol[match(mappability$tid,gene_symbols$ensembl_transcript_id)]
+
+```
+
+# Gene-wise scatters
+
+## Donor
+
+### 1 %
+
+#### Mappability
+
+```{r,fig.width=50, fig.height=8}
+
+mappability %>% 
+  dplyr::filter(condition == "c_01" & is_converted == 0) %>%
+  dplyr::mutate(percentage_TP = donor_sj_TP_reads / (donor_sj_TP_reads + donor_sj_FP_reads) * 100) %>%
+  dplyr::select(is_converted, tid, intron_id, mapper, donor_sj_mappability_TP, donor_intron_mean_mappability, gene_symbol, percentage_TP) %>%
+  dplyr::group_by(is_converted, tid, gene_symbol, mapper) %>%
+  ggplot(aes(x = mapper, y = donor_sj_mappability_TP, color = donor_intron_mean_mappability)) +
+  geom_jitter() +
+  facet_wrap(~gene_symbol,nrow=3,scales = "fixed") +
+  theme_linedraw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+
+mappability %>% 
+  dplyr::filter(condition == "c_01" & is_converted == 0) %>%
+  dplyr::mutate(percentage_TP = donor_sj_TP_reads / (donor_sj_TP_reads + donor_sj_FP_reads) * 100) %>%
+  dplyr::select(is_converted, tid, intron_id, mapper, donor_sj_mappability_TP, donor_intron_mean_mappability, gene_symbol, percentage_TP) %>%
+  dplyr::group_by(is_converted, tid, gene_symbol, mapper) %>%
+  ggplot(aes(x = mapper, y = donor_sj_mappability_TP, color = percentage_TP)) +
+  geom_jitter() +
+  facet_wrap(~gene_symbol,nrow=3,scales = "fixed") +
+  theme_linedraw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+
+```
+
+<!-- ```{r,fig.width=50, fig.height=8} -->
+
+<!-- mappability %>%  -->
+<!--   dplyr::filter(condition == "c_01" & is_converted == 0) %>% -->
+<!--   dplyr::mutate(percentage_TP = donor_sj_TP_reads / (donor_sj_TP_reads + donor_sj_FP_reads) * 100) %>% -->
+<!--   dplyr::select(is_converted, tid, intron_id, mapper, donor_sj_mappability_TP, donor_intron_mean_mappability, gene_symbol, percentage_TP) %>% -->
+<!--   dplyr::group_by(is_converted, tid, gene_symbol, mapper) %>% -->
+<!--   mutate(zscore = (donor_sj_mappability_TP - mean(donor_sj_mappability_TP)) / sd(donor_sj_mappability_TP)) %>% -->
+<!--   ggplot(aes(x = mapper, y = zscore, color = percentage_TP)) + -->
+<!--   geom_jitter() + -->
+<!--   facet_wrap(~gene_symbol,nrow=3,scales = "fixed") + -->
+<!--   theme_linedraw() + -->
+<!--   theme( -->
+<!--     panel.grid.major = element_blank(), -->
+<!--     panel.grid.minor = element_blank() -->
+<!--   ) + geom_hline(yintercept = 2, lty = 2, color = "red") + geom_hline(yintercept = -2, lty = 2, color = "red") -->
+
+<!-- mappability %>%  -->
+<!--   dplyr::filter(condition == "c_01" & is_converted == 0) %>% -->
+<!--   dplyr::mutate(percentage_TP = donor_sj_TP_reads / (donor_sj_TP_reads + donor_sj_FP_reads) * 100) %>% -->
+<!--   dplyr::select(is_converted, tid, intron_id, mapper, donor_sj_mappability_TP, donor_intron_mean_mappability, gene_symbol, percentage_TP) %>% -->
+<!--   dplyr::group_by(is_converted, tid, gene_symbol, mapper) %>% -->
+<!--   mutate(zscore = (donor_sj_mappability_TP - mean(donor_sj_mappability_TP)) / sd(donor_sj_mappability_TP)) %>% -->
+<!--   ggplot(aes(x = mapper, y = zscore, color = percentage_TP)) + -->
+<!--   geom_jitter() + -->
+<!--   theme_linedraw() + -->
+<!--   theme( -->
+<!--     panel.grid.major = element_blank(), -->
+<!--     panel.grid.minor = element_blank() -->
+<!--   ) + geom_hline(yintercept = 2, lty = 2, color = "red") + geom_hline(yintercept = -2, lty = 2, color = "red") -->
+
+<!-- mappability %>%  -->
+<!--   dplyr::filter(condition == "c_01" & is_converted == 0) %>% -->
+<!--   dplyr::mutate(tp_fp_diff = abs(donor_sj_mappability_TP - donor_sj_mappability_FP)) %>% -->
+<!--   dplyr::select(is_converted, tid, intron_id, mapper, donor_sj_mappability_TP, donor_intron_mean_mappability, gene_symbol, tp_fp_diff) %>% -->
+<!--   dplyr::group_by(is_converted, tid, gene_symbol, mapper) %>% -->
+<!--   mutate(zscore = (donor_sj_mappability_TP - mean(donor_sj_mappability_TP)) / sd(donor_sj_mappability_TP)) %>% -->
+<!--   ggplot(aes(x = mapper, y = zscore, color = tp_fp_diff)) + -->
+<!--   geom_jitter() + -->
+<!--   facet_wrap(~gene_symbol,nrow=3,scales = "fixed") + -->
+<!--   theme_linedraw() + -->
+<!--   theme( -->
+<!--     panel.grid.major = element_blank(), -->
+<!--     panel.grid.minor = element_blank() -->
+<!--   ) + geom_hline(yintercept = 2, lty = 2, color = "red") + geom_hline(yintercept = -2, lty = 2, color = "red") -->
+
+
+<!-- mappability %>%  -->
+<!--   dplyr::filter(condition == "c_01" & is_converted == 0) %>% -->
+<!--   dplyr::mutate(tp_fp_diff = abs(donor_sj_mappability_TP - donor_sj_mappability_FP)) %>% -->
+<!--   dplyr::select(is_converted, tid, intron_id, mapper, donor_sj_mappability_TP, donor_intron_mean_mappability, gene_symbol, tp_fp_diff) %>% -->
+<!--   dplyr::group_by(is_converted, tid, gene_symbol, mapper) %>% -->
+<!--   mutate(zscore = (donor_sj_mappability_TP - mean(donor_sj_mappability_TP)) / sd(donor_sj_mappability_TP)) %>% -->
+<!--   ggplot(aes(x = mapper, y = zscore, color = tp_fp_diff)) + -->
+<!--   geom_jitter() + -->
+<!--   theme_linedraw() + -->
+<!--   theme( -->
+<!--     panel.grid.major = element_blank(), -->
+<!--     panel.grid.minor = element_blank() -->
+<!--   ) + geom_hline(yintercept = 2, lty = 2, color = "red") + geom_hline(yintercept = -2, lty = 2, color = "red") -->
+
+<!-- ``` -->
+
+# 10% conversions
+
+```{r,fig.width=15, fig.height=8}
+
+mappability %>% 
+  dplyr::select(is_converted, condition, tid, intron_id, mapper, donor_sj_mappability_TP, donor_intron_mean_mappability, gene_symbol) %>%
+  dplyr::group_by(is_converted, condition, tid, gene_symbol, mapper) %>%
+  dplyr::summarise(donor_sj_mappability_TP = mean(donor_sj_mappability_TP), donor_intron_mean_mappability = mean(donor_intron_mean_mappability)) %>%
+  tidyr::spread(mapper, donor_sj_mappability_TP) %>%
+  dplyr::mutate(spread = HISAT2_TLA - STAR) %>%
+  dplyr::group_by(is_converted, condition) %>%
+  dplyr::arrange(is_converted, condition, desc(spread)) %>%
+  dplyr::mutate(label = case_when(
+    row_number() %in% 1:10 ~ gene_symbol,
+    row_number() %in% (n() - 10):n() ~ gene_symbol,
+    TRUE ~ ""
+  )) %>%
+  ggplot(aes(x = STAR, y = HISAT2_TLA, color = donor_intron_mean_mappability)) + 
+  geom_point() +
+  theme_linedraw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()
+  ) + 
+  geom_label_repel(inherit.aes = FALSE, aes(x = STAR, y = HISAT2_TLA, label = label), show.legend = FALSE) +
+  facet_wrap(~is_converted + condition, ncol = length(unique(mappability$condition))) + xlim(0,1) + ylim(0,1) +
+  geom_abline(intercept = 0, slope = 1, lty = 2, color="gray")
+
+mappability %>% 
+  dplyr::mutate(corrected_sj_mappability = acceptor_TP_reads / (acceptor_TP_reads + acceptor_FP_reads) * acceptor_sj_mappability_TP) %>% 
+  dplyr::mutate(corrected_sj_mappability = case_when(
+    is.nan(corrected_sj_mappability) ~ 0,
+    TRUE ~ corrected_sj_mappability
+  )) %>% 
+  dplyr::select(is_converted, condition, tid, intron_id, mapper, donor_sj_mappability_TP, donor_intron_mean_mappability, gene_symbol, corrected_sj_mappability) %>%
+  dplyr::group_by(is_converted, condition, tid, gene_symbol, mapper) %>%
+  dplyr::summarise(corrected_sj_mappability = mean(corrected_sj_mappability), donor_intron_mean_mappability = mean(donor_intron_mean_mappability)) %>%
+  tidyr::spread(mapper, corrected_sj_mappability) %>%
+  dplyr::mutate(spread = HISAT2_TLA - STAR) %>%
+  dplyr::group_by(is_converted, condition) %>%
+  dplyr::arrange(is_converted, condition, desc(spread)) %>%
+  dplyr::mutate(label = case_when(
+    row_number() %in% 1:10 ~ gene_symbol,
+    row_number() %in% (n() - 10):n() ~ gene_symbol,
+    TRUE ~ ""
+  )) %>%
+  ggplot(aes(x = STAR, y = HISAT2_TLA, color = donor_intron_mean_mappability)) + 
+  geom_point() +
+  theme_linedraw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()
+  ) + 
+  geom_label_repel(inherit.aes = FALSE, aes(x = STAR, y = HISAT2_TLA, label = label), show.legend = FALSE) +
+  facet_wrap(~is_converted + condition, ncol = length(unique(mappability$condition))) + xlim(0,1) + ylim(0,1) +
+  geom_abline(intercept = 0, slope = 1, lty = 2, color="gray")
+
+mappability %>% 
+  dplyr::mutate(corrected_sj_mappability = acceptor_TP_reads / (acceptor_TP_reads + acceptor_FP_reads) * acceptor_sj_mappability_TP) %>% 
+  dplyr::mutate(corrected_sj_mappability = case_when(
+    is.nan(corrected_sj_mappability) ~ 0,
+    TRUE ~ corrected_sj_mappability
+  )) %>% 
+  dplyr::select(is_converted, condition, tid, intron_id, mapper, corrected_sj_mappability, donor_sj_mappability_TP, donor_sj_TP_reads, donor_sj_FP_reads, donor_intron_mean_mappability, gene_symbol) %>%
+  dplyr::group_by(is_converted, condition, tid, gene_symbol, mapper) %>%
+  dplyr::mutate(percentage_TP = donor_sj_TP_reads / (donor_sj_TP_reads + donor_sj_FP_reads) * 100) %>%
+  dplyr::filter(percentage_TP >= 50) %>%
+  ungroup %>%
+  group_by(is_converted, condition, tid, gene_symbol, mapper) %>%
+  dplyr::summarise(corrected_sj_mappability = mean(corrected_sj_mappability), donor_intron_mean_mappability = mean(donor_intron_mean_mappability)) %>%
+  tidyr::spread(mapper, corrected_sj_mappability) %>%
+  dplyr::mutate(spread = HISAT2_TLA - STAR) %>%
+  dplyr::group_by(is_converted, condition) %>%
+  dplyr::arrange(is_converted, condition, desc(spread)) %>%
+  dplyr::mutate(label = case_when(
+    row_number() %in% 1:10 ~ gene_symbol,
+    row_number() %in% (n() - 10):n() ~ gene_symbol,
+    TRUE ~ ""
+  )) %>%
+  dplyr::group_by(is_converted, condition, tid, gene_symbol) %>%
+  dplyr::summarise(donor_intron_mean_mappability = mean(donor_intron_mean_mappability),
+                   HISAT2_TLA = mean(HISAT2_TLA, na.rm = TRUE),
+                   STAR = mean(STAR, na.rm = TRUE)) %>%
+  dplyr::mutate(HISAT2_TLA = case_when(
+    is.na(HISAT2_TLA) ~ 0,
+    TRUE ~ HISAT2_TLA
+  )) %>%
+  dplyr::mutate(STAR = case_when(
+    is.na(STAR) ~ 0,
+    TRUE ~ STAR
+  )) %>%
+  dplyr::mutate(spread = HISAT2_TLA - STAR) %>%
+  ungroup %>%
+  dplyr::group_by(is_converted, condition) %>%
+  dplyr::arrange(is_converted, condition, desc(spread)) %>%
+  dplyr::mutate(label = case_when(
+    row_number() %in% 1:10 ~ gene_symbol,
+    row_number() %in% (n() - 10):n() ~ gene_symbol,
+    TRUE ~ ""
+  )) %>%
+  ggplot(aes(x = STAR, y = HISAT2_TLA, color = donor_intron_mean_mappability)) + 
+  geom_point() +
+  theme_linedraw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()
+  ) + 
+  geom_label_repel(inherit.aes = FALSE, aes(x = STAR, y = HISAT2_TLA, label = label), show.legend = FALSE) +
+  facet_wrap(~is_converted + condition, ncol = length(unique(mappability$condition))) + xlim(0,1) + ylim(0,1) +
+  geom_abline(intercept = 0, slope = 1, lty = 2, color="gray")
+
+before = mappability %>% 
+  dplyr::select(is_converted, condition, tid, intron_id, mapper, donor_sj_mappability_TP, donor_intron_mean_mappability, gene_symbol) %>%
+  dplyr::group_by(is_converted, condition, tid, gene_symbol, mapper) %>%
+  dplyr::summarise(donor_sj_mappability_TP = mean(donor_sj_mappability_TP), donor_intron_mean_mappability = mean(donor_intron_mean_mappability)) %>%
+  dplyr::mutate(class = "unfiltered")
+
+after = mappability %>% 
+  dplyr::select(is_converted, condition, tid, intron_id, mapper, donor_sj_mappability_TP, donor_sj_TP_reads, donor_sj_FP_reads, donor_intron_mean_mappability, gene_symbol) %>%
+  dplyr::group_by(is_converted, condition, tid, gene_symbol, mapper) %>%
+  dplyr::mutate(zscore = (donor_sj_mappability_TP - mean(donor_sj_mappability_TP)) / sd(donor_sj_mappability_TP)) %>%
+  dplyr::mutate(percentage_TP = donor_sj_TP_reads / (donor_sj_TP_reads + donor_sj_FP_reads) * 100) %>%
+  dplyr::filter(percentage_TP >= 50 & abs(zscore) < 2) %>%
+  dplyr::summarise(donor_sj_mappability_TP = mean(donor_sj_mappability_TP), donor_intron_mean_mappability = mean(donor_intron_mean_mappability)) %>%
+  dplyr::mutate(class = "filtered")
+
+dodge <- position_dodge(width = 1)
+
+rbind(before,after) %>%
+  ggplot(aes(x = mapper, y = donor_sj_mappability_TP, fill = class)) + 
+  geom_violin(position = dodge) +
+  geom_boxplot(width=.1, position = dodge) +
+  #geom_jitter(position = dodge) + 
+  theme_linedraw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()
+  ) + 
+  facet_wrap(~is_converted + condition, ncol = length(unique(mappability$condition))) +
+  scale_fill_brewer(palette = "Set1")
+
+before = mappability %>% 
+  dplyr::mutate(corrected_sj_mappability = acceptor_TP_reads / (acceptor_TP_reads + acceptor_FP_reads) * acceptor_sj_mappability_TP) %>% 
+  dplyr::select(is_converted, condition, tid, intron_id, mapper, corrected_sj_mappability, donor_intron_mean_mappability, gene_symbol) %>%
+  dplyr::group_by(is_converted, condition, tid, gene_symbol, mapper) %>%
+  dplyr::summarise(corrected_sj_mappability = mean(corrected_sj_mappability), donor_intron_mean_mappability = mean(donor_intron_mean_mappability)) %>%
+  dplyr::mutate(class = "unfiltered")
+
+after = mappability %>% 
+  dplyr::mutate(corrected_sj_mappability = acceptor_TP_reads / (acceptor_TP_reads + acceptor_FP_reads) * acceptor_sj_mappability_TP) %>% 
+  dplyr::select(is_converted, condition, tid, intron_id, mapper, corrected_sj_mappability, donor_sj_TP_reads, donor_sj_FP_reads, donor_intron_mean_mappability, gene_symbol) %>%
+  dplyr::group_by(is_converted, condition, tid, gene_symbol, mapper) %>%
+  dplyr::mutate(zscore = (corrected_sj_mappability - mean(corrected_sj_mappability)) / sd(corrected_sj_mappability)) %>%
+  dplyr::mutate(percentage_TP = donor_sj_TP_reads / (donor_sj_TP_reads + donor_sj_FP_reads) * 100) %>%
+  dplyr::filter(percentage_TP >= 50 & abs(zscore) < 2) %>%
+  dplyr::summarise(corrected_sj_mappability = mean(corrected_sj_mappability), donor_intron_mean_mappability = mean(donor_intron_mean_mappability)) %>%
+  dplyr::mutate(class = "filtered")
+
+dodge <- position_dodge(width = 1)
+
+rbind(before,after) %>%
+  ggplot(aes(x = mapper, y = corrected_sj_mappability, fill = class)) + 
+  geom_violin(position = dodge) +
+  geom_boxplot(width=.1, position = dodge) +
+  #geom_jitter(position = dodge) + 
+  theme_linedraw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()
+  ) + 
+  facet_wrap(~is_converted + condition, ncol = length(unique(mappability$condition))) +
+  scale_fill_brewer(palette = "Set1")
+
+```
+
+
+```{r,fig.width=15, fig.height=8}
+
+before = mappability %>% 
+  dplyr::mutate(corrected_sj_mappability = acceptor_TP_reads / (acceptor_TP_reads + acceptor_FP_reads) * acceptor_sj_mappability_TP) %>% 
+  dplyr::mutate(corrected_sj_mappability = case_when(
+    is.nan(corrected_sj_mappability) ~ 0,
+    TRUE ~ corrected_sj_mappability
+  )) %>% 
+  dplyr::select(is_converted, condition, tid, intron_id, mapper, corrected_sj_mappability, donor_sj_mappability_TP, donor_sj_TP_reads, donor_sj_FP_reads, donor_intron_mean_mappability, gene_symbol) %>%
+  dplyr::group_by(is_converted, condition,tid, gene_symbol, mapper) %>%
+  dplyr::mutate(percentage_TP = donor_sj_TP_reads / (donor_sj_TP_reads + donor_sj_FP_reads) * 100) %>%
+  ungroup %>%
+  group_by(is_converted, condition, tid, gene_symbol, mapper) %>%
+  dplyr::summarise(corrected_sj_mappability = mean(corrected_sj_mappability)) %>%
+  ungroup %>%
+  dplyr::rename(uncorrected = corrected_sj_mappability)
+
+after = mappability %>% 
+  dplyr::mutate(corrected_sj_mappability = acceptor_TP_reads / (acceptor_TP_reads + acceptor_FP_reads) * acceptor_sj_mappability_TP) %>% 
+  dplyr::mutate(corrected_sj_mappability = case_when(
+    is.nan(corrected_sj_mappability) ~ 0,
+    TRUE ~ corrected_sj_mappability
+  )) %>% 
+  dplyr::select(is_converted, condition, tid, intron_id, mapper, corrected_sj_mappability, donor_sj_mappability_TP, donor_sj_TP_reads, donor_sj_FP_reads, donor_intron_mean_mappability, gene_symbol) %>%
+  dplyr::group_by(is_converted, condition, tid, gene_symbol, mapper) %>%
+  dplyr::mutate(percentage_TP = donor_sj_TP_reads / (donor_sj_TP_reads + donor_sj_FP_reads) * 100) %>%
+  dplyr::filter(percentage_TP >= 50) %>%
+  ungroup %>%
+  group_by(is_converted, condition, tid, gene_symbol, mapper) %>%
+  dplyr::summarise(corrected_sj_mappability = mean(corrected_sj_mappability)) %>%
+  ungroup %>%
+  dplyr::rename(corrected = corrected_sj_mappability)
+  
+plotTab = before %>% full_join(after) %>%
+  mutate(diff = corrected - uncorrected) %>%
+  dplyr::filter(diff != 0) %>%
+  arrange(desc(diff))
+
+```
+
+# Big3 Biseq
+
+```{r}
+
+mappability = read_tsv('/Volumes/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/big3_biseq/big3_biseq/eva/mappability.tsv')
+mappability = mappability %>%
+  mutate(tid = sub("\\..*","",tid))
+
+gene_symbols = getBM(filters= "ensembl_transcript_id", attributes= c("ensembl_transcript_id", "mgi_symbol"),values=mappability$tid,mart= mart)
+
+mappability$gene_symbol = gene_symbols$mgi_symbol[match(mappability$tid,gene_symbols$ensembl_transcript_id)]
+
+```
+
+# 98% conversions
+
+## STAR vs HISAT-3N
+
+```{r,fig.width=15, fig.height=8}
+
+mappability %>% 
+  dplyr::filter(mapper %in% c("STAR","HISAT-3N")) %>%
+  dplyr::select(is_converted_bam, tid, intron_id, mapper, donor_sj_mappability_TP, gene_symbol) %>%
+  dplyr::group_by(is_converted_bam, tid, gene_symbol, mapper) %>%
+  dplyr::summarise(donor_sj_mappability_TP = mean(donor_sj_mappability_TP)) %>%
+  tidyr::spread(mapper, donor_sj_mappability_TP) %>%
+  dplyr::mutate(spread = `HISAT-3N` - STAR) %>%
+  dplyr::group_by(is_converted_bam) %>%
+  dplyr::arrange(is_converted_bam, desc(spread)) %>%
+  dplyr::mutate(label = case_when(
+    row_number() %in% 1:10 ~ gene_symbol,
+    row_number() %in% (n() - 10):n() ~ gene_symbol,
+    TRUE ~ ""
+  )) %>%
+  ggplot(aes(x = STAR, y = `HISAT-3N`)) + 
+  geom_point() +
+  theme_linedraw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()
+  ) + 
+  geom_label_repel(inherit.aes = FALSE, aes(x = STAR, y = `HISAT-3N`, label = label), show.legend = FALSE) +
+  facet_wrap(~is_converted_bam) + xlim(0,1) + ylim(0,1) +
+  geom_abline(intercept = 0, slope = 1, lty = 2, color="gray")
+
+mappability %>% 
+    dplyr::filter(mapper %in% c("STAR","HISAT-3N")) %>%
+  dplyr::mutate(corrected_sj_mappability = acceptor_TP_reads / (acceptor_TP_reads + acceptor_FP_reads) * acceptor_sj_mappability_TP) %>% 
+  dplyr::mutate(corrected_sj_mappability = case_when(
+    is.nan(corrected_sj_mappability) ~ 0,
+    TRUE ~ corrected_sj_mappability
+  )) %>% 
+  dplyr::select(is_converted_bam, tid, intron_id, mapper, donor_sj_mappability_TP, gene_symbol, corrected_sj_mappability) %>%
+  dplyr::group_by(is_converted_bam, tid, gene_symbol, mapper) %>%
+  dplyr::summarise(corrected_sj_mappability = mean(corrected_sj_mappability)) %>%
+  tidyr::spread(mapper, corrected_sj_mappability) %>%
+  dplyr::mutate(spread = `HISAT-3N` - STAR) %>%
+  dplyr::group_by(is_converted_bam) %>%
+  dplyr::arrange(is_converted_bam, desc(spread)) %>%
+  dplyr::mutate(label = case_when(
+    row_number() %in% 1:10 ~ gene_symbol,
+    row_number() %in% (n() - 10):n() ~ gene_symbol,
+    TRUE ~ ""
+  )) %>%
+  ggplot(aes(x = STAR, y = `HISAT-3N`)) + 
+  geom_point() +
+  theme_linedraw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()
+  ) + 
+  geom_label_repel(inherit.aes = FALSE, aes(x = STAR, y = `HISAT-3N`, label = label), show.legend = FALSE) +
+  facet_wrap(~is_converted_bam) + xlim(0,1) + ylim(0,1) +
+  geom_abline(intercept = 0, slope = 1, lty = 2, color="gray")
+
+mappability %>% 
+    dplyr::filter(mapper %in% c("STAR","HISAT-3N")) %>%
+  dplyr::mutate(corrected_sj_mappability = acceptor_TP_reads / (acceptor_TP_reads + acceptor_FP_reads) * acceptor_sj_mappability_TP) %>% 
+  dplyr::mutate(corrected_sj_mappability = case_when(
+    is.nan(corrected_sj_mappability) ~ 0,
+    TRUE ~ corrected_sj_mappability
+  )) %>% 
+  dplyr::select(is_converted_bam, tid, intron_id, mapper, corrected_sj_mappability, donor_sj_mappability_TP, donor_sj_TP_reads, donor_sj_FP_reads, gene_symbol) %>%
+  dplyr::group_by(is_converted_bam, tid, gene_symbol, mapper) %>%
+  dplyr::mutate(percentage_TP = donor_sj_TP_reads / (donor_sj_TP_reads + donor_sj_FP_reads) * 100) %>%
+  dplyr::filter(percentage_TP >= 50) %>%
+  ungroup %>%
+  group_by(is_converted_bam, tid, gene_symbol, mapper) %>%
+  dplyr::summarise(corrected_sj_mappability = mean(corrected_sj_mappability)) %>%
+  tidyr::spread(mapper, corrected_sj_mappability) %>%
+  dplyr::mutate(spread = `HISAT-3N` - STAR) %>%
+  dplyr::group_by(is_converted_bam) %>%
+  dplyr::arrange(is_converted_bam, desc(spread)) %>%
+  dplyr::mutate(label = case_when(
+    row_number() %in% 1:10 ~ gene_symbol,
+    row_number() %in% (n() - 10):n() ~ gene_symbol,
+    TRUE ~ ""
+  )) %>%
+  dplyr::group_by(is_converted_bam, tid, gene_symbol) %>%
+  dplyr::summarise(`HISAT-3N` = mean(`HISAT-3N`, na.rm = TRUE),
+                   STAR = mean(STAR, na.rm = TRUE)) %>%
+  dplyr::mutate(`HISAT-3N` = case_when(
+    is.na(`HISAT-3N`) ~ 0,
+    TRUE ~ `HISAT-3N`
+  )) %>%
+  dplyr::mutate(STAR = case_when(
+    is.na(STAR) ~ 0,
+    TRUE ~ STAR
+  )) %>%
+  dplyr::mutate(spread = `HISAT-3N` - STAR) %>%
+  ungroup %>%
+  dplyr::group_by(is_converted_bam) %>%
+  dplyr::arrange(is_converted_bam, desc(spread)) %>%
+  dplyr::mutate(label = case_when(
+    row_number() %in% 1:10 ~ gene_symbol,
+    row_number() %in% (n() - 10):n() ~ gene_symbol,
+    TRUE ~ ""
+  )) %>%
+  ggplot(aes(x = STAR, y = `HISAT-3N`)) + 
+  geom_point() +
+  theme_linedraw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()
+  ) + 
+  geom_label_repel(inherit.aes = FALSE, aes(x = STAR, y = `HISAT-3N`, label = label), show.legend = FALSE) +
+  facet_wrap(~is_converted_bam) + xlim(0,1) + ylim(0,1) +
+  geom_abline(intercept = 0, slope = 1, lty = 2, color="gray")
+
+```
+
+## STAR vs MERANGS
+
+```{r,fig.width=15, fig.height=8}
+
+mappability %>% 
+  dplyr::filter(mapper %in% c("STAR","MERANGS")) %>%
+  dplyr::select(is_converted_bam, tid, intron_id, mapper, donor_sj_mappability_TP, gene_symbol) %>%
+  dplyr::group_by(is_converted_bam, tid, gene_symbol, mapper) %>%
+  dplyr::summarise(donor_sj_mappability_TP = mean(donor_sj_mappability_TP)) %>%
+  tidyr::spread(mapper, donor_sj_mappability_TP) %>%
+  dplyr::mutate(spread = MERANGS - STAR) %>%
+  dplyr::group_by(is_converted_bam) %>%
+  dplyr::arrange(is_converted_bam, desc(spread)) %>%
+  dplyr::mutate(label = case_when(
+    row_number() %in% 1:10 ~ gene_symbol,
+    row_number() %in% (n() - 10):n() ~ gene_symbol,
+    TRUE ~ ""
+  )) %>%
+  ggplot(aes(x = STAR, y = MERANGS)) + 
+  geom_point() +
+  theme_linedraw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()
+  ) + 
+  geom_label_repel(inherit.aes = FALSE, aes(x = STAR, y = MERANGS, label = label), show.legend = FALSE) +
+  facet_wrap(~is_converted_bam) + xlim(0,1) + ylim(0,1) +
+  geom_abline(intercept = 0, slope = 1, lty = 2, color="gray")
+
+mappability %>% 
+    dplyr::filter(mapper %in% c("STAR","MERANGS")) %>%
+  dplyr::mutate(corrected_sj_mappability = acceptor_TP_reads / (acceptor_TP_reads + acceptor_FP_reads) * acceptor_sj_mappability_TP) %>% 
+  dplyr::mutate(corrected_sj_mappability = case_when(
+    is.nan(corrected_sj_mappability) ~ 0,
+    TRUE ~ corrected_sj_mappability
+  )) %>% 
+  dplyr::select(is_converted_bam, tid, intron_id, mapper, donor_sj_mappability_TP, gene_symbol, corrected_sj_mappability) %>%
+  dplyr::group_by(is_converted_bam, tid, gene_symbol, mapper) %>%
+  dplyr::summarise(corrected_sj_mappability = mean(corrected_sj_mappability)) %>%
+  tidyr::spread(mapper, corrected_sj_mappability) %>%
+  dplyr::mutate(spread = MERANGS - STAR) %>%
+  dplyr::group_by(is_converted_bam) %>%
+  dplyr::arrange(is_converted_bam, desc(spread)) %>%
+  dplyr::mutate(label = case_when(
+    row_number() %in% 1:10 ~ gene_symbol,
+    row_number() %in% (n() - 10):n() ~ gene_symbol,
+    TRUE ~ ""
+  )) %>%
+  ggplot(aes(x = STAR, y = MERANGS)) + 
+  geom_point() +
+  theme_linedraw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()
+  ) + 
+  geom_label_repel(inherit.aes = FALSE, aes(x = STAR, y = MERANGS, label = label), show.legend = FALSE) +
+  facet_wrap(~is_converted_bam) + xlim(0,1) + ylim(0,1) +
+  geom_abline(intercept = 0, slope = 1, lty = 2, color="gray")
+
+mappability %>% 
+    dplyr::filter(mapper %in% c("STAR","MERANGS")) %>%
+  dplyr::mutate(corrected_sj_mappability = acceptor_TP_reads / (acceptor_TP_reads + acceptor_FP_reads) * acceptor_sj_mappability_TP) %>% 
+  dplyr::mutate(corrected_sj_mappability = case_when(
+    is.nan(corrected_sj_mappability) ~ 0,
+    TRUE ~ corrected_sj_mappability
+  )) %>% 
+  dplyr::select(is_converted_bam, tid, intron_id, mapper, corrected_sj_mappability, donor_sj_mappability_TP, donor_sj_TP_reads, donor_sj_FP_reads, gene_symbol) %>%
+  dplyr::group_by(is_converted_bam, tid, gene_symbol, mapper) %>%
+  dplyr::mutate(percentage_TP = donor_sj_TP_reads / (donor_sj_TP_reads + donor_sj_FP_reads) * 100) %>%
+  dplyr::filter(percentage_TP >= 50) %>%
+  ungroup %>%
+  group_by(is_converted_bam, tid, gene_symbol, mapper) %>%
+  dplyr::summarise(corrected_sj_mappability = mean(corrected_sj_mappability)) %>%
+  tidyr::spread(mapper, corrected_sj_mappability) %>%
+  dplyr::mutate(spread = MERANGS - STAR) %>%
+  dplyr::group_by(is_converted_bam) %>%
+  dplyr::arrange(is_converted_bam, desc(spread)) %>%
+  dplyr::mutate(label = case_when(
+    row_number() %in% 1:10 ~ gene_symbol,
+    row_number() %in% (n() - 10):n() ~ gene_symbol,
+    TRUE ~ ""
+  )) %>%
+  dplyr::group_by(is_converted_bam, tid, gene_symbol) %>%
+  dplyr::summarise(MERANGS = mean(MERANGS, na.rm = TRUE),
+                   STAR = mean(STAR, na.rm = TRUE)) %>%
+  dplyr::mutate(MERANGS = case_when(
+    is.na(MERANGS) ~ 0,
+    TRUE ~ MERANGS
+  )) %>%
+  dplyr::mutate(STAR = case_when(
+    is.na(STAR) ~ 0,
+    TRUE ~ STAR
+  )) %>%
+  dplyr::mutate(spread = MERANGS - STAR) %>%
+  ungroup %>%
+  dplyr::group_by(is_converted_bam) %>%
+  dplyr::arrange(is_converted_bam, desc(spread)) %>%
+  dplyr::mutate(label = case_when(
+    row_number() %in% 1:10 ~ gene_symbol,
+    row_number() %in% (n() - 10):n() ~ gene_symbol,
+    TRUE ~ ""
+  )) %>%
+  ggplot(aes(x = STAR, y = MERANGS)) + 
+  geom_point() +
+  theme_linedraw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()
+  ) + 
+  geom_label_repel(inherit.aes = FALSE, aes(x = STAR, y = MERANGS, label = label), show.legend = FALSE) +
+  facet_wrap(~is_converted_bam) + xlim(0,1) + ylim(0,1) +
+  geom_abline(intercept = 0, slope = 1, lty = 2, color="gray")
+
+```
+
+## HISAT-3N vs MERANGS
+
+```{r,fig.width=15, fig.height=8}
+
+mappability %>% 
+  dplyr::filter(mapper %in% c("MERANGS","HISAT-3N")) %>%
+  dplyr::select(is_converted_bam, tid, intron_id, mapper, donor_sj_mappability_TP, gene_symbol) %>%
+  dplyr::group_by(is_converted_bam, tid, gene_symbol, mapper) %>%
+  dplyr::summarise(donor_sj_mappability_TP = mean(donor_sj_mappability_TP)) %>%
+  tidyr::spread(mapper, donor_sj_mappability_TP) %>%
+  dplyr::mutate(spread = `HISAT-3N` - MERANGS) %>%
+  dplyr::group_by(is_converted_bam) %>%
+  dplyr::arrange(is_converted_bam, desc(spread)) %>%
+  dplyr::mutate(label = case_when(
+    row_number() %in% 1:10 ~ gene_symbol,
+    row_number() %in% (n() - 10):n() ~ gene_symbol,
+    TRUE ~ ""
+  )) %>%
+  ggplot(aes(x = MERANGS, y = `HISAT-3N`)) + 
+  geom_point() +
+  theme_linedraw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()
+  ) + 
+  geom_label_repel(inherit.aes = FALSE, aes(x = MERANGS, y = `HISAT-3N`, label = label), show.legend = FALSE) +
+  facet_wrap(~is_converted_bam) + xlim(0,1) + ylim(0,1) +
+  geom_abline(intercept = 0, slope = 1, lty = 2, color="gray")
+
+mappability %>% 
+    dplyr::filter(mapper %in% c("MERANGS","HISAT-3N")) %>%
+  dplyr::mutate(corrected_sj_mappability = acceptor_TP_reads / (acceptor_TP_reads + acceptor_FP_reads) * acceptor_sj_mappability_TP) %>% 
+  dplyr::mutate(corrected_sj_mappability = case_when(
+    is.nan(corrected_sj_mappability) ~ 0,
+    TRUE ~ corrected_sj_mappability
+  )) %>% 
+  dplyr::select(is_converted_bam, tid, intron_id, mapper, donor_sj_mappability_TP, gene_symbol, corrected_sj_mappability) %>%
+  dplyr::group_by(is_converted_bam, tid, gene_symbol, mapper) %>%
+  dplyr::summarise(corrected_sj_mappability = mean(corrected_sj_mappability)) %>%
+  tidyr::spread(mapper, corrected_sj_mappability) %>%
+  dplyr::mutate(spread = `HISAT-3N` - MERANGS) %>%
+  dplyr::group_by(is_converted_bam) %>%
+  dplyr::arrange(is_converted_bam, desc(spread)) %>%
+  dplyr::mutate(label = case_when(
+    row_number() %in% 1:10 ~ gene_symbol,
+    row_number() %in% (n() - 10):n() ~ gene_symbol,
+    TRUE ~ ""
+  )) %>%
+  ggplot(aes(x = MERANGS, y = `HISAT-3N`)) + 
+  geom_point() +
+  theme_linedraw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()
+  ) + 
+  geom_label_repel(inherit.aes = FALSE, aes(x = MERANGS, y = `HISAT-3N`, label = label), show.legend = FALSE) +
+  facet_wrap(~is_converted_bam) + xlim(0,1) + ylim(0,1) +
+  geom_abline(intercept = 0, slope = 1, lty = 2, color="gray")
+
+mappability %>% 
+    dplyr::filter(mapper %in% c("MERANGS","HISAT-3N")) %>%
+  dplyr::mutate(corrected_sj_mappability = acceptor_TP_reads / (acceptor_TP_reads + acceptor_FP_reads) * acceptor_sj_mappability_TP) %>% 
+  dplyr::mutate(corrected_sj_mappability = case_when(
+    is.nan(corrected_sj_mappability) ~ 0,
+    TRUE ~ corrected_sj_mappability
+  )) %>% 
+  dplyr::select(is_converted_bam, tid, intron_id, mapper, corrected_sj_mappability, donor_sj_mappability_TP, donor_sj_TP_reads, donor_sj_FP_reads, gene_symbol) %>%
+  dplyr::group_by(is_converted_bam, tid, gene_symbol, mapper) %>%
+  dplyr::mutate(percentage_TP = donor_sj_TP_reads / (donor_sj_TP_reads + donor_sj_FP_reads) * 100) %>%
+  dplyr::filter(percentage_TP >= 50) %>%
+  ungroup %>%
+  group_by(is_converted_bam, tid, gene_symbol, mapper) %>%
+  dplyr::summarise(corrected_sj_mappability = mean(corrected_sj_mappability)) %>%
+  tidyr::spread(mapper, corrected_sj_mappability) %>%
+  dplyr::mutate(spread = `HISAT-3N` - MERANGS) %>%
+  dplyr::group_by(is_converted_bam) %>%
+  dplyr::arrange(is_converted_bam, desc(spread)) %>%
+  dplyr::mutate(label = case_when(
+    row_number() %in% 1:10 ~ gene_symbol,
+    row_number() %in% (n() - 10):n() ~ gene_symbol,
+    TRUE ~ ""
+  )) %>%
+  dplyr::group_by(is_converted_bam, tid, gene_symbol) %>%
+  dplyr::summarise(`HISAT-3N` = mean(`HISAT-3N`, na.rm = TRUE),
+                   MERANGS = mean(MERANGS, na.rm = TRUE)) %>%
+  dplyr::mutate(`HISAT-3N` = case_when(
+    is.na(`HISAT-3N`) ~ 0,
+    TRUE ~ `HISAT-3N`
+  )) %>%
+  dplyr::mutate(MERANGS = case_when(
+    is.na(MERANGS) ~ 0,
+    TRUE ~ MERANGS
+  )) %>%
+  dplyr::mutate(spread = `HISAT-3N` - MERANGS) %>%
+  ungroup %>%
+  dplyr::group_by(is_converted_bam) %>%
+  dplyr::arrange(is_converted_bam, desc(spread)) %>%
+  dplyr::mutate(label = case_when(
+    row_number() %in% 1:10 ~ gene_symbol,
+    row_number() %in% (n() - 10):n() ~ gene_symbol,
+    TRUE ~ ""
+  )) %>%
+  ggplot(aes(x = MERANGS, y = `HISAT-3N`)) + 
+  geom_point() +
+  theme_linedraw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()
+  ) + 
+  geom_label_repel(inherit.aes = FALSE, aes(x = MERANGS, y = `HISAT-3N`, label = label), show.legend = FALSE) +
+  facet_wrap(~is_converted_bam) + xlim(0,1) + ylim(0,1) +
+  geom_abline(intercept = 0, slope = 1, lty = 2, color="gray")
+
+```
+
+# ALL
+
+```{r,fig.width=15, fig.height=8}
+
+before = mappability %>% 
+  dplyr::select(is_converted_bam, tid, intron_id, mapper, donor_sj_mappability_TP, gene_symbol) %>%
+  dplyr::group_by(is_converted_bam, tid, gene_symbol, mapper) %>%
+  dplyr::summarise(donor_sj_mappability_TP = mean(donor_sj_mappability_TP)) %>%
+  dplyr::mutate(class = "unfiltered")
+
+after = mappability %>% 
+  dplyr::select(is_converted_bam, tid, intron_id, mapper, donor_sj_mappability_TP, donor_sj_TP_reads, donor_sj_FP_reads, gene_symbol) %>%
+  dplyr::group_by(is_converted_bam, tid, gene_symbol, mapper) %>%
+  dplyr::mutate(zscore = (donor_sj_mappability_TP - mean(donor_sj_mappability_TP)) / sd(donor_sj_mappability_TP)) %>%
+  dplyr::mutate(percentage_TP = donor_sj_TP_reads / (donor_sj_TP_reads + donor_sj_FP_reads) * 100) %>%
+  dplyr::filter(percentage_TP >= 50 & abs(zscore) < 2) %>%
+  dplyr::summarise(donor_sj_mappability_TP = mean(donor_sj_mappability_TP)) %>%
+  dplyr::mutate(class = "filtered")
+
+dodge <- position_dodge(width = 1)
+
+rbind(before,after) %>%
+  ggplot(aes(x = mapper, y = donor_sj_mappability_TP, fill = class)) + 
+  geom_violin(position = dodge) +
+  geom_boxplot(width=.1, position = dodge) +
+  #geom_jitter(position = dodge) + 
+  theme_linedraw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()
+  ) + 
+  facet_wrap(~is_converted_bam) +
+  scale_fill_brewer(palette = "Set1")
+
+before = mappability %>% 
+  dplyr::mutate(corrected_sj_mappability = acceptor_TP_reads / (acceptor_TP_reads + acceptor_FP_reads) * acceptor_sj_mappability_TP) %>% 
+  dplyr::select(is_converted_bam, tid, intron_id, mapper, corrected_sj_mappability, gene_symbol) %>%
+  dplyr::group_by(is_converted_bam, tid, gene_symbol, mapper) %>%
+  dplyr::summarise(corrected_sj_mappability = mean(corrected_sj_mappability)) %>%
+  dplyr::mutate(class = "unfiltered")
+
+after = mappability %>% 
+  dplyr::mutate(corrected_sj_mappability = acceptor_TP_reads / (acceptor_TP_reads + acceptor_FP_reads) * acceptor_sj_mappability_TP) %>% 
+  dplyr::select(is_converted_bam, tid, intron_id, mapper, corrected_sj_mappability, donor_sj_TP_reads, donor_sj_FP_reads, gene_symbol) %>%
+  dplyr::group_by(is_converted_bam, tid, gene_symbol, mapper) %>%
+  dplyr::mutate(zscore = (corrected_sj_mappability - mean(corrected_sj_mappability)) / sd(corrected_sj_mappability)) %>%
+  dplyr::mutate(percentage_TP = donor_sj_TP_reads / (donor_sj_TP_reads + donor_sj_FP_reads) * 100) %>%
+  dplyr::filter(percentage_TP >= 50 & abs(zscore) < 2) %>%
+  dplyr::summarise(corrected_sj_mappability = mean(corrected_sj_mappability)) %>%
+  dplyr::mutate(class = "filtered")
+
+dodge <- position_dodge(width = 1)
+
+rbind(before,after) %>%
+  ggplot(aes(x = mapper, y = corrected_sj_mappability, fill = class)) + 
+  geom_violin(position = dodge) +
+  geom_boxplot(width=.1, position = dodge) +
+  #geom_jitter(position = dodge) + 
+  theme_linedraw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()
+  ) + 
+  facet_wrap(~is_converted_bam) +
+  scale_fill_brewer(palette = "Set1")
+
+```
+
+# Big3 Biseq
+
+```{r}
+
+mappability = read_tsv('/Volumes/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/big3_slamseq/big3_slamseq/eva/mappability.tsv')
+mappability = mappability %>%
+  mutate(tid = sub("\\..*","",tid))
+
+gene_symbols = getBM(filters= "ensembl_transcript_id", attributes= c("ensembl_transcript_id", "mgi_symbol"),values=mappability$tid,mart= mart)
+
+mappability$gene_symbol = gene_symbols$mgi_symbol[match(mappability$tid,gene_symbols$ensembl_transcript_id)]
+
+```
+
+## STAR vs HISAT-3N
+
+```{r,fig.width=15, fig.height=8}
+
+mappability %>% 
+  dplyr::select(is_converted_bam, condition, tid, intron_id, mapper, donor_sj_mappability_TP, gene_symbol) %>%
+  dplyr::group_by(is_converted_bam, condition, tid, gene_symbol, mapper) %>%
+  dplyr::summarise(donor_sj_mappability_TP = mean(donor_sj_mappability_TP)) %>%
+  tidyr::spread(mapper, donor_sj_mappability_TP) %>%
+  dplyr::mutate(spread = `HISAT-3N` - STAR) %>%
+  dplyr::group_by(is_converted_bam, condition) %>%
+  dplyr::arrange(is_converted_bam, condition, desc(spread)) %>%
+  dplyr::mutate(label = case_when(
+    row_number() %in% 1:10 ~ gene_symbol,
+    row_number() %in% (n() - 10):n() ~ gene_symbol,
+    TRUE ~ ""
+  )) %>%
+  ggplot(aes(x = STAR, y = `HISAT-3N`)) + 
+  geom_point() +
+  theme_linedraw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()
+  ) + 
+  geom_label_repel(inherit.aes = FALSE, aes(x = STAR, y = `HISAT-3N`, label = label), show.legend = FALSE) +
+  facet_wrap(~is_converted_bam + condition, ncol = length(unique(mappability$condition))) + xlim(0,1) + ylim(0,1) +
+  geom_abline(intercept = 0, slope = 1, lty = 2, color="gray")
+
+mappability %>% 
+    dplyr::filter(mapper %in% c("STAR","HISAT-3N")) %>%
+  dplyr::mutate(corrected_sj_mappability = acceptor_TP_reads / (acceptor_TP_reads + acceptor_FP_reads) * acceptor_sj_mappability_TP) %>% 
+  dplyr::mutate(corrected_sj_mappability = case_when(
+    is.nan(corrected_sj_mappability) ~ 0,
+    TRUE ~ corrected_sj_mappability
+  )) %>% 
+  dplyr::select(is_converted_bam, condition, tid, intron_id, mapper, donor_sj_mappability_TP, gene_symbol, corrected_sj_mappability) %>%
+  dplyr::group_by(is_converted_bam, condition, tid, gene_symbol, mapper) %>%
+  dplyr::summarise(corrected_sj_mappability = mean(corrected_sj_mappability)) %>%
+  tidyr::spread(mapper, corrected_sj_mappability) %>%
+  dplyr::mutate(spread = `HISAT-3N` - STAR) %>%
+  dplyr::group_by(is_converted_bam, condition) %>%
+  dplyr::arrange(is_converted_bam, condition, desc(spread)) %>%
+  dplyr::mutate(label = case_when(
+    row_number() %in% 1:10 ~ gene_symbol,
+    row_number() %in% (n() - 10):n() ~ gene_symbol,
+    TRUE ~ ""
+  )) %>%
+  ggplot(aes(x = STAR, y = `HISAT-3N`)) + 
+  geom_point() +
+  theme_linedraw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()
+  ) + 
+  geom_label_repel(inherit.aes = FALSE, aes(x = STAR, y = `HISAT-3N`, label = label), show.legend = FALSE) +
+  facet_wrap(~is_converted_bam + condition, ncol = length(unique(mappability$condition))) + xlim(0,1) + ylim(0,1) +
+  geom_abline(intercept = 0, slope = 1, lty = 2, color="gray")
+
+mappability %>% 
+    dplyr::filter(mapper %in% c("STAR","HISAT-3N")) %>%
+  dplyr::mutate(corrected_sj_mappability = acceptor_TP_reads / (acceptor_TP_reads + acceptor_FP_reads) * acceptor_sj_mappability_TP) %>% 
+  dplyr::mutate(corrected_sj_mappability = case_when(
+    is.nan(corrected_sj_mappability) ~ 0,
+    TRUE ~ corrected_sj_mappability
+  )) %>% 
+  dplyr::select(is_converted_bam, condition, tid, intron_id, mapper, corrected_sj_mappability, donor_sj_mappability_TP, donor_sj_TP_reads, donor_sj_FP_reads, gene_symbol) %>%
+  dplyr::group_by(is_converted_bam, condition, tid, gene_symbol, mapper) %>%
+  dplyr::mutate(percentage_TP = donor_sj_TP_reads / (donor_sj_TP_reads + donor_sj_FP_reads) * 100) %>%
+  dplyr::filter(percentage_TP >= 50) %>%
+  ungroup %>%
+  group_by(is_converted_bam, condition, tid, gene_symbol, mapper) %>%
+  dplyr::summarise(corrected_sj_mappability = mean(corrected_sj_mappability)) %>%
+  tidyr::spread(mapper, corrected_sj_mappability) %>%
+  dplyr::mutate(spread = `HISAT-3N` - STAR) %>%
+  dplyr::group_by(is_converted_bam, condition) %>%
+  dplyr::arrange(is_converted_bam, condition, desc(spread)) %>%
+  dplyr::mutate(label = case_when(
+    row_number() %in% 1:10 ~ gene_symbol,
+    row_number() %in% (n() - 10):n() ~ gene_symbol,
+    TRUE ~ ""
+  )) %>%
+  dplyr::group_by(is_converted_bam, condition, tid, gene_symbol) %>%
+  dplyr::summarise(`HISAT-3N` = mean(`HISAT-3N`, na.rm = TRUE),
+                   STAR = mean(STAR, na.rm = TRUE)) %>%
+  dplyr::mutate(`HISAT-3N` = case_when(
+    is.na(`HISAT-3N`) ~ 0,
+    TRUE ~ `HISAT-3N`
+  )) %>%
+  dplyr::mutate(STAR = case_when(
+    is.na(STAR) ~ 0,
+    TRUE ~ STAR
+  )) %>%
+  dplyr::mutate(spread = `HISAT-3N` - STAR) %>%
+  ungroup %>%
+  dplyr::group_by(is_converted_bam, condition) %>%
+  dplyr::arrange(is_converted_bam, condition, desc(spread)) %>%
+  dplyr::mutate(label = case_when(
+    row_number() %in% 1:10 ~ gene_symbol,
+    row_number() %in% (n() - 10):n() ~ gene_symbol,
+    TRUE ~ ""
+  )) %>%
+  ggplot(aes(x = STAR, y = `HISAT-3N`)) + 
+  geom_point() +
+  theme_linedraw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()
+  ) + 
+  geom_label_repel(inherit.aes = FALSE, aes(x = STAR, y = `HISAT-3N`, label = label), show.legend = FALSE) +
+  facet_wrap(~is_converted_bam + condition, ncol = length(unique(mappability$condition))) + xlim(0,1) + ylim(0,1) +
+  geom_abline(intercept = 0, slope = 1, lty = 2, color="gray")
+
+```
+
+
+# ALL
+
+```{r,fig.width=15, fig.height=8}
+
+before = mappability %>% 
+  dplyr::select(is_converted_bam, condition, tid, intron_id, mapper, donor_sj_mappability_TP, gene_symbol) %>%
+  dplyr::group_by(is_converted_bam, condition, tid, gene_symbol, mapper) %>%
+  dplyr::summarise(donor_sj_mappability_TP = mean(donor_sj_mappability_TP)) %>%
+  dplyr::mutate(class = "unfiltered")
+
+after = mappability %>% 
+  dplyr::select(is_converted_bam, condition, tid, intron_id, mapper, donor_sj_mappability_TP, donor_sj_TP_reads, donor_sj_FP_reads, gene_symbol) %>%
+  dplyr::group_by(is_converted_bam, condition, tid, gene_symbol, mapper) %>%
+  dplyr::mutate(zscore = (donor_sj_mappability_TP - mean(donor_sj_mappability_TP)) / sd(donor_sj_mappability_TP)) %>%
+  dplyr::mutate(percentage_TP = donor_sj_TP_reads / (donor_sj_TP_reads + donor_sj_FP_reads) * 100) %>%
+  dplyr::filter(percentage_TP >= 50 & abs(zscore) < 2) %>%
+  dplyr::summarise(donor_sj_mappability_TP = mean(donor_sj_mappability_TP)) %>%
+  dplyr::mutate(class = "filtered")
+
+dodge <- position_dodge(width = 1)
+
+rbind(before,after) %>%
+  ggplot(aes(x = mapper, y = donor_sj_mappability_TP, fill = class)) + 
+  geom_violin(position = dodge) +
+  geom_boxplot(width=.1, position = dodge) +
+  #geom_jitter(position = dodge) + 
+  theme_linedraw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()
+  ) + 
+  facet_wrap(~is_converted_bam + condition, ncol = length(unique(mappability$condition))) +
+  scale_fill_brewer(palette = "Set1")
+
+before = mappability %>% 
+  dplyr::mutate(corrected_sj_mappability = acceptor_TP_reads / (acceptor_TP_reads + acceptor_FP_reads) * acceptor_sj_mappability_TP) %>% 
+  dplyr::select(is_converted_bam, condition, tid, intron_id, mapper, corrected_sj_mappability, gene_symbol) %>%
+  dplyr::group_by(is_converted_bam, condition, tid, gene_symbol, mapper) %>%
+  dplyr::summarise(corrected_sj_mappability = mean(corrected_sj_mappability)) %>%
+  dplyr::mutate(class = "unfiltered")
+
+after = mappability %>% 
+  dplyr::mutate(corrected_sj_mappability = acceptor_TP_reads / (acceptor_TP_reads + acceptor_FP_reads) * acceptor_sj_mappability_TP) %>% 
+  dplyr::select(is_converted_bam, condition, tid, intron_id, mapper, corrected_sj_mappability, donor_sj_TP_reads, donor_sj_FP_reads, gene_symbol) %>%
+  dplyr::group_by(is_converted_bam, condition, tid, gene_symbol, mapper) %>%
+  dplyr::mutate(zscore = (corrected_sj_mappability - mean(corrected_sj_mappability)) / sd(corrected_sj_mappability)) %>%
+  dplyr::mutate(percentage_TP = donor_sj_TP_reads / (donor_sj_TP_reads + donor_sj_FP_reads) * 100) %>%
+  dplyr::filter(percentage_TP >= 50 & abs(zscore) < 2) %>%
+  dplyr::summarise(corrected_sj_mappability = mean(corrected_sj_mappability)) %>%
+  dplyr::mutate(class = "filtered")
+
+dodge <- position_dodge(width = 1)
+
+rbind(before,after) %>%
+  ggplot(aes(x = mapper, y = corrected_sj_mappability, fill = class)) + 
+  geom_violin(position = dodge) +
+  geom_boxplot(width=.1, position = dodge) +
+  #geom_jitter(position = dodge) + 
+  theme_linedraw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()
+  ) + 
+  facet_wrap(~is_converted_bam + condition, ncol = length(unique(mappability$condition))) +
+  scale_fill_brewer(palette = "Set1")
+
+```

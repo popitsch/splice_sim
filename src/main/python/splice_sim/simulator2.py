@@ -384,7 +384,7 @@ def transcript2genome_bam(transcript_bam_file, mod, out_bam):
                             #FIXME seq err stretches that are spliced are partially ignored
                             print('ignoring seq diff stretch for ' + r.query_name+', '+r.cigarstring) # TODO we need to insert a splice cigartuple
                         matchlen=l-diff
-                        if mtachlen>0:
+                        if matchlen>0:
                             genome_cigatuples+=[(op, matchlen)]
                         gpos+=matchlen
                         inc_pos-=matchlen

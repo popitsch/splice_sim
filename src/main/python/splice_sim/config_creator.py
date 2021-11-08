@@ -140,18 +140,15 @@ def calc_iso(tid, transcript, introns, rnk, conditions, times):
 
 
 def calculate_transcript_data(config, config_dir, outdir):
-    """ Calculate a data config file """
-        
+    """ Calculate a data config file """ 
     mode = config['isoform_mode']      
     logging.info("Calculating transcript configuration with mode %s" % mode)
     # get readlen (needed for abundance calc)
     readlen=config["readlen"]
-    
     # get conditions and labeling times
     conditions = list(config["conditions"].keys())
     times = list(config["conditions"].values())
     tdata=OrderedDict()
-    
     # ------------------------------------------------------------------------------------
     #    from slamstr data
     # ------------------------------------------------------------------------------------
@@ -167,7 +164,6 @@ def calculate_transcript_data(config, config_dir, outdir):
         abundances = [(x*readlen*abundance_multiplier)/y for x, y in zip(TAB_ALL, transcript_len)]
         min_abundance = config["min_abundance"] if 'min_abundance' in config else 0.0
         print("minimum abundance: %f" % (min_abundance) )
-        
         # create output
         transcripts = pd.read_csv(config["slamstr_transcript_table"],delimiter='\t',encoding='utf-8')
         introns = pd.read_csv(config["slamstr_intron_table"],delimiter='\t',encoding='utf-8')
@@ -265,7 +261,5 @@ def calculate_transcript_data(config, config_dir, outdir):
     if not os.path.isabs(outF):
         outF = config_dir + outF
     with open(outF, 'w') as out:
-        json.dump(tdata, out, indent=2)
-
-        
+        json.dump(tdata, out, indent=2)     
     logging.info('Done. Results written to %s' % (outF))

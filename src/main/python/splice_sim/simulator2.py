@@ -381,10 +381,11 @@ def transcript2genome_bam(transcript_bam_file, mod, out_bam):
                     diff=gpos+inc_pos-ablock[1]
                     while diff>0:
                         if op==8 and l>1:
-                            #FIXME seq err stretc1Ghes that are spliced are partially ignored
+                            #FIXME seq err stretches that are spliced are partially ignored
                             print('ignoring seq diff stretch for ' + r.query_name+', '+r.cigarstring) # TODO we need to insert a splice cigartuple
                         matchlen=l-diff
-                        genome_cigatuples+=[(op, matchlen)]
+                        if mtachlen>0:
+                            genome_cigatuples+=[(op, matchlen)]
                         gpos+=matchlen
                         inc_pos-=matchlen
                         if inc_read>0:
@@ -400,13 +401,15 @@ def transcript2genome_bam(transcript_bam_file, mod, out_bam):
                             break
                         else:
                             n_len = nblock[0]-ablock[1]-1
-                            genome_cigatuples+=[(3, n_len)]
+                            if n_len>0:
+                                genome_cigatuples+=[(3, n_len)]
                             gpos+=n_len
                             # update l 
                             ablock=nblock
                             l-=matchlen
                             diff=gpos+inc_pos-ablock[1]
-                    genome_cigatuples+=[(op, l)]
+                    if l>0: 
+                        genome_cigatuples+=[(op, l)]
                     if op == 8 : # X - store mismatches
                         for i in range(l):
                             mismatches+=[gpos-start_pos+1] 

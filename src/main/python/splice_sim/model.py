@@ -6,7 +6,6 @@ import pysam
 from collections import *
 from utils import *
 import logging
-from test.test_iterlen import NoneLengthHint
 
 
 class Condition():

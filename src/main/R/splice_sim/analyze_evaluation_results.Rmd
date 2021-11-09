@@ -14,15 +14,14 @@ geometry: margin=1in
 classoption: a4paper
 params:
     splice_sim_config:
-        value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/slam2/config.json"
+        value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq/config.json"
     slam_out_dir:
-        value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/slam2/slam_out/"
+        value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq/slam_out/"
     extra_transcript_table:
         value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/data/slamstr/pooled.mm10.all/pooled.mm10.all.Slamstr.stats.trans.final.tsv.gz"  
     out_dir:
-        value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/slam2/plots/"
-        #value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq/plots/"
-        
+        value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq/analysis/"
+
 ---
 <style type="text/css">
 body, td {
@@ -122,6 +121,47 @@ plot_gene_performance = function(d, tid) {
 #plot_gene_performance(d, 'ENSMUST00000196997.1')
 
 
+
+
+
+
+
+```
+
+
+# QC
+
+## Missing tids
+
+Some of the originally configured transcript ids are missing from result data. 
+This is either because 
+- there were no reads simulated as the annotation is smaller than read-size and there are no (longer) overlapping transcripts
+- annotations are very long (e.g., Kcnip1 or Cmss1)
+
+```{r}
+
+all_tids=load_table(paste0(home_dir, 'tids.tsv')) %>% pull(transcript_id)
+found_tids=unique(tid_performance %>% pull(tid))
+print(paste0("We have data for ", length(found_tids), '/', length(all_tids), " transcripts"))
+
+# what tids are missing?
+extra_transcript_table2=load_table(params$extra_transcript_table) %>% 
+  filter(transcript_id %in% all_tids) %>% 
+  select(transcript_id, chr,start,end,strand,gene_name,len,rnk, GC_frac, mappability_median, mappability_mean, T_Pos) %>% 
+  mutate(missing=ifelse(transcript_id %in% found_tids, 0,1))
+extra_transcript_table2 %>% ggplot(aes(x=factor(missing), y=len)) + 
+  geom_violin()  +scale_y_log10() + ggtitle("Length distribution of missing transcripts")
+# expla
+
+
+```
+
+
+
+# Performance 
+
+## Performance per transcript
+```{r performance}
 # overall performance per isoform/mapper
 plot_overall_performance = function(d, subtitle='') {
   p = ggplot( d, aes(x=paste0(condition,'/',iso), y=F1, fill=condition) ) +
@@ -134,18 +174,26 @@ plot_overall_performance = function(d, subtitle='') {
   return(p)
 }
 
+plot_median_performance = function(d, subtitle='') {
+  dat = d %>% group_by(mapper, condition, iso, is_converted_bam) %>% 
+    summarise(median_F1=median(F1, na.rm = T))
+  p=dat %>% ggplot(aes(x=condition, y=median_F1, col=mapper, linetype=iso, group=paste0(mapper, iso))) + 
+    geom_line() + 
+    facet_wrap(is_converted_bam~.) +
+    ggtitle(paste0("Median F1 measure per transcript (n=",length(unique(d$tid)),")"), subtitle)
+  return(p)
+}
 
 # some correlations
 plot_corr = function(d, a, b, subtitle='', xlog=F) {
-  
   thecor = paste("r_pearson = ", round(cor(d[[a]], d[[b]], use = "complete.obs"), 4), 
                  "\nr_spearman = ", round(cor(d[[a]], d[[b]], use = "complete.obs", method="spearman"), 4),
                  "\nn =",nrow(d)  )
-  p = ggplot( d, aes_string(x=a, y=b) ) +
-    geom_point(aes(col=condition, alpha=0.5), size=.5)  +
+  p = ggplot( d %>% filter(!is.na(mapper)), aes_string(x=a, y=b) ) +
+    #geom_point(aes(col=condition, alpha=0.5), size=.5)  +
     #annotation_custom(thecor) + 
-    #stat_binhex(bins=100) + scale_fill_gradientn("", colours = rev(rainbow(10, end = 4/6))) +
-    facet_grid(is_converted_bam + iso ~ mapper) +
+    stat_binhex(bins=50) + scale_fill_gradientn("", colours = rev(rainbow(10, end = 4/6))) +
+    facet_grid(is_converted_bam ~ mapper) +
     geom_abline(intercept = 0, slope = 1, col="black",linetype="dotted") +
     ggtitle(paste0("Correlation between ",a," and ",b, '. ', subtitle), thecor)
   if ( xlog ) {
@@ -156,61 +204,42 @@ plot_corr = function(d, a, b, subtitle='', xlog=F) {
 
 
 
+p1=plot_median_performance(tid_performance)
+p2=plot_median_performance(tid_performance %>% filter(mappability_mean>0.5), subtitle='mean(map) > 0.5')
+p3=plot_corr(tid_performance, "mappability_mean", "F1")
+p4=plot_corr(tid_performance, "GC_frac", "F1")  
+
+plot_grid(p1,p2,p3,p4) 
+ggsave(paste0(params$out_dir,'/tid_performance.pdf'), width = 10, height = 8)
 
 ```
 
-
-
-# performance per transcript
-```{r performance}
-
-d=tid_performance %>% filter(!is.na(mapper))
-
-pdf(paste0(params$out_dir,'/tid_performance.pdf'), width=10, height=8)
-plot_overall_performance(d )
-plot_corr(d, "len", "F1", xlog=T)
-plot_corr(d, "mappability_median", "F1")
-plot_corr(d, "mappability_mean", "F1")
-plot_corr(d, "rnk", "F1")
-plot_corr(d, "GC_frac", "F1")
-#plot_corr(tid_performance, "TFrac", "F1")
-
-d = d %>% filter(mappability_mean>0.5)
-plot_overall_performance(d, subtitle='mean(map) > 0.5')
-plot_corr(d, "len", "F1", xlog=T, subtitle='mean(map) > 0.5')
-plot_corr(d, "mappability_median", "F1", subtitle='mean(map) > 0.5')
-plot_corr(d, "mappability_mean", "F1", subtitle='mean(map) > 0.5')
-plot_corr(d, "rnk", "F1", subtitle='mean(map) > 0.5')
-plot_corr(d, "GC_frac", "F1", subtitle='mean(map) > 0.5')
-#plot_corr(tid_performance_hq, "TFrac", "F1")
-
-dev.off()
-
-
-# tab = tid_performance %>% filter(is_converted_bam==1, ! is.na(mapper)) %>% select(tid, condition, iso, mapper, F1) %>% pivot_wider(names_from=mapper, values_from=F1)
-# ggplot(tab, aes(x=STAR, y=`HISAT-3N`)) + 
-#   geom_hex() +
-#   facet_grid(iso~condition) +
-#   geom_abline(slope=1, intercept = 0, col='blue', linetype='dotted') +
-#   ggtitle(paste0("F1 measure for STAR vs HISAT-3N for ", length(unique(tab$tid)), " transcripts"))
-
-```
-
-# mismapped reads
+## mismapped reads
 ```{r mismapped_reads}
-tab = reads %>% group_by(classification, is_converted, mapper, condition, true_isoform) %>% count() 
 
-ggplot( tab, aes(x=paste0(condition,'/',true_isoform), y=n, fill=factor(is_converted)) ) +
-  geom_bar( stat='identity', position='dodge') +
-  facet_grid(classification~mapper) +
-  ggtitle("Number of mismapped reads per mapper") +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  xlab("condition / isoform")
+plot_mismapped_reads = function(d, subtitle='') {
+  dat = d %>% group_by(mapper, condition, iso, is_converted_bam) %>% 
+    summarise(median_F1=median(F1, na.rm = T))
+  p=dat %>% ggplot(aes(x=condition, y=median_F1, col=mapper, linetype=iso, group=paste0(mapper, iso))) + 
+    geom_line() + 
+    facet_wrap(is_converted_bam~.) +
+    ggtitle(paste0("Median F1 measure per transcript (n=",length(unique(d$tid)),")"), subtitle)
+  return(p)
+}
 
-ggplot( reads %>% filter(is_converted==1), aes(x=condition, y=n_tc_pos) ) + 
-  geom_violin() +
-  facet_grid(classification~mapper) +
-  ggtitle('Density of n_tc')
+
+tab = reads %>% group_by(classification, is_converted_bam, mapper, condition_id, true_isoform) %>% count() 
+tab %>% ggplot(aes(x=condition_id, y=n, col=mapper, linetype=true_isoform, group=paste0(mapper, true_isoform, classification))) + 
+    geom_line() + 
+    facet_wrap(classification~is_converted_bam) +
+    ggtitle( "Mismapped reads per mapper" )
+
+tab = reads %>% filter(is_converted_bam==1) %>% 
+  group_by(classification, mapper, condition_id, true_isoform) %>% summarise(m_ntc=mean(n_tc_pos, na.rm=T))
+tab %>% ggplot(aes(x=condition_id, y=m_ntc, col=mapper, linetype=true_isoform, group=paste0(mapper, true_isoform, classification))) + 
+    geom_line() + 
+    facet_wrap(classification~.) +
+    ggtitle( "Mean n_tc per mapper" )
 ```
 
 

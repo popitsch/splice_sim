@@ -168,7 +168,7 @@ class Transcript():
         for iso in self.config['transcripts'][tid]['isoforms'].keys():
             frac=self.config['transcripts'][tid]['isoforms'][iso]['fractions']
             splicing_status=self.config['transcripts'][tid]['isoforms'][iso]['splicing_status'] if 'splicing_status' in self.config['transcripts'][tid]['isoforms'][iso] else []
-            is_labeled=self.config['transcripts'][tid]['isoforms'][iso]['is_labeled'] if 'is_labeled' in self.config['transcripts'][tid]['isoforms'][iso] else 0
+            is_labeled=self.config['transcripts'][tid]['isoforms'][iso]['is_labeled'] if 'is_labeled' in self.config['transcripts'][tid]['isoforms'][iso] else 1
             if self.transcript.Strand == "-":
                 splicing_status = list(reversed(splicing_status)) # so 1st entry in config refers to 1st intron.
             # assert len(splicing_status)==len(self.introns), "misconfigured splicing status for some isoform/conditions: %s (%i vs %i)" % ( self.tid, len(splicing_status), len(self.introns))
@@ -186,7 +186,7 @@ class Transcript():
             frac = [(1.0 - x) for x in total_frac]
             iso='mat'
             splicing_status=[1] * len(self.introns)
-            self.isoforms[iso] = Isoform(iso, frac, splicing_status, 1, self)    
+            self.isoforms[iso] = Isoform(iso, frac, splicing_status, 1, self) # add labeled, mature isoform
         #print('added mature isoform for %s: %s' % (tid, self.isoforms[iso]) )  
     def get_dna_seq(self, splicing_status):
         seq = self.transcript_seq

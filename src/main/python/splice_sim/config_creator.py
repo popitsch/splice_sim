@@ -77,8 +77,8 @@ def calc_iso(tid, transcript, introns, rnk, conditions, times):
     for i in range(0,int(rnk)):
         splicing_status = [1] * int(i) + [0] * (int(rnk)-i)
         name = "in"+str(i) if i>0 else "pre"
-        isoforms+=[Isoform(name, [], splicing_status, None)]
-    isoforms+=[Isoform('mat', [], [1] * rnk, None)]
+        isoforms+=[Isoform(name, [], splicing_status, True, None)]
+    isoforms+=[Isoform('mat', [], [1] * rnk, True, None)]
     # find uninformative introns (with low EE counts in all conditions)
     sum_informative_mat=None
     for cond in conditions:
@@ -136,6 +136,7 @@ def calc_iso(tid, transcript, introns, rnk, conditions, times):
         ret[iso.id] = OrderedDict()
         ret[iso.id]['splicing_status']=iso.splicing_status
         ret[iso.id]['fractions']=iso.fractions
+        ret[iso.id]['is_converted']=iso.is_converted
     return (ret)
 
 
@@ -202,6 +203,7 @@ def calculate_transcript_data(config, config_dir, outdir):
                 if rnk:
                     isoform_data['pre']['splicing_status']=[0] * rnk
                 isoform_data['pre']['fractions']=[0.5] * len(times)
+                isoform_data['pre']['is_labeled']=[1] * len(times)
                 # output data
                 tdata[tid] = OrderedDict()
                 tdata[tid]["gene_name"] = t['gene_name']
@@ -240,11 +242,13 @@ def calculate_transcript_data(config, config_dir, outdir):
                     isoform_data['old'] = OrderedDict()
                     isoform_data['old']['splicing_status']=[1] * rnk
                     isoform_data['old']['fractions']=[frac_old_mature] * len(times)
+                    isoform_data['old']['is_labeled']=[0] * len(times)
                 if frac_old_mature < 1.0:
                     isoform_data['pre'] = OrderedDict()
                     if rnk: # at least one intron
                         isoform_data['pre']['splicing_status']=[0] * rnk
                     isoform_data['pre']['fractions']=[round((1-frac_old_mature) * 0.5,3)] * len(times)
+                    isoform_data['pre']['is_labeled']=[1] * len(times)
                 # output data
                 tdata[tid] = OrderedDict()
                 tdata[tid]["gene_name"] = gene_name

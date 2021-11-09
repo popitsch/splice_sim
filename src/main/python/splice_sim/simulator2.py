@@ -451,9 +451,15 @@ def transcript2genome_bam(transcript_bam_file, mod, out_bam):
     try:
         pysam.sort("-o", out_bam, out_bam+'.tmp.bam') # @UndefinedVariable
         os.remove(out_bam+'.tmp.bam')
+    except Exception as e:
+        print("error sorting: %s" % e)
+    try:
+        if os.path.exists(out_bam+'.bai'):
+            os.remove(out_bam+'.bai')
+        print("Indexing BAM ", out_bam)
         pysam.index(out_bam) # @UndefinedVariable
     except Exception as e:
-        print("error sorting+indexing bam: %s" % e)
+        print("error indexing bam: %s" % e)    
     return(stats)
     
     

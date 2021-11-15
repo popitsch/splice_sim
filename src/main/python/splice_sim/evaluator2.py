@@ -706,6 +706,25 @@ def calculate_splice_site_mappability(config, bam_file, truth_file, is_converted
     os.remove(tmpBed)
 
 
+def get_mapq_histogram(bam_file, is_converted_bam, m, mapper, condition, out_hist):
+    dict_chr2idx, dict_idx2chr, dict_chr2len=get_chrom_dicts_from_bam(bam_file)
+    hist=Counter()
+    samin = pysam.AlignmentFile(bam_file, "rb") 
+    for c, c_len in dict_chr2len.items():
+        if c not in samin.references:
+            continue # no data on this chrom 
+        rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=c_len, max_span=None, flag_filter=0)
+        for _, r in rit:
+            hist[r.mapping_quality]+=1  
+    for mq in hist:
+        print('\t'.join([str(x) for x in (
+            bam_file,
+            1 if is_converted_bam else 0,
+            mapper,
+            condition.id,
+            mq,
+            hist[mq])]), file=out_hist)
+        
 def uniformityStats(observed, truth):
 
     if truth is None:
@@ -1072,7 +1091,6 @@ def evaluate_coverage_uniformity(bam_file, truth_file, is_converted_bam, m, mapp
         ]]), file=out_performance100bp)
 
 def initializeUniformityHeaders(out) :
-
     print("is_converted_bam\tmapper\tcondition\ttid", end="\t", file=out)
     print("true_exon_coverage_mean\ttrue_exon_coverage_stdev\ttrue_exon_coverage_waviness\ttrue_exon_coverage_gini\ttrue_exon_coverage_uniform_ks_test\ttrue_exon_coverage_uniform_chisq_test",end='\t', file=out)
     print("mapped_exon_coverage_mean\tmapped_exon_coverage_stdev\tmapped_exon_coverage_waviness\tmapped_exon_coverage_gini\tmapped_exon_coverage_uniform_ks_test\tmapped_exon_coverage_uniform_chisq_test",end='\t', file=out)
@@ -1080,6 +1098,8 @@ def initializeUniformityHeaders(out) :
     print("true_intron_coverage_mean\ttrue_intron_coverage_stdev\ttrue_intron_coverage_waviness\ttrue_intron_coverage_gini\ttrue_intron_coverage_uniform_ks_test\ttrue_intron_coverage_uniform_chisq_test",end='\t', file=out)
     print("mapped_intron_coverage_mean\tmapped_intron_coverage_stdev\tmapped_intron_coverage_waviness\tmapped_intron_coverage_gini\tmapped_intron_coverage_uniform_ks_test\tmapped_intron_coverage_uniform_chisq_test", end='\t', file=out)
     print("intron_AUC\tintron_RSME\tintron_KL_deviation\tintron_chisq\tintron_KS", file=out)
+    
+    
     
 #bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_conv/STAR/small4.5min.STAR.TC.bam'
 # bam='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/small4/sim/bam_conv/HISAT2_TLA/small4.5min.HISAT2_TLA.TC.bam'
@@ -1124,6 +1144,7 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
     fout6 = outdir + 'coverage_uniformity_performance.100bp.tsv'
     fout7 = outdir + 'mappability.tsv'
     fout8 = outdir + 'metadata.tsv'
+    fout9 = outdir + 'mapq_hist.tsv'
     with open(fout, 'w') as out:
         with open(fout2, 'w') as out2:
             with open(fout3, 'w') as out3:
@@ -1132,79 +1153,83 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
                         with open(fout6, 'w') as out6:
                             with open(fout7, 'w') as out7:
                                 with open(fout8, 'w') as out8:
-                                    print("mapped_coords\ttrue_coords\tclassification\ttid\tis_converted_bam\tmapper\tcondition_id\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\tis_converted_read\toverlapping_tids\tread_name", file=out)
-                                    print("is_converted_bam\tmapper\tcondition_id\tiso\ttid\tTP\tFP\tFN", file=out2)
-                                    print("is_converted_bam\tmapper\tcondition\ttid\tintron_id\tdonor_rc_splicing_TP\tdonor_rc_splicing_FP\tdonor_rc_overlapping_TP\tdonor_rc_overlapping_FP\tdonor_rc_splicing_wrong\tacceptor_rc_splicing_TP\tacceptor_rc_splicing_FP\tacceptor_rc_overlapping_TP\tacceptor_rc_overlapping_FP\tacceptor_rc_splicing_wrong", file=out3)
-                                    print("is_converted_bam\tmapper\tcondition\ttid\tintron_id\tchromosome\tstart\tend\tstrand\tdonor_sj_mappability_TP\tdonor_sj_mappability_FP\tdonor_sj_TP_reads\tdonor_sj_FP_reads\tacceptor_sj_mappability_TP\tacceptor_sj_mappability_FP\tacceptor_TP_reads\tacceptor_FP_reads",
-                                        file=out7)
-                                    print("bam\tis_converted_bam\tmapper\tcondition_id\tcondition_tp\tcondition_cr\tcondition_cov", file=out8)
-    
-                                    initializeUniformityHeaders(out4)
-                                    initializeUniformityHeaders(out5)
-                                    initializeUniformityHeaders(out6)
-    
-                                    for cond in m.conditions:
-    
-                                        bam_ori_truth = simdir + "bam_ori/TRUTH/" + config['dataset_name'] + "." + cond.id + ".simulated.bam"
-                                        print('\t'.join([str(x) for x in [basename(bam_ori_truth), 0, 'NA', cond.id, cond.timepoint, cond.conversion_rate, cond.coverage ]]), file=out8)
-                                        
-                                        bam_conv_truth = simdir + "bam_conv/TRUTH/" + config['dataset_name'] + "." + cond.id + ".simulated+conversions.bam"
-                                        print('\t'.join([str(x) for x in [basename(bam_conv_truth), 1, 'NA', cond.id, cond.timepoint, cond.conversion_rate, cond.coverage ]]), file=out8)
-    
-                                        for mapper in config['mappers'].keys():
-                                            if mapper not in ["STAR", "HISAT-3N", "HISAT2_TLA", "MERANGS"]:
-                                                print("skipping unknown mapper config %s" % mapper)
-                                                continue
-                                            bam_ori = simdir + "bam_ori/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".nodup.bam"
-                                            print('\t'.join([str(x) for x in [basename(bam_ori), 0, mapper, cond.id, cond.timepoint, cond.conversion_rate, cond.coverage ]]), file=out8)
+                                    with open(fout9, 'w') as out9:
+                                        print("mapped_coords\ttrue_coords\tclassification\ttid\tis_converted_bam\tmapper\tcondition_id\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\tis_converted_read\toverlapping_tids\tread_name", file=out)
+                                        print("is_converted_bam\tmapper\tcondition_id\tiso\ttid\tTP\tFP\tFN", file=out2)
+                                        print("is_converted_bam\tmapper\tcondition\ttid\tintron_id\tdonor_rc_splicing_TP\tdonor_rc_splicing_FP\tdonor_rc_overlapping_TP\tdonor_rc_overlapping_FP\tdonor_rc_splicing_wrong\tacceptor_rc_splicing_TP\tacceptor_rc_splicing_FP\tacceptor_rc_overlapping_TP\tacceptor_rc_overlapping_FP\tacceptor_rc_splicing_wrong", file=out3)
+                                        print("is_converted_bam\tmapper\tcondition\ttid\tintron_id\tchromosome\tstart\tend\tstrand\tdonor_sj_mappability_TP\tdonor_sj_mappability_FP\tdonor_sj_TP_reads\tdonor_sj_FP_reads\tacceptor_sj_mappability_TP\tacceptor_sj_mappability_FP\tacceptor_TP_reads\tacceptor_FP_reads",
+                                            file=out7)
+                                        print("bam\tis_converted_bam\tmapper\tcondition_id\tcondition_tp\tcondition_cr\tcondition_cov", file=out8)
+                                        print("bam\tis_converted_bam\tmapper\tcondition_id\tmapq\tcount", file=out9)
+        
+                                        initializeUniformityHeaders(out4)
+                                        initializeUniformityHeaders(out5)
+                                        initializeUniformityHeaders(out6)
+        
+                                        for cond in m.conditions:
+        
+                                            bam_ori_truth = simdir + "bam_ori/TRUTH/" + config['dataset_name'] + "." + cond.id + ".simulated.bam"
+                                            print('\t'.join([str(x) for x in [basename(bam_ori_truth), 0, 'NA', cond.id, cond.timepoint, cond.conversion_rate, cond.coverage ]]), file=out8)
                                             
-                                            bam_conv = simdir + "bam_conv/" + mapper + "/" + config['dataset_name'] + "." + cond.id + ".conv." + mapper + ".nodup.bam"
-                                            print('\t'.join([str(x) for x in [basename(bam_conv), 1, mapper, cond.id, cond.timepoint, cond.conversion_rate, cond.coverage ]]), file=out8)
-                                            
-                                            bam_out_dir_ori = outdir + "bam_ori/" + mapper + "/"
+                                            bam_conv_truth = simdir + "bam_conv/TRUTH/" + config['dataset_name'] + "." + cond.id + ".simulated+conversions.bam"
+                                            print('\t'.join([str(x) for x in [basename(bam_conv_truth), 1, 'NA', cond.id, cond.timepoint, cond.conversion_rate, cond.coverage ]]), file=out8)
+        
+                                            for mapper in config['mappers'].keys():
+                                                if mapper not in ["STAR", "HISAT-3N", "HISAT2_TLA", "MERANGS"]:
+                                                    print("skipping unknown mapper config %s" % mapper)
+                                                    continue
+                                                bam_ori = simdir + "bam_ori/" + mapper + "/" + config['dataset_name'] + "." + cond.id + "." + mapper + ".nodup.bam"
+                                                print('\t'.join([str(x) for x in [basename(bam_ori), 0, mapper, cond.id, cond.timepoint, cond.conversion_rate, cond.coverage ]]), file=out8)
+                                                
+                                                bam_conv = simdir + "bam_conv/" + mapper + "/" + config['dataset_name'] + "." + cond.id + ".conv." + mapper + ".nodup.bam"
+                                                print('\t'.join([str(x) for x in [basename(bam_conv), 1, mapper, cond.id, cond.timepoint, cond.conversion_rate, cond.coverage ]]), file=out8)
+                                                
+                                                bam_out_dir_ori = outdir + "bam_ori/" + mapper + "/"
+                                                if not os.path.exists(bam_out_dir_ori):
+                                                    print("Creating dir " + bam_out_dir_ori)
+                                                    os.makedirs(bam_out_dir_ori)
+                                                bam_out_dir_conv = outdir + "bam_conv/" + mapper + "/"
+                                                if not os.path.exists(bam_out_dir_conv):
+                                                    print("Creating dir " + bam_out_dir_conv)
+                                                    os.makedirs(bam_out_dir_conv)
+                                                bam_ori_out = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".mismapped.bam"
+                                                bam_ori_out_intron = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".intron.bam"
+                                                mappability_tid_ori_out = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".tid_mappability.bedGraph"
+                                                mappability_SJ_ori_out = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".SJ_mappability.bedGraph"
+                                                bam_conv_out =  bam_out_dir_conv + config['dataset_name'] + "." + cond.id + "." + mapper + ".conv.mismapped.bam"
+                                                bam_conv_out_intron = bam_out_dir_conv + config['dataset_name'] + "." + cond.id + "." + mapper + ".conv.intron.bam"
+                                                mappability_tid_conv_out = bam_out_dir_conv + config['dataset_name'] + "." + cond.id + "." + mapper + ".conv.tid_mappability.bedGraph"
+                                                mappability_SJ_conv_out = bam_out_dir_conv + config['dataset_name'] + "." + cond.id + "." + mapper + ".conv.SJ_mappability.bedGraph"
+        
+                                                evaluate_bam(bam_ori, bam_ori_out, False, m, mapper, cond, out, out2)
+                                                evaluate_splice_sites(bam_ori, bam_ori_out_intron, False, m, mapper, cond.id, out3)
+                                                # evaluate_coverage_uniformity(bam_ori, bam_ori_truth, False, m, mapper, cond.id, out4, out5, out6)
+                                                calculate_splice_site_mappability(config, bam_ori, bam_ori_truth, False, m, mapper, cond.id, out7, mappability_SJ_ori_out, config["genome_fa"], config["readlen"])
+                                                get_mapq_histogram(bam_ori, False, m, mapper, cond, out9)
+                                                
+                                                evaluate_bam(bam_conv, bam_conv_out, True, m, mapper, cond, out, out2)
+                                                evaluate_splice_sites(bam_conv, bam_conv_out_intron, True, m, mapper, cond.id, out3)
+                                                # evaluate_coverage_uniformity(bam_conv, bam_conv_truth, True, m, mapper, cond.id, out4, out5, out6)
+                                                calculate_splice_site_mappability(config, bam_conv, bam_conv_truth, True, m, mapper, cond.id, out7, mappability_SJ_conv_out, config["genome_fa"], config["readlen"])
+                                                get_mapq_histogram(bam_conv, True, m, mapper, cond, out9)
+        
+                                            # eval truth
+                                            bam_out_dir_ori = outdir + "bam_ori/TRUTH/"
                                             if not os.path.exists(bam_out_dir_ori):
                                                 print("Creating dir " + bam_out_dir_ori)
                                                 os.makedirs(bam_out_dir_ori)
-                                            bam_out_dir_conv = outdir + "bam_conv/" + mapper + "/"
+                                            bam_out_dir_conv = outdir + "bam_conv/TRUTH/"
                                             if not os.path.exists(bam_out_dir_conv):
                                                 print("Creating dir " + bam_out_dir_conv)
                                                 os.makedirs(bam_out_dir_conv)
-                                            bam_ori_out = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".mismapped.bam"
-                                            bam_ori_out_intron = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".intron.bam"
-                                            mappability_tid_ori_out = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".tid_mappability.bedGraph"
-                                            mappability_SJ_ori_out = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + "." + mapper + ".SJ_mappability.bedGraph"
-                                            bam_conv_out =  bam_out_dir_conv + config['dataset_name'] + "." + cond.id + "." + mapper + ".conv.mismapped.bam"
-                                            bam_conv_out_intron = bam_out_dir_conv + config['dataset_name'] + "." + cond.id + "." + mapper + ".conv.intron.bam"
-                                            mappability_tid_conv_out = bam_out_dir_conv + config['dataset_name'] + "." + cond.id + "." + mapper + ".conv.tid_mappability.bedGraph"
-                                            mappability_SJ_conv_out = bam_out_dir_conv + config['dataset_name'] + "." + cond.id + "." + mapper + ".conv.SJ_mappability.bedGraph"
-    
-                                            evaluate_bam(bam_ori, bam_ori_out, False, m, mapper, cond, out, out2)
-                                            evaluate_splice_sites(bam_ori, bam_ori_out_intron, False, m, mapper, cond.id, out3)
-                                            # evaluate_coverage_uniformity(bam_ori, bam_ori_truth, False, m, mapper, cond.id, out4, out5, out6)
-                                            calculate_splice_site_mappability(config, bam_ori, bam_ori_truth, False, m, mapper, cond.id, out7, mappability_SJ_ori_out, config["genome_fa"], config["readlen"])
-    
-                                            evaluate_bam(bam_conv, bam_conv_out, True, m, mapper, cond, out, out2)
-                                            evaluate_splice_sites(bam_conv, bam_conv_out_intron, True, m, mapper, cond.id, out3)
-                                            # evaluate_coverage_uniformity(bam_conv, bam_conv_truth, True, m, mapper, cond.id, out4, out5, out6)
-                                            calculate_splice_site_mappability(config, bam_conv, bam_conv_truth, True, m, mapper, cond.id, out7, mappability_SJ_conv_out, config["genome_fa"], config["readlen"])
-    
-                                        # eval truth
-                                        bam_out_dir_ori = outdir + "bam_ori/TRUTH/"
-                                        if not os.path.exists(bam_out_dir_ori):
-                                            print("Creating dir " + bam_out_dir_ori)
-                                            os.makedirs(bam_out_dir_ori)
-                                        bam_out_dir_conv = outdir + "bam_conv/TRUTH/"
-                                        if not os.path.exists(bam_out_dir_conv):
-                                            print("Creating dir " + bam_out_dir_conv)
-                                            os.makedirs(bam_out_dir_conv)
-    
-                                        bam_ori_truth_intron = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + ".TRUTH.intron.bam"
-                                        bam_conv_truth_intron = bam_out_dir_conv + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.intron.bam"
-    
-                                        evaluate_bam(bam_ori_truth, None, False, m, 'NA', cond, out, out2)
-                                        evaluate_splice_sites(bam_ori_truth, bam_ori_truth_intron, False, m, 'NA', cond.id, out3)
-                                        evaluate_bam(bam_conv_truth, None, True, m, 'NA', cond, out, out2)
-                                        evaluate_splice_sites(bam_conv_truth, bam_conv_truth_intron, True, m, 'NA', cond.id, out3)
+        
+                                            bam_ori_truth_intron = bam_out_dir_ori + config['dataset_name'] + "." + cond.id + ".TRUTH.intron.bam"
+                                            bam_conv_truth_intron = bam_out_dir_conv + config['dataset_name'] + "." + cond.id + ".TRUTH.TC.intron.bam"
+        
+                                            evaluate_bam(bam_ori_truth, None, False, m, 'NA', cond, out, out2)
+                                            evaluate_splice_sites(bam_ori_truth, bam_ori_truth_intron, False, m, 'NA', cond.id, out3)
+                                            evaluate_bam(bam_conv_truth, None, True, m, 'NA', cond, out, out2)
+                                            evaluate_splice_sites(bam_conv_truth, bam_conv_truth_intron, True, m, 'NA', cond.id, out3)
 
     bgzip(fout, delinFile=True, override=True)
     logging.info("All done in %s" % str(datetime.timedelta(seconds=time.time() - startTime)))

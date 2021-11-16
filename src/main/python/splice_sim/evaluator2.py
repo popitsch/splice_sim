@@ -556,8 +556,10 @@ def calculate_splice_site_mappability(config, bam_file, truth_file, is_converted
             acc_win_genomic = [intronstart - readLength, intronstart + readLength] if intronstrand == "-" else [intronend - readLength, intronend + readLength]
             don_win_map = [float(x[3]) for x in genomeMappability.fetch('chr'+chromosome, don_win_genomic[0], don_win_genomic[1], parser=pysam.asTuple())]
             don_win_min_map=min(don_win_map) if len(don_win_map)>0 else None
+            don_win_max_map=max(don_win_map) if len(don_win_map)>0 else None
             acc_win_map = [float(x[3]) for x in genomeMappability.fetch('chr'+chromosome, acc_win_genomic[0], acc_win_genomic[1], parser=pysam.asTuple())]
-            acc_win_min_map=min(acc_win_map) if len(acc_win_map)>0 else None                    
+            acc_win_min_map=min(acc_win_map) if len(acc_win_map)>0 else None  
+            acc_win_max_map=max(acc_win_map) if len(acc_win_map)>0 else None                    
                         
             # get RNA subseq from transcript seq. NOTE: may be shorter than 2xreadlen
             rna_seq=reverse_complement(t.transcript_seq) if intronstrand == "-" else t.transcript_seq 
@@ -596,6 +598,7 @@ def calculate_splice_site_mappability(config, bam_file, truth_file, is_converted
                 don_seq_rna_in.count("T"),
                 don_seq_rna_in.count("G"),
                 don_win_min_map,
+                don_win_max_map,
                 # acceptor
                 acceptorMappabilityTP,
                 acceptorMappabilityFP,
@@ -609,7 +612,8 @@ def calculate_splice_site_mappability(config, bam_file, truth_file, is_converted
                 acc_seq_rna_in.count("C"),
                 acc_seq_rna_in.count("T"),
                 acc_seq_rna_in.count("G"),
-                acc_win_min_map
+                acc_win_min_map,
+                acc_win_max_map
             ]]), file=out_mappability)
 
     f.close()
@@ -1082,8 +1086,8 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
                                         print("is_converted_bam\tmapper\tcondition_id\tiso\ttid\tTP\tFP\tFN", file=out2)
                                         print("is_converted_bam\tmapper\tcondition\ttid\tintron_id\tdonor_rc_splicing_TP\tdonor_rc_splicing_FP\tdonor_rc_overlapping_TP\tdonor_rc_overlapping_FP\tdonor_rc_splicing_wrong\tacceptor_rc_splicing_TP\tacceptor_rc_splicing_FP\tacceptor_rc_overlapping_TP\tacceptor_rc_overlapping_FP\tacceptor_rc_splicing_wrong", file=out3)
                                         print("""is_converted_bam\tmapper\tcondition\ttid\tintron_id\tchromosome\tstart\tend\tstrand\t""" +
-                                              """don_sj_mappability_TP\tdon_sj_mappability_FP\tdon_TP_reads\tdon_FP_reads\tdon_ex_A\tdon_ex_C\tdon_ex_T\tdon_ex_G\tdon_in_A\tdon_in_C\tdon_in_T\tdon_in_G\tdon_win_min_map\t""" +
-                                              """acc_sj_mappability_TP\tacc_sj_mappability_FP\tacc_TP_reads\tacc_FP_reads\tacc_ex_A\tacc_ex_C\tacc_ex_T\tacc_ex_G\tacc_in_A\tacc_in_C\tacc_in_T\tacc_in_G\tacc_win_min_map""", file=out7)                            
+                                              """don_sj_mappability_TP\tdon_sj_mappability_FP\tdon_TP_reads\tdon_FP_reads\tdon_ex_A\tdon_ex_C\tdon_ex_T\tdon_ex_G\tdon_in_A\tdon_in_C\tdon_in_T\tdon_in_G\tdon_win_min_map\tdon_win_max_map\t""" +
+                                              """acc_sj_mappability_TP\tacc_sj_mappability_FP\tacc_TP_reads\tacc_FP_reads\tacc_ex_A\tacc_ex_C\tacc_ex_T\tacc_ex_G\tacc_in_A\tacc_in_C\tacc_in_T\tacc_in_G\tacc_win_min_map\tacc_win_max_map""", file=out7)                            
                                         print("bam\tis_converted_bam\tmapper\tcondition_id\tcondition_tp\tcondition_cr\tcondition_cov", file=out8)
                                         print("bam\tis_converted_bam\tmapper\tcondition_id\tmapq\tcount", file=out9)
         

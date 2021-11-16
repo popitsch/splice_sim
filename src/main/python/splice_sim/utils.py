@@ -41,6 +41,7 @@ BAM_CBACK=9
 COMP_TABLE = {
     "A": 'T', "C": 'G', "T": 'A', "G": 'C'
     }
+
 # Colors for read classifications
 colors = {"exonexonfalse" : "228,26,28",
           "exonexontrue" : "55,126,184",
@@ -48,6 +49,7 @@ colors = {"exonexonfalse" : "228,26,28",
           "garbage" : "255,127,0",
           "intron" : "200,200,200"
 }
+
 def reverse_complement(seq):
     """ Calculate reverse complement DNA sequence """
     rev=[]
@@ -59,9 +61,11 @@ def reverse_complement(seq):
 def to_region(dat):
     """ Create region string (chr:start-end) """
     return(dat.Chromosome + ":" + str(dat.Start) + "-" + str(dat.End))
+
 def overlaps(a,b):
     """ x1 <= y2 && y1 <= x2 """
     return a[0]<=b[1] and a[1]>=b[0]
+
 def calc_cov_a(a,b):
     """ coverage of interval a """
     cov = min(a[1],b[1]) - max(a[0],b[0]) + 1
@@ -77,6 +81,7 @@ def pad_n(seq, minlen):
         pad1="N" * int(minlen-(len(ret)+len(pad0))) 
         ret=pad0+ret+pad1
     return (ret)
+
 def add_tc(seq, strand, conversion_rate):
     """ introduces TC / AG conversions
         returns the new sequence and the converted positions (always! 5'-3' as shown in genome browser)

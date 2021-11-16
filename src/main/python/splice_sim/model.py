@@ -124,6 +124,7 @@ class Isoform():
     def __str__(self):
         ret = ("%s_%s @ %s, [%s], [%s]" % (self.t.tid, self.id, self.t.region, ",".join(str(x) for x in self.fractions), ",".join(str(x) for x in self.splicing_status)) )
         return (ret)   
+    
 class Transcript():
     def __init__(self, config, tid, df, genome, conditions, max_ilen=None ):
         self.config = config

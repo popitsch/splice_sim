@@ -19,6 +19,7 @@ from intervaltree import Interval, IntervalTree
 import logging
 from model import Model, Condition, Isoform, Transcript
 from iterator import *
+from Bio.Seq import reverse_complement
 
 def basename(f):
     return os.path.splitext(os.path.basename(f))[0]
@@ -461,7 +462,7 @@ def calculate_splice_site_mappability(config, bam_file, truth_file, is_converted
     """ evaluate the passed BAM file """
     logging.info("Calculating mappability for %s" % bam_file)
 
-    genomeMappabilityFile = config['genome_mappability']
+    genomeMappability = pysam.TabixFile(config['genome_mappability'], mode="r")
 
     chromosomes = m.genome.references
     dict_chr2idx = {k: v for v, k in enumerate(chromosomes)}
@@ -551,164 +552,65 @@ def calculate_splice_site_mappability(config, bam_file, truth_file, is_converted
             acceptorMappabilityFP = 1 - abs(acceptorTruthFractionFP - acceptorMappedFractionFP)
 
             # calculate genomic mappability
-            donorExonGenomeMappability = np.zeros(readLength, dtype=float)
-            donorExonBaseContent = ""
-            
-            it = BlockedPerPositionIterator([
-                LocationTabixPerPositionIterator(
-                    genomeMappabilityFile,
-                    dict_chr2idx, reference=chromosome, start=intronstart - readLength,
-                    end=intronstart - 1, chr_prefix_operator='add', fill=True, fill_value=(0,),
-                    is_zero_based=True),
-                LocationFastaIterator(fasta, dict_chr2idx, chromosome, intronstart - readLength, intronstart - 1)
-                ])
-            
-            arrayIndex = 0
-            for loc, (genomeMappability, referenceBase) in it:
-                donorExonGenomeMappability[arrayIndex] = genomeMappability[0]
-                donorExonBaseContent += referenceBase
-                arrayIndex += 1
-            
-            donorIntronGenomeMappability = np.zeros(readLength, dtype=float)
-            donorIntronBaseContent = ""
-            
-            it = BlockedPerPositionIterator([
-                LocationTabixPerPositionIterator(
-                    genomeMappabilityFile,
-                    dict_chr2idx, reference=chromosome, start=intronstart,
-                    end=intronstart + readLength - 1, chr_prefix_operator='add', fill=True, fill_value=(0,),
-                    is_zero_based=True),
-                LocationFastaIterator(fasta, dict_chr2idx, chromosome, intronstart, intronstart + readLength - 1)
-            ])
-            
-            arrayIndex = 0
-            for loc, (genomeMappability, referenceBase) in it:
-                donorIntronGenomeMappability[arrayIndex] = genomeMappability[0]
-                donorIntronBaseContent += referenceBase
-                arrayIndex += 1
-            
-            acceptorIntronGenomeMappability = np.zeros(readLength, dtype=float)
-            acceptorIntronBaseContent = ""
-            
-            it = BlockedPerPositionIterator([
-                LocationTabixPerPositionIterator(
-                    genomeMappabilityFile,
-                    dict_chr2idx, reference=chromosome, start=intronend - readLength + 1,
-                    end=intronend, chr_prefix_operator='add', fill=True, fill_value=(0,),
-                    is_zero_based=True),
-                LocationFastaIterator(fasta, dict_chr2idx, chromosome, intronend - readLength + 1, intronend)
-            ])
-            
-            arrayIndex = 0
-            for loc, (genomeMappability, referenceBase) in it:
-                acceptorIntronGenomeMappability[arrayIndex] = genomeMappability[0]
-                acceptorIntronBaseContent += referenceBase
-                arrayIndex += 1
-            
-            acceptorExonGenomeMappability = np.zeros(readLength, dtype=float)
-            acceptorExonBaseContent = ""
-            
-            it = BlockedPerPositionIterator([
-                LocationTabixPerPositionIterator(
-                    genomeMappabilityFile,
-                    dict_chr2idx, reference=chromosome, start=intronend + 1,
-                    end=intronend + readLength, chr_prefix_operator='add', fill=True, fill_value=(0,),
-                    is_zero_based=True),
-                LocationFastaIterator(fasta, dict_chr2idx, chromosome, intronend + 1, intronend + readLength)
-            ])
-            
-            arrayIndex = 0
-            for loc, (genomeMappability, referenceBase) in it:
-                acceptorExonGenomeMappability[arrayIndex] = genomeMappability[0]
-                acceptorExonBaseContent += referenceBase
-                arrayIndex += 1
+            don_win_genomic = [intronstart - readLength, intronstart + readLength] if intronstrand == "+" else [intronend - readLength, intronend + readLength]
+            acc_win_genomic = [intronstart - readLength, intronstart + readLength] if intronstrand == "-" else [intronend - readLength, intronend + readLength]
+            don_win_map = [float(x[3]) for x in genomeMappability.fetch('chr'+chromosome, don_win_genomic[0], don_win_genomic[1], parser=pysam.asTuple())]
+            don_win_min_map=min(don_win_map) if len(don_win_map)>0 else None
+            acc_win_map = [float(x[3]) for x in genomeMappability.fetch('chr'+chromosome, acc_win_genomic[0], acc_win_genomic[1], parser=pysam.asTuple())]
+            acc_win_min_map=min(acc_win_map) if len(acc_win_map)>0 else None                    
+                        
+            # get RNA subseq from transcript seq. NOTE: may be shorter than 2xreadlen
+            rna_seq=reverse_complement(t.transcript_seq) if intronstrand == "-" else t.transcript_seq 
+            l=len(rna_seq)
+            # note can be shorter than readlen if we run out of sequence!
+            don_seq_rna_ex = rna_seq[max(0,t.transcript.End-intronend-readLength):min(t.transcript.End-intronend,l)] if intronstrand == "-" else rna_seq[max(0,intronstart-readLength-t.transcript.Start):min(l,intronstart-t.transcript.Start)]
+            don_seq_rna_in = rna_seq[max(0,t.transcript.End-intronend):min(t.transcript.End-intronend+readLength,l)] if intronstrand == "-" else rna_seq[max(0,intronstart-t.transcript.Start):min(l,intronstart+readLength-t.transcript.Start)]
+            acc_seq_rna_in = rna_seq[max(0,t.transcript.End-intronstart-readLength+1):min(t.transcript.End-intronstart+1,l)] if intronstrand == "-" else rna_seq[max(0,intronend-readLength-t.transcript.Start+1):min(l,intronend-t.transcript.Start+1)]
+            acc_seq_rna_ex = rna_seq[max(0,t.transcript.End-intronstart+1):min(t.transcript.End-intronstart+readLength+1,l)] if intronstrand == "-" else rna_seq[max(0,intronend-t.transcript.Start+1):min(l,intronend+readLength-t.transcript.Start+1)]
 
-            if intronstrand == "-":
-                print("\t".join([chromosome,str(intronstart - readLength), str(intronstart + readLength), intronID + "_acceptor", str(donorMappabilityTP), intronstrand]), file = f)
-                print("\t".join([chromosome, str(intronend - readLength), str(intronend + readLength), intronID + "_donor", str(acceptorMappabilityTP), intronstrand]), file = f)
+            # write bedgraph file with SJ mappability
+            print("\t".join([chromosome, str(don_win_genomic[0]), str(don_win_genomic[1]), intronID + "_donor", str(donorMappabilityTP), intronstrand]), file = f)
+            print("\t".join([chromosome, str(acc_win_genomic[0]), str(acc_win_genomic[1]), intronID + "_acceptor", str(acceptorMappabilityTP), intronstrand]), file = f)
 
-                print("\t".join([str(x) for x in [
-                    1 if is_converted_bam else 0,
-                    mapper,
-                    condition,
-                    tid,
-                    intronID,
-                    chromosome,
-                    str(intronstart),
-                    str(intronend),
-                    intronstrand,
-                    str(acceptorMappabilityTP),
-                    str(acceptorMappabilityFP),
-                    str(acceptorMappedSplicedTP + acceptorMappedUnsplicedTP),
-                    str(acceptorMappedSplicedFP + acceptorMappedUnsplicedFP),
-                    str(np.nanmean(acceptorExonGenomeMappability)),
-                    str(acceptorExonBaseContent.upper().count("A")),
-                    str(acceptorExonBaseContent.upper().count("C")),
-                    str(acceptorExonBaseContent.upper().count("T")),
-                    str(acceptorExonBaseContent.upper().count("G")),
-                    str(np.nanmean(acceptorIntronGenomeMappability)),
-                    str(acceptorIntronBaseContent.upper().count("A")),
-                    str(acceptorIntronBaseContent.upper().count("C")),
-                    str(acceptorIntronBaseContent.upper().count("T")),
-                    str(acceptorIntronBaseContent.upper().count("G")),
-                    str(donorMappabilityTP),
-                    str(donorMappabilityFP),
-                    str(donorMappedSplicedTP + donorMappedUnsplicedTP),
-                    str(donorMappedSplicedFP + donorMappedUnsplicedFP),
-                    str(np.nanmean(donorExonGenomeMappability)),
-                    str(donorExonBaseContent.upper().count("A")),
-                    str(donorExonBaseContent.upper().count("C")),
-                    str(donorExonBaseContent.upper().count("T")),
-                    str(donorExonBaseContent.upper().count("G")),
-                    str(np.nanmean(donorIntronGenomeMappability)),
-                    str(donorIntronBaseContent.upper().count("A")),
-                    str(donorIntronBaseContent.upper().count("C")),
-                    str(donorIntronBaseContent.upper().count("T")),
-                    str(donorIntronBaseContent.upper().count("G"))
-                ]]), file=out_mappability)
-            else :
-                print("\t".join([chromosome, str(intronstart - readLength), str(intronstart + readLength), intronID + "_donor", str(donorMappabilityTP), intronstrand]), file = f)
-                print("\t".join([chromosome, str(intronend - readLength), str(intronend + readLength), intronID + "_acceptor", str(acceptorMappabilityTP), intronstrand]), file = f)
-
-                print("\t".join([str(x) for x in [
-                    1 if is_converted_bam else 0,
-                    mapper,
-                    condition,
-                    tid,
-                    intronID,
-                    chromosome,
-                    str(intronstart),
-                    str(intronend),
-                    intronstrand,
-                    str(donorMappabilityTP),
-                    str(donorMappabilityFP),
-                    str(donorMappedSplicedTP + donorMappedUnsplicedTP),
-                    str(donorMappedSplicedFP + donorMappedUnsplicedFP),
-                    str(np.nanmean(donorExonGenomeMappability)),
-                    str(donorExonBaseContent.upper().count("A")),
-                    str(donorExonBaseContent.upper().count("C")),
-                    str(donorExonBaseContent.upper().count("T")),
-                    str(donorExonBaseContent.upper().count("G")),
-                    str(np.nanmean(donorIntronGenomeMappability)),
-                    str(donorIntronBaseContent.upper().count("A")),
-                    str(donorIntronBaseContent.upper().count("C")),
-                    str(donorIntronBaseContent.upper().count("T")),
-                    str(donorIntronBaseContent.upper().count("G")),
-                    str(acceptorMappabilityTP),
-                    str(acceptorMappabilityFP),
-                    str(acceptorMappedSplicedTP + acceptorMappedUnsplicedTP),
-                    str(acceptorMappedSplicedFP + acceptorMappedUnsplicedFP),
-                    str(np.nanmean(acceptorExonGenomeMappability)),
-                    str(acceptorExonBaseContent.upper().count("A")),
-                    str(acceptorExonBaseContent.upper().count("C")),
-                    str(acceptorExonBaseContent.upper().count("T")),
-                    str(acceptorExonBaseContent.upper().count("G")),
-                    str(np.nanmean(acceptorIntronGenomeMappability)),
-                    str(acceptorIntronBaseContent.upper().count("A")),
-                    str(acceptorIntronBaseContent.upper().count("C")),
-                    str(acceptorIntronBaseContent.upper().count("T")),
-                    str(acceptorIntronBaseContent.upper().count("G"))
-                ]]), file=out_mappability)
+            print("\t".join([str(x) for x in [
+                1 if is_converted_bam else 0,
+                mapper,
+                condition,
+                tid,
+                intronID,
+                chromosome,
+                intronstart,
+                intronend,
+                intronstrand,
+                # donor
+                donorMappabilityTP,
+                donorMappabilityFP,
+                donorMappedSplicedTP + donorMappedUnsplicedTP,
+                donorMappedSplicedFP + donorMappedUnsplicedFP,
+                don_seq_rna_ex.count("A"),
+                don_seq_rna_ex.count("C"),
+                don_seq_rna_ex.count("T"),
+                don_seq_rna_ex.count("G"),
+                don_seq_rna_in.count("A"),
+                don_seq_rna_in.count("C"),
+                don_seq_rna_in.count("T"),
+                don_seq_rna_in.count("G"),
+                don_win_min_map,
+                # acceptor
+                acceptorMappabilityTP,
+                acceptorMappabilityFP,
+                acceptorMappedSplicedTP + acceptorMappedUnsplicedTP,
+                acceptorMappedSplicedFP + acceptorMappedUnsplicedFP,
+                acc_seq_rna_ex.count("A"),
+                acc_seq_rna_ex.count("C"),
+                acc_seq_rna_ex.count("T"),
+                acc_seq_rna_ex.count("G"),
+                acc_seq_rna_in.count("A"),
+                acc_seq_rna_in.count("C"),
+                acc_seq_rna_in.count("T"),
+                acc_seq_rna_in.count("G"),
+                acc_win_min_map
+            ]]), file=out_mappability)
 
     f.close()
 
@@ -1179,7 +1081,9 @@ def evaluate_dataset(config, config_dir, simdir, outdir, overwrite=False):
                                         print("mapped_coords\ttrue_coords\tclassification\ttid\tis_converted_bam\tmapper\tcondition_id\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\tis_converted_read\toverlapping_tids\tread_name", file=out)
                                         print("is_converted_bam\tmapper\tcondition_id\tiso\ttid\tTP\tFP\tFN", file=out2)
                                         print("is_converted_bam\tmapper\tcondition\ttid\tintron_id\tdonor_rc_splicing_TP\tdonor_rc_splicing_FP\tdonor_rc_overlapping_TP\tdonor_rc_overlapping_FP\tdonor_rc_splicing_wrong\tacceptor_rc_splicing_TP\tacceptor_rc_splicing_FP\tacceptor_rc_overlapping_TP\tacceptor_rc_overlapping_FP\tacceptor_rc_splicing_wrong", file=out3)
-                                        print("is_converted_bam\tmapper\tcondition\ttid\tintron_id\tchromosome\tstart\tend\tstrand\tacceptor_sj_mappability_TP\tacceptor_sj_mappability_FP\tacceptor_TP_reads\tacceptor_FP_reads\tmean_acceptorExonGenomeMappability\tacceptorExonBaseContent_A\tacceptorExonBaseContent_C\tacceptorExonBaseContent_T\tacceptorExonBaseContent_G\tmean_acceptorIntronGenomeMappability\tacceptorIntronBaseContent_A\tacceptorIntronBaseContent_C\tacceptorIntronBaseContent_T\tacceptorIntronBaseContent_G\tdonor_sj_mappability_TP\tdonor_sj_mappability_FP\tdonor_sj_TP_reads\tdonor_sj_FP_reads\tmean_donorExonGenomeMappability\tdonorExonBaseContent_A\tdonorExonBaseContent_C\tdonorExonBaseContent_T\tdonorExonBaseContent_G\tmean_donorIntronGenomeMappability\tdonorIntronBaseContent_A\tdonorIntronBaseContent_C\tdonorIntronBaseContent_T\tdonorIntronBaseContent_G",file=out7)
+                                        print("""is_converted_bam\tmapper\tcondition\ttid\tintron_id\tchromosome\tstart\tend\tstrand\t""" +
+                                              """don_sj_mappability_TP\tdon_sj_mappability_FP\tdon_TP_reads\tdon_FP_reads\tdon_ex_A\tdon_ex_C\tdon_ex_T\tdon_ex_G\tdon_in_A\tdon_in_C\tdon_in_T\tdon_in_G\tdon_win_min_map\t""" +
+                                              """acc_sj_mappability_TP\tacc_sj_mappability_FP\tacc_TP_reads\tacc_FP_reads\tacc_ex_A\tacc_ex_C\tacc_ex_T\tacc_ex_G\tacc_in_A\tacc_in_C\tacc_in_T\tacc_in_G\tacc_win_min_map""", file=out7)                            
                                         print("bam\tis_converted_bam\tmapper\tcondition_id\tcondition_tp\tcondition_cr\tcondition_cov", file=out8)
                                         print("bam\tis_converted_bam\tmapper\tcondition_id\tmapq\tcount", file=out9)
         

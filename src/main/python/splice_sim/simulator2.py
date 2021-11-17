@@ -668,8 +668,8 @@ def simulate_dataset(config, config_dir, outdir, overwrite=False):
             bgzip(f_fq_conv, threads=threads)
             
             # add MD tag to bams
-            add_md_tag(f_bam, config["genome_fa"], threads=threads)
-            add_md_tag(f_bam_conv, config["genome_fa"], threads=threads)
+            add_md_tag(f_bam, config["genome_fa"], threads=1)
+            add_md_tag(f_bam_conv, config["genome_fa"], threads=1)
                 
             if success:
                 if not get_config(config, ['simulator','keep_sam'], False):

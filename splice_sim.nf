@@ -1,6 +1,6 @@
 #!/usr/bin/env nextflow
 
-params.config_file = "splice_sim.config.json"
+params.config_file = "${workflow.projectDir}/splice_sim.config.json"
 
 log.info "====================================="
 log.info "Config file : ${params.config_file}"

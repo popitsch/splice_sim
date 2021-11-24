@@ -57,7 +57,7 @@ if __name__ == '__main__':
     
     
     parser["build_model"] = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
-    parser["build_model"].add_argument("-c", "--config", type=os.path.exists, required=True, dest="config_file", metavar="config_file", help="JSON config file")
+    parser["build_model"].add_argument("-c", "--config", type=str, required=True, dest="config_file", metavar="config_file", help="JSON config file")
     parser["build_model"].add_argument("-o", "--outdir", type=str, required=False, dest="outdir", metavar="outdir", help="output directory (default is current dir)")
     
        

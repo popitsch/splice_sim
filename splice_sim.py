@@ -13,7 +13,7 @@
 from argparse import ArgumentParser, RawDescriptionHelpFormatter
 import os, sys, json, logging, random
 from collections import OrderedDict
-from model import Model
+from splice_sim.model import Model
 
 VERSION = "0.1"
 LOGO = """

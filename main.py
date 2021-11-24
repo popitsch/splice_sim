@@ -67,8 +67,6 @@ if __name__ == '__main__':
     #============================================================================
     config = json.load(open(args.config_file), object_pairs_hook=OrderedDict)
     check_config(config)
-    cdir = os.path.dirname(os.path.abspath(args.config_file))+'/'
-    print("config dir", cdir)
     
     # output dir (current dir if none provided)
     outdir = (args.outdir if args.outdir else os.getcwd()) + '/' + config['dataset_name'] +'/'
@@ -77,11 +75,12 @@ if __name__ == '__main__':
     # logging    
     print("Logging to %s" % outdir+'splice_sim.log')
     logging.basicConfig(filename=outdir+'splice_sim.log', level=logging.DEBUG)    
-    with open(outdir+'/splicing_simulator.effective_conf.json', 'w') as out:
-        print(json.dumps(config, indent=4, sort_keys=True), file=out)
+
     # set random seed
     if "random_seed" in config:
         random.seed(config["random_seed"])
+        print("setting random seed to ", config["random_seed"])
+    
     logging.info(LOGO)
 
     if mod == "build_model":

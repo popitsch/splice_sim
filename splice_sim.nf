@@ -23,7 +23,7 @@ process build_model {
     	
     output: 
     	set file("${params.dataset_name}.model") into model
-
+    	file("*") into model_files
     	script:
 	    """
     		${params.executables.splice_sim_cmd} build_model --config ${params.config_file} --outdir .

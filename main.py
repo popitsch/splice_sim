@@ -85,4 +85,4 @@ if __name__ == '__main__':
     logging.info(LOGO)
 
     if mod == "build_model":
-        Model.build_model(config, cdir, outdir)
+        Model.build_model(config, outdir)

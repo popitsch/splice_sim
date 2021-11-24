@@ -3,9 +3,9 @@
 '''
 import csv, datetime, time, logging, sys, os, json
 import pysam
-from model import Model
 from splice_sim import *
-
+from collections import Counter
+import random
 
 def postfilter_bam( bam_in, bam_out, isoform_colors):
     """ Filter secondary+supplementary reads """  
@@ -32,14 +32,14 @@ def postfilter_bam( bam_in, bam_out, isoform_colors):
         print("error indexing bam: %s" % e)
     return True, n_reads, f_reads
 
-def transcript2genome_bam(transcript_bam_file, mod, out_bam):
+def transcript2genome_bam(m, transcript_bam_file, out_bam):
     """ Reads a transcriptome-mapped BAM and converts to a genome BAM. 
     Transcript ids, strand, isoform and tags are parsed from the input read names and matched with the model """
-    chromosomes = mod.genome.references
+    genome = pysam.FastaFile(m.config["genome_fa"])    
+    chromosomes = genome.references
     dict_chr2idx = {k: v for v, k in enumerate(chromosomes)}
     dict_idx2chr = {v: k for v, k in enumerate(chromosomes)}
-    dict_chr2len = {c: mod.genome.get_reference_length(c) for c in mod.genome.references}
-    logging.info("Configured conditions: %s" % (", ".join(str(x) for x in mod.conditions)) )
+    dict_chr2len = {c: genome.get_reference_length(c) for c in genome.references}
     header = { 'HD': {'VN': '1.4'}, 
                'SQ': [{'LN': l, 'SN': c} for c,l in dict_chr2len.items()] }
     stats=Counter()
@@ -54,14 +54,14 @@ def transcript2genome_bam(transcript_bam_file, mod, out_bam):
             if not transcript_strand == read_strand:
                 stats['wrong_strand_reads']+=1
             else: # NOTE: reads that were mapped to opposite strand will be dropped later in post_filtering step!
-                iso = mod.transcripts[tid].isoforms[iso_id]
+                iso = m.transcripts[tid].isoforms[iso_id]
                 is_converted_read = 1 if iso.is_labeled else 0 # does the read stem form a labeled or unlabeled isoform? 
                 ablocks=iter(iso.aln_blocks)
                 genome_cigatuples=[]
                 seq=""
                 qual=[]
                 rpos=0
-                gpos=iso.t.transcript.Start-1
+                gpos=iso.transcript.Start-1
                 mismatches=[]
                 n_deletions, n_insertions = 0,0
                 # get read data
@@ -159,7 +159,7 @@ def transcript2genome_bam(transcript_bam_file, mod, out_bam):
                 read.query_qualities = qual
                 read.reference_start = start_pos
                 read.cigartuples=genome_cigatuples
-                read.reference_id=dict_chr2idx[iso.t.transcript.Chromosome]
+                read.reference_id=dict_chr2idx[iso.transcript.Chromosome]
                 read.mapping_quality = 60
                 read.set_tag(tag="NM", value=len(mismatches)+n_insertions+n_deletions, value_type="i")
                 if is_converted_read==0:
@@ -168,7 +168,7 @@ def transcript2genome_bam(transcript_bam_file, mod, out_bam):
                 read.flag = 0 if iso.strand=='+' else 16
                 # read name encodes: true_tid, true_strand, true_isoform, read_tag, true_chr, true_cigar, n_seqerr, n_converted
                 read.query_name =  '_'.join([str(x) for x in [r.query_name, # true_tid, true_strand, true_isoform, tag
-                                                    iso.t.transcript.Chromosome, # true_isoform
+                                                    iso.transcript.Chromosome, # true_isoform
                                                     read.reference_start,
                                                     read.cigarstring, # cigarstring for calculating aligned blocks
                                                     len(mismatches)+n_insertions+n_deletions, # number of seq errors
@@ -217,7 +217,7 @@ def modify_bases(ref, alt, seq, is_reverse, conversion_rate ):
         convseq+=c
     return convseq, n_convertible, n_modified
 
-def add_read_modifications(in_bam, out_bam, ref, alt, conversion_rate, tag_tc="xc", tag_isconvread="xm"):
+def add_read_modifications(in_bam, out_bam, ref, alt, conversion_rate, threads, tag_tc="xc", tag_isconvread="xm"):
     """ modify single nucleotides in reads. 
     """
     sam = pysam.AlignmentFile(in_bam, "rb")
@@ -251,7 +251,7 @@ def add_read_modifications(in_bam, out_bam, ref, alt, conversion_rate, tag_tc="x
             r.query_qualities=quals
             bam_out.write(r)
     try:
-        pysam.sort("-o", out_bam, out_bam+'.tmp.bam') # @UndefinedVariable
+        pysam.sort("-@", str(threads), "-o", out_bam, out_bam+'.tmp.bam') # @UndefinedVariable
         os.remove(out_bam+'.tmp.bam')
         pysam.index(out_bam) # @UndefinedVariable
     except Exception as e:
@@ -274,3 +274,31 @@ def bam_to_fastq(in_bam, out_fastq):
             qstr = ''.join(map(lambda x: chr( x+33 ), r_query_qualities))
             print("@%s\n%s\n+\n%s" % ( r.query_name, r_query_sequence, qstr), file=out_fq )
             
+
+
+def create_genome_bam(m, art_sam_file, threads, out_dir):
+    """ create a genome bam file and exprot to fastq """
+    config=m.config
+    
+    # file names
+    if not os.path.exists(out_dir):
+        os.mkdirs(out_dir)
+    f_bam_ori = out_dir+'/'+config["dataset_name"]+".ori.bam"
+    f_bam_mod = out_dir+'/'+config["dataset_name"]+".mod.bam"
+    f_fq_ori = out_dir+'/'+config["dataset_name"]+".ori.fq"
+    f_fq_mod = out_dir+'/'+config["dataset_name"]+".mod.fq"
+        
+    # convert to genome BAM (truth file w/o read modifications)            
+    stats=transcript2genome_bam(m, art_sam_file, f_bam_ori)
+    print(stats)
+    
+    # convert to FASTQ
+    bam_to_fastq(f_bam_ori, f_fq_ori)
+
+    # add read modifications
+    add_read_modifications(f_bam_ori, f_bam_mod, config['condition']['ref'], config['condition']['alt'], config['condition']['conversion_rate'], threads)            
+            
+    # convert to FASTQ
+    bam_to_fastq(f_bam_mod,  f_fq_mod)
+    
+    return f_bam_ori, f_bam_mod, f_fq_ori, f_fq_mod

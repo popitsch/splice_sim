@@ -16,7 +16,7 @@ import numpy as np
 import math
 import pysam
 from collections import OrderedDict, Counter
-import os, sys
+import os, sys, json
 import pickle
 import logging
 

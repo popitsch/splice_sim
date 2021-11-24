@@ -26,13 +26,13 @@ Splice_sim v%s
 # NOTE: splice_sim will not simulate reads for annotations that are shorter than the readlength (as this is 
 # not supported by ART.
 #============================================================================
-
 def check_config(config):
     for section in ['dataset_name','mappers','genome_fa','gene_gff','isoform_mode']:
         assert section in config, "Missing configuration section %s" % section
     if 'transcripts' not in config:
         assert "transcript_data" in config, "Transcript data needs to be configured either in config file ('transcripts' section) or in an external file referenced via 'transcript_data'"
-        
+
+
 usage = '''                           
 
   Copyright (C) 2021 XXX.  All rights reserved.
@@ -59,29 +59,29 @@ if __name__ == '__main__':
     parser["build_model"] = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
     parser["build_model"].add_argument("-c", "--config", type=str, required=True, dest="config_file", metavar="config_file", help="JSON config file")
     parser["build_model"].add_argument("-o", "--outdir", type=str, required=False, dest="outdir", metavar="outdir", help="output directory (default is current dir)")
-    
-       
-    print(LOGO)
-    print("module: " + mod)
+
     args = parser[mod].parse_args(sys.argv[2:])
     #============================================================================
-    config = json.load(open(args.config_file), object_pairs_hook=OrderedDict)
-    check_config(config)
-    
+
     # output dir (current dir if none provided)
-    outdir = (args.outdir if args.outdir else os.getcwd()) + '/' + config['dataset_name'] +'/'
+    outdir = os.path.abspath(args.outdir if args.outdir else os.getcwd())+'/'
     if not os.path.exists(outdir):
         os.makedirs(outdir)
+        
     # logging    
     print("Logging to %s" % outdir+'splice_sim.log')
     logging.basicConfig(filename=outdir+'splice_sim.log', level=logging.DEBUG)    
 
+    # load and check onfig
+    config=json.load(open(args.config_file), object_pairs_hook=OrderedDict)
+    check_config(config)   
+
+    
+    logging.info(LOGO)
     # set random seed
     if "random_seed" in config:
         random.seed(config["random_seed"])
-        print("setting random seed to ", config["random_seed"])
-    
-    logging.info(LOGO)
+        logging.info("setting random seed to %i" % config["random_seed"])
 
     if mod == "build_model":
-        Model.build_model(config, outdir)
+        Model.build_model(args.config_file, outdir)

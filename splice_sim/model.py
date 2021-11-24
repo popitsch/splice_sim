@@ -19,17 +19,8 @@ from collections import OrderedDict, Counter
 import os, sys, json
 import pickle
 import logging
-
-def localize_config(config):
-    """ Recursively iterates json and adds /Volumes prefix to /group paths"""
-    for k, v in config.items():
-        if isinstance(v, str) and v.startswith('/groups'):
-            config[k]='/Volumes'+ config[k]
-        elif isinstance(v, dict):
-            config[k]=localize_config(v)
-        elif isinstance(v, list):
-            config[k]=['/Volumes'+x if x.startswith('/groups') else '' for x in v]
-    return config
+from pathlib import Path
+from splice_sim import *        
 
 def calculate_transcript_data(config, config_dir, outdir):
     """ Calculate a data config file """ 
@@ -49,7 +40,7 @@ def calculate_transcript_data(config, config_dir, outdir):
         # create output
         tfile = config["transcript_ids"]
         if not os.path.isabs(tfile):
-            tfile = config_dir + tfile
+            tfile = config_dir +'/' + tfile
         transcripts = pd.read_csv(tfile,delimiter='\t',encoding='utf-8')
         logging.info("read %i tids" % len(transcripts))
         base_abundance = config["base_abundance"] if 'base_abundance' in config else 10
@@ -66,14 +57,14 @@ def calculate_transcript_data(config, config_dir, outdir):
                 if frac_old_mature>0: # add 'old' rna isoform
                     isoform_data['old'] = OrderedDict()
                     isoform_data['old']['splicing_status']=[1] * rnk
-                    isoform_data['old']['fractions']=[frac_old_mature]
-                    isoform_data['old']['is_labeled']=[0]
+                    isoform_data['old']['fraction']=frac_old_mature
+                    isoform_data['old']['is_labeled']=0
                 if frac_old_mature < 1.0:
                     isoform_data['pre'] = OrderedDict()
                     if rnk: # at least one intron
                         isoform_data['pre']['splicing_status']=[0] * rnk
-                    isoform_data['pre']['fractions']=[round((1-frac_old_mature) * 0.5,3)]
-                    isoform_data['pre']['is_labeled']=[1]
+                    isoform_data['pre']['fraction']=round((1-frac_old_mature) * 0.5,3)
+                    isoform_data['pre']['is_labeled']=1
                 # output data
                 tdata[tid] = OrderedDict()
                 tdata[tid]["gene_name"] = gene_name
@@ -85,12 +76,11 @@ def calculate_transcript_data(config, config_dir, outdir):
         logging.error("Unknown mode %s " % (args.mode))  
         sys.exit(1)    
     # Write JSON file
-    outF = config['transcript_data']
-    if not os.path.isabs(outF):
-        outF = config_dir + outF
-    with open(outF, 'w') as out:
+    out_file = config['transcript_data']
+    with open(out_file, 'w') as out:
         json.dump(tdata, out, indent=2)     
-    logging.info('Done. Results written to %s' % (outF))
+    logging.info('Done. Results written to %s' % (out_file))
+    return out_file
 
 class Condition():
     def __init__(self, name, ref, alt, conversion_rate, base_coverage ):
@@ -106,9 +96,9 @@ class Condition():
         return (ret)  
  
 class Isoform():
-    def __init__(self, id, fractions, splicing_status, is_labeled, transcript ):
+    def __init__(self, id, fraction, splicing_status, is_labeled, transcript ):
         self.id = id
-        self.fractions = fractions
+        self.fraction = fraction
         self.splicing_status = splicing_status
         self.transcript = transcript
         self.aln_block_len=0
@@ -134,7 +124,7 @@ class Isoform():
     def __repr__(self):
         return self.__str__()  
     def __str__(self):
-        ret = ("%s_%s @ %s, [%s], [%s]" % (self.transcript.tid, self.id, self.transcript.region, ",".join(str(x) for x in self.fractions), ",".join(str(x) for x in self.splicing_status)) )
+        ret = ("%s_%s @ %s, [%f], [%s]" % (self.transcript.tid, self.id, self.transcript.region, self.fraction, ",".join(str(x) for x in self.splicing_status)) )
         return (ret)   
     
 class Transcript():
@@ -178,9 +168,9 @@ class Transcript():
         # set abundance and isoforms
         self.abundance = math.ceil(self.config['transcripts'][tid]['abundance']) # abundance is float
         self.isoforms=OrderedDict()
-        total_frac = [0]
+        total_frac = 0
         for iso in self.config['transcripts'][tid]['isoforms'].keys():
-            frac=self.config['transcripts'][tid]['isoforms'][iso]['fractions']
+            frac=self.config['transcripts'][tid]['isoforms'][iso]['fraction']
             splicing_status=self.config['transcripts'][tid]['isoforms'][iso]['splicing_status'] if 'splicing_status' in self.config['transcripts'][tid]['isoforms'][iso] else []
             is_labeled=self.config['transcripts'][tid]['isoforms'][iso]['is_labeled'] if 'is_labeled' in self.config['transcripts'][tid]['isoforms'][iso] else 1
             if self.Strand == "-":
@@ -190,13 +180,12 @@ class Transcript():
                 self.is_valid = False
                 return
             self.isoforms[iso] = Isoform(iso, frac, splicing_status, is_labeled, self)    
-            total_frac = [x + y for x, y in zip(total_frac, frac)]
-        for x in total_frac:
-            # assert with rounding error
-            assert x <= 1.00001, "Total fraction of transcript > 1 (%s) for some isoform: %s" % ( ",".join(str(x) for x in total_frac), self.tid )
+            total_frac += frac
+        # assert with rounding error
+        assert total_frac <= 1.00001, "Total fraction of isoforms > 1 (%f) for %s" % ( total_frac, self.tid )
         # add mature, labeled isoform if not configured
         if 'mat' not in self.isoforms:
-            frac = [(1.0 - x) for x in total_frac]
+            frac = (1.0 - total_frac)
             iso='mat'
             splicing_status=[1] * len(self.introns)
             self.isoforms[iso] = Isoform(iso, frac, splicing_status, 1, self) # add labeled, mature isoform
@@ -216,13 +205,12 @@ class Transcript():
         return (seq)
     def get_sequences(self):
         ret=OrderedDict()
-        ret[cond]=OrderedDict()
         total_count=0
         for id in self.isoforms.keys():
-            frac = self.isoforms[id].fractions[0]
+            frac = self.isoforms[id].fraction
             count=int(self.abundance * frac)
             total_count+=count
-            ret[cond][id]=[
+            ret[id]=[
                 self.get_rna_seq(id), 
                 count]
         toadd = self.abundance - total_count
@@ -230,7 +218,7 @@ class Transcript():
         if toadd > 0: # add 1 to last isoform
             logging.debug("corrected counts by %i" % (toadd))
             id = list(self.isoforms.keys())[-1]
-            ret[cond][id]=[ret[cond][id][0], ret[cond][id][1] + toadd]
+            ret[id]=[ret[id][0], ret[id][1] + toadd]
         return (ret)
     def to_bed(self):
         return ("%s\t%i\t%i\t%s\t%i\t%s" % (self.Chromosome, self.Start, self.End, self.transcript_data['ID'], 1000, self.Strand) )
@@ -289,7 +277,7 @@ class Model():
         logging.info("Writing filtered gene GFF")
         out_file=outdir+"gene_anno.gff3"
         d=pd.read_csv(self.config["gene_gff"],delimiter='\t',encoding='utf-8')
-        if not files_exist(out_file+".gz"):
+        if not os.path.exists(out_file+".gz"):
             with open(out_file, 'w') as out:
                 for index, row in d.iterrows():
                     keep=False
@@ -298,7 +286,7 @@ class Model():
                             keep=k[len('transcript_id='):] in self.transcripts.keys()
                     if keep:
                         print('\t'.join(str(x) for x in row), file=out)
-            bgzip(out_file, override=True, delinFile=True, index=True, threads=self.threads)
+            bgzip_and_tabix(out_file, seq_col=0, start_col=3, end_col=4, line_skip=0, zerobased=False)
         out_file=out_file+".gz"
         return out_file
     def write_transcript_md(self, outdir):
@@ -306,29 +294,46 @@ class Model():
         logging.info("Writing filtered gene TSV")
         out_file=outdir+"gene_anno.tsv"
         headers=None
-        if not files_exist(out_file+".gz"):
+        if not os.path.exists(out_file+".gz"):
             with open(out_file, 'w') as out:
                 for t in self.transcripts.values():       
                     if headers is None:
-                        headers=[str(h) for h in t.df.columns if h not in ['Source', 'Feature', 'Score', 'Frame', 'ID', 'havana_gene', 'Parent', 'exon_number', 'exon_id']]
+                        headers=[str(h) for h in t.transcript_data if h not in ['Source', 'Feature', 'Score', 'Frame', 'ID', 'havana_gene', 'Parent', 'exon_number', 'exon_id']]
                         print('\t'.join(headers), file=out)            
-                    print('\t'.join([str(t.transcript[h]) for h in headers]), file=out)
-            bgzip(out_file, override=True, delinFile=True, index=False, threads=self.threads)
+                    print('\t'.join([str(t.transcript_data[h]) for h in headers]), file=out)
+            bgzip_and_tabix(out_file, create_index=False)
         out_file=out_file+".gz"
         return out_file
     def write_isoform_truth(self, outdir):
         """ Write a TSV file with isoform truth data"""
         logging.info("Writing isoform truth data")
         out_file=outdir+"isoform_truth.tsv"
-        if not files_exist(out_file+".gz"):
+        if not os.path.exists(out_file+".gz"):
             with open(out_file, 'w') as out:
                 print('\t'.join([str(x) for x in ['tid', 'iso', 'is_labeled', 'condition_name', 'true_abundance', 'true_fraction', 'splicing_status']]), file=out)
                 for t in self.transcripts.values():
-                    splice_status=','.join([str(y) for y in iso.splicing_status]) if len(iso.splicing_status)>0 else 'NA'
-                    print('\t'.join([str(x) for x in [t.tid, iso.id, iso.is_labeled, self.condition.name, t.abundance, iso.fractions[i], splice_status]]), file=out)
-            bgzip(out_file, override=True, delinFile=True, index=False, threads=self.threads)
+                    for iso in t.isoforms.values():
+                        splice_status=','.join([str(y) for y in iso.splicing_status]) if len(iso.splicing_status)>0 else 'NA'
+                        print('\t'.join([str(x) for x in [t.tid, iso.id, iso.is_labeled, self.condition.name, t.abundance, iso.fraction, splice_status]]), file=out)
+            bgzip_and_tabix(out_file, create_index=False)
         out_file=out_file+".gz"
         return out_file    
+    def write_isoform_sequences(self, outdir):
+        fout = outdir + self.config['dataset_name'] + ".fa"
+        buf=[]
+        with open(fout, 'w') as out:
+            for t in self.transcripts.values():
+                sequences = t.get_sequences()
+                for iso in t.isoforms.keys():
+                    for i in range(sequences[iso][1]):
+                        buf+=[">%s_%s_%s_%i\n" %(t.tid, t.Strand, iso, i)]
+                        buf+=[pad_n(sequences[iso][0], self.config['readlen'])+"\n"]
+                        if len(buf)>10000:
+                            out.writelines(buf)
+                            buf=[]
+            if len(buf)>0:
+                out.writelines(buf)
+        return fout
     def save(self, f_model, recursion_limit=10000):
         """ save model to disk """
         sys.setrecursionlimit(recursion_limit)
@@ -345,37 +350,42 @@ class Model():
     def load_from_file(cls, model_file):
         return pickle.load( open( model_file, "rb" ) )
     @classmethod
-    def build_model(cls, config_file, out_dir=None):
+    def build_model(cls, config_file, out_dir):
         """ build transcriptional model and save """
         # load config 
         config = json.load(open(config_file), object_pairs_hook=OrderedDict)
         if config_file.startswith('/Volumes'): # localize file paths
-            config=localize_config(config)                    
+            config=localize_config(config)
+        config_dir = str(Path(config_file).parent.absolute())+'/'
+                         
         # ensure out_dir
-        if out_dir is None:
-            out_dir=os.path.dirname(config_file)+'/'
         if not os.path.exists(out_dir):
             os.mkdirs(out_dir)
-        # read transcript data from external file if not in config
-        if 'transcripts' in config:
-            logging.info("Reading transcript configuration from config file.")
-        else:
-            assert "transcript_data" in config, "Transcript data needs to be configured either in config file ('transcripts' section) or in an external file referenced via 'transcript_data'"
-            config_dir = os.path.dirname(config_file)+'/'
-            tfile = config['transcript_data']
-            if not os.path.isabs(tfile):
-                tfile = config_dir+"/"+tfile
-            if not os.path.exists(tfile):
-                logging.info("Creating external transcript config file %s" % tfile)
-                calculate_transcript_data(config, config_dir, out_dir)               
-            logging.info("Reading transcript configuration from external config file %s" % tfile)
-            tdata = json.load(open(tfile), object_pairs_hook=OrderedDict)
-            config["transcripts"]=tdata
+            
+        # build transcript data file
+        logging.info("Creating external transcript config file")
+        tfile = calculate_transcript_data(config, config_dir, out_dir)  
+        tdata = json.load(open(tfile), object_pairs_hook=OrderedDict)
+        config["transcripts"]=tdata
+
         # build model
         m=cls(config)
         f_model = out_dir+'/'+config["dataset_name"]+".model"
         print("Model saved to " + f_model)
         m.save(f_model)
+        
+        # write final isoform model truth file
+        m.write_isoform_truth(out_dir)
+    
+        # write considered transcripts to GFF
+        m.write_gff(out_dir)
+
+        # write considered transcripts to tsv
+        m.write_transcript_md(out_dir)
+    
+        # write isoform sequences
+        m.write_isoform_sequences(out_dir)
+    
         return m, f_model
 
 # if __name__ == '__main__':

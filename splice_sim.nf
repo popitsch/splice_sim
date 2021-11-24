@@ -1,6 +1,6 @@
 #!/usr/bin/env nextflow
 
-params.config_file = "${workflow.workDir}/splice_sim.config.json"
+params.config_file = "${workflow.launchDir}/splice_sim.config.json"
 
 log.info "====================================="
 log.info "Config file : ${params.config_file}"
@@ -20,6 +20,7 @@ process build_model {
     module 'python/3.7.2-gcccore-8.2.0'
     publishDir "01_model", mode: 'copy'
     input: 
+    	
     output: 
     	set file("${params.dataset_name}.model") into model
 

@@ -4,12 +4,32 @@
 import csv, datetime, time, logging, sys, os, json
 import pysam
 from splice_sim import *
-from collections import Counter
+from collections import Counter, OrderedDict
 import random
 
-def postfilter_bam( bam_in, bam_out, isoform_colors):
-    """ Filter secondary+supplementary reads """  
+
+default_isoform_colors = {
+    ("mat","+"): "100,10,10",
+    ("mat","-"): "10,10,100",
+    ("old","+"): "200,200,200",
+    ("old","-"): "200,200,200",
+    ("pre","+"):"200,100,100",
+    ("pre","-"):"100,100,200"
+    }
+    
+def postfilter_bam( config_file, bam_in, out_dir):
+    """ Filter secondary+supplementary reads and highlight isoforms """  
+    
+    # update isoform_colors from config
+    config=json.load(open(config_file), object_pairs_hook=OrderedDict)
+    isoform_colors=default_isoform_colors
+    if 'isoform_colors' in config:
+        for k in config['isoform_colors'].keys():
+            isoform_colors[(k,'+')]=config['isoform_colors'][k][0]
+            isoform_colors[(k,'-')]=config['isoform_colors'][k][1]
+            
     samin = pysam.AlignmentFile(bam_in, "rb")
+    bam_out = out_dir+'/'+os.path.splitext(bam_in)[0]+'.final.bam'
     mapped_out = pysam.AlignmentFile(bam_out, "wb", template=samin )
     n_reads=0
     f_reads=0
@@ -283,22 +303,31 @@ def create_genome_bam(m, art_sam_file, threads, out_dir):
     # file names
     if not os.path.exists(out_dir):
         os.mkdirs(out_dir)
-    f_bam_ori = out_dir+'/'+config["dataset_name"]+".ori.bam"
-    f_bam_mod = out_dir+'/'+config["dataset_name"]+".mod.bam"
-    f_fq_ori = out_dir+'/'+config["dataset_name"]+".ori.fq"
-    f_fq_mod = out_dir+'/'+config["dataset_name"]+".mod.fq"
         
     # convert to genome BAM (truth file w/o read modifications)            
+    f_bam_ori = out_dir+'/'+config["dataset_name"]+".cr0.truth.bam"
+    f_fq_ori = out_dir+'/'+config["dataset_name"]+".cr0.truth.fq"
     stats=transcript2genome_bam(m, art_sam_file, f_bam_ori)
     print(stats)
-    
     # convert to FASTQ
     bam_to_fastq(f_bam_ori, f_fq_ori)
-
+        
     # add read modifications
-    add_read_modifications(f_bam_ori, f_bam_mod, config['condition']['ref'], config['condition']['alt'], config['condition']['conversion_rate'], threads)            
+    created_bams=[f_bam_ori]
+    created_fqs=[f_fq_ori]
+    for cr in m.condition.conversion_rates:
+        f_bam_mod = out_dir+'/'+config["dataset_name"]+".cr"+str(cr)+".truth.bam"
+        f_fq_mod = out_dir+'/'+config["dataset_name"]+".cr"+str(cr)+".truth.fq"
+        add_read_modifications(f_bam_ori, 
+                               f_bam_mod, 
+                               m.condition.ref, 
+                               m.condition.alt,
+                               cr, 
+                               threads)            
             
-    # convert to FASTQ
-    bam_to_fastq(f_bam_mod,  f_fq_mod)
+        # convert to FASTQ
+        bam_to_fastq(f_bam_mod,  f_fq_mod)
+        created_bams+=[f_bam_mod]
+        created_fqs+=[f_fq_mod]
     
-    return f_bam_ori, f_bam_mod, f_fq_ori, f_fq_mod
+    return created_bams, created_fqs

@@ -1,0 +1,63 @@
+manifest {
+    name = "splice_sim"
+    author = "Niko Popitsch"
+    version = "0.1"
+    description = "splice-aware RNA simulator"
+}
+
+timeline {
+  enabled = true
+  file = "logs/execution_timeline.html"
+}
+
+profiles {
+  //LOCAL
+  standard {
+    process.executor = 'local'
+    process.memory = '8 GB'
+    process.cpus = 1
+  }
+  local_big {
+    process.executor = 'local'
+    process.memory = '62 GB'
+    process.cpus = 8
+  }	
+  //SLURM (cbe)
+  cbe {
+    process {
+      executor = 'slurm'
+      queue='c'
+      memory='64 GB'
+      cpus='8'
+      time='2.h'
+      scratch = false
+      withLabel: 'medium' {
+        clusterOptions = '--qos=medium'
+        memory='128 GB'
+        cpus=16
+        time='2.d'
+      	queue='c'
+      }
+      withLabel: 'long' {
+        clusterOptions = '--qos=long'
+        memory='128 GB'
+        cpus=16
+        time='4.d'
+        queue='c'
+      }
+     beforeScript = 'hostname; module purge; ml list; export DISPLAY=""; export R_LIBS_USER=""; export R_LIBS=""; export PYTHONPATH=""; export PERL5LIB="";'
+    }
+  }
+
+}
+
+
+workflow.onComplete = {
+  println "Completed at : $workflow.complete"
+  println "Status       : ${workflow.success?'OK':'failed'}"
+  println "Duration     : ${workflow.duration}"
+  println "work dir     : ${workflow.workDir}"
+  println "exit status  : ${workflow.exitStatus}"
+  println "Error report : ${workflow.errorReport?:'-'}"
+  println "Command line : ${workflow.commandLine}"
+}

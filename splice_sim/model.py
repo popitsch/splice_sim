@@ -83,16 +83,15 @@ def calculate_transcript_data(config, config_dir, outdir):
     return out_file
 
 class Condition():
-    def __init__(self, name, ref, alt, conversion_rate, base_coverage ):
-        self.name=name
+    def __init__(self,ref, alt, conversion_rates, base_coverage ):
         self.ref=ref
         self.alt=alt
-        self.conversion_rate=conversion_rate
+        self.conversion_rates=conversion_rates
         self.base_coverage = base_coverage
     def __repr__(self):
         return self.__str__()  
     def __str__(self):
-        ret = ("condition %s: %s>%s [cr=%f, cv=%f]" % (self.name, self.ref, self.alt, self.conversion_rate, self.base_coverage ) )
+        ret = ("condition %s>%s [cr=%f, cv=%f]" % (self.name, self.ref, self.alt, ','.join([str(x) for x in self.conversion_rates]), self.base_coverage ) )
         return (ret)  
  
 class Isoform():
@@ -244,10 +243,9 @@ class Model():
         self.threads=config["threads"] if "threads" in config else 1
         # init condition
         self.condition=Condition(
-            config["condition"]["name"], 
             config["condition"]["ref"], 
             config["condition"]["alt"], 
-            config["condition"]["conversion_rate"], 
+            config["condition"]["conversion_rates"], 
             config["condition"]["base_coverage"])
         # load + filter gene gff
         logging.info("Loading gene GFF")
@@ -310,11 +308,11 @@ class Model():
         out_file=outdir+"isoform_truth.tsv"
         if not os.path.exists(out_file+".gz"):
             with open(out_file, 'w') as out:
-                print('\t'.join([str(x) for x in ['tid', 'iso', 'is_labeled', 'condition_name', 'true_abundance', 'true_fraction', 'splicing_status']]), file=out)
+                print('\t'.join([str(x) for x in ['tid', 'iso', 'is_labeled', 'true_abundance', 'true_fraction', 'splicing_status']]), file=out)
                 for t in self.transcripts.values():
                     for iso in t.isoforms.values():
                         splice_status=','.join([str(y) for y in iso.splicing_status]) if len(iso.splicing_status)>0 else 'NA'
-                        print('\t'.join([str(x) for x in [t.tid, iso.id, iso.is_labeled, self.condition.name, t.abundance, iso.fraction, splice_status]]), file=out)
+                        print('\t'.join([str(x) for x in [t.tid, iso.id, iso.is_labeled, t.abundance, iso.fraction, splice_status]]), file=out)
             bgzip_and_tabix(out_file, create_index=False)
         out_file=out_file+".gz"
         return out_file    

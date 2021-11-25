@@ -14,7 +14,7 @@ from argparse import ArgumentParser, RawDescriptionHelpFormatter
 import os, sys, json, logging, random
 from collections import OrderedDict
 from splice_sim.model import Model
-from splice_sim.simulator import create_genome_bam
+from splice_sim.simulator import create_genome_bam, postfilter_bam
 
 VERSION = "0.1"
 LOGO = """
@@ -49,14 +49,23 @@ if __name__ == '__main__':
     
     parser["build_model"] = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
     parser["build_model"].add_argument("-c", "--config", type=str, required=True, dest="config_file", metavar="config_file", help="JSON config file")
-    parser["build_model"].add_argument("-o", "--outdir", type=str, required=False, dest="out_dir", metavar="out_dir", help="output directory (default is current dir)")
+    parser["build_model"].add_argument("-o", "--outdir", type=str, required=False, dest="outdir", metavar="outdir", help="output directory (default is current dir)")
 
     parser["create_genome_bam"] = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
-    parser["create_genome_bam"].add_argument("-m", "--model", type=str, required=True, dest="model_file", metavar="config_file", help="model file")
+    parser["create_genome_bam"].add_argument("-m", "--model", type=str, required=True, dest="model_file", metavar="model_file", help="model file")
     parser["create_genome_bam"].add_argument("-a", "--art_sam", type=str, required=True, dest="art_sam_file", metavar="config_file", help="ART sam file")
     parser["create_genome_bam"].add_argument("-t", "--threads", type=int, required=False, default=1,  dest="threads", metavar="threads", help="threads")
-    parser["create_genome_bam"].add_argument("-o", "--outdir", type=str, required=False, dest="out_dir", metavar="out_dir", help="output directory (default is current dir)")
+    parser["create_genome_bam"].add_argument("-o", "--outdir", type=str, required=False, dest="outdir", metavar="outdir", help="output directory (default is current dir)")
 
+    parser["postfilter_bam"] = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
+    parser["postfilter_bam"].add_argument("-c", "--config", type=str, required=True, dest="config_file", metavar="config_file", help="JSON config file")
+    parser["postfilter_bam"].add_argument("-b", "--bam", type=str, required=True, dest="bam_file", metavar="bam_file", help="input bam file")
+    parser["postfilter_bam"].add_argument("-o", "--outdir", type=str, required=True, dest="outdir", metavar="outdir", help="output dir")
+
+    parser["evaluate_overall_performance"] = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
+    parser["evaluate_overall_performance"].add_argument("-m", "--model", type=str, required=True, dest="model_file", metavar="model_file", help="model file")
+    parser["evaluate_overall_performance"].add_argument("-b", "--bam", type=str, required=True, dest="bam_file", metavar="bam_file", help="input bam file")
+    parser["evaluate_overall_performance"].add_argument("-o", "--outdir", type=str, required=True, dest="outdir", metavar="outdir", help="output dir")
     
     #============================================================================    
     if len(sys.argv) <= 1 or sys.argv[1] in ['-h', '--help']:
@@ -71,13 +80,13 @@ if __name__ == '__main__':
     #============================================================================
 
     # output dir (current dir if none provided)
-    out_dir = os.path.abspath(args.out_dir if args.out_dir else os.getcwd())+'/'
-    if not os.path.exists(out_dir):
-        os.makedirs(out_dir)
+    outdir = os.path.abspath(args.outdir if args.outdir else os.getcwd())+'/'
+    if not os.path.exists(outdir):
+        os.makedirs(outdir)
         
     # logging    
-    print("Logging to %s" % out_dir+'splice_sim.log')
-    logging.basicConfig(filename=out_dir+'splice_sim.log', level=logging.DEBUG)    
+    print("Logging to %s" % outdir+'splice_sim.log')
+    logging.basicConfig(filename=outdir+'splice_sim.log', level=logging.DEBUG)    
     
     logging.info(LOGO)
 
@@ -86,7 +95,7 @@ if __name__ == '__main__':
         # load and check onfig
         config=json.load(open(args.config_file), object_pairs_hook=OrderedDict)
         check_config(config)   
-        Model.build_model(args.config_file, out_dir)
+        Model.build_model(args.config_file, outdir)
 
     if mod == "create_genome_bam":
         # load model
@@ -96,4 +105,10 @@ if __name__ == '__main__':
         if "random_seed" in config:
             random.seed(config["random_seed"])
             logging.info("setting random seed to %i" % config["random_seed"])
-        create_genome_bam(m, args.art_sam_file, args.threads, out_dir)
+        create_genome_bam(m, args.art_sam_file, args.threads, outdir)
+        
+    if mod == "postfilter_bam":
+        postfilter_bam(args.config_file, args.bam_file, args.outdir)
+        
+    if mod == "evaluate_overall_performance":
+        pass

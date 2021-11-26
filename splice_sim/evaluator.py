@@ -138,8 +138,8 @@ def evaluate_bam(bam_file, bam_out, m, mapper, cr, out_performance, out_reads):
     samin.close()
     if samout is not None:
         samout.close()
-    
-def evaluate_overall_performance(config, m, final_bam_dir, truth_bam_dir, out_dir):  
+
+def evaluate_bam_performance(config, m, bam_file, out_dir):
     # write read data?
     write_reads=config['write_reads'] if 'write_reads' in config else False
     if write_reads:
@@ -150,15 +150,18 @@ def evaluate_overall_performance(config, m, final_bam_dir, truth_bam_dir, out_di
     logging.info("write_reads: %s" % str(write_reads))
     with open(out_dir+'/tid_performance.tsv', 'w') as out_performance:
         print("is_converted_bam\tmapper\tcondition_id\tiso\ttid\tTP\tFP\tFN", file=out_performance)
-        for cr in [0]+m.condition.conversion_rates:
-            # write truth
-            bam_file=truth_bam_dir+'/'+config["dataset_name"]+".cr"+str(cr)+".truth.bam"
-            evaluate_bam(bam_file, None, m, 'truth', cr, out_performance, None)
-            # write mapper stats
-            for mapper in config['mappers']:
-                bam_file=final_bam_dir+'/'+config["dataset_name"]+".cr"+str(cr)+"."+mapper+".final.bam"
-                assert os.path.exists(bam_file) and os.path.exists(bam_file+'.bai'), "Could not find bam file (or idx) for mapper %s/cr %f: %s" % (mapper, cr, bam_file)                
-                bam_out_file=out_dir+'/'+config["dataset_name"]+".cr"+str(cr)+"."+mapper+".mismapped.bam"
-                evaluate_bam(bam_file, bam_out_file, m, mapper, cr, out_performance, out_reads)
+        # parse mapper and cr from bam file name
+        assert os.path.exists(bam_file) and os.path.exists(bam_file+'.bai'), "Could not find bam file (or idx) for %s" % (bam_file)
+        assert '.cr' in bam_file, "Cannot parse bam file name %s" % (bam_file)
+        tmp = bam_file[:-10] if bam_file.endswith('.final.bam') else bam_file[:-4] # file ends with .bam or .final.bam
+        cr,mapper=tmp[tmp.find('.cr')+3:].rsplit('.', 1)
+        cr=float(cr)
+        is_truth=mapper=='truth'
+        if is_truth:
+            # do not write unmapped bam or reads.tsv
+            evaluate_bam(bam_file, None, m, mapper, cr, out_performance, None)
+        else:
+            bam_out_file=out_dir+'/'+config["dataset_name"]+".cr"+str(cr)+"."+mapper+".mismapped.bam"
+            evaluate_bam(bam_file, bam_out_file, m, mapper, cr, out_performance, out_reads)        
     if write_reads:
-        out_reads.close()
+        out_reads.close()    

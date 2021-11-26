@@ -15,7 +15,7 @@ import os, sys, json, logging, random
 from collections import OrderedDict
 from splice_sim.model import Model
 from splice_sim.simulator import create_genome_bam, postfilter_bam
-from splice_sim.evaluator import evaluate_overall_performance
+from splice_sim.evaluator import evaluate_bam_performance
 
 VERSION = "0.1"
 LOGO = """
@@ -63,12 +63,11 @@ if __name__ == '__main__':
     parser["postfilter_bam"].add_argument("-b", "--bam", type=str, required=True, dest="bam_file", metavar="bam_file", help="input bam file")
     parser["postfilter_bam"].add_argument("-o", "--outdir", type=str, required=True, dest="outdir", metavar="outdir", help="output dir")
 
-    parser["evaluate_overall_performance"] = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
-    parser["evaluate_overall_performance"].add_argument("-c", "--config", type=str, required=True, dest="config_file", metavar="config_file", help="JSON config file")
-    parser["evaluate_overall_performance"].add_argument("-m", "--model", type=str, required=True, dest="model_file", metavar="model_file", help="model file")
-    parser["evaluate_overall_performance"].add_argument("-fd", "--final_bam_dir", type=str, required=True, dest="final_bam_dir", metavar="final_bam_dir", help="input bam dir")
-    parser["evaluate_overall_performance"].add_argument("-td", "--truth_bam_dir", type=str, required=True, dest="truth_bam_dir", metavar="truth_bam_dir", help="input bam dir")
-    parser["evaluate_overall_performance"].add_argument("-o", "--outdir", type=str, required=True, dest="outdir", metavar="outdir", help="output dir")
+    parser["evaluate_bam_performance"] = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
+    parser["evaluate_bam_performance"].add_argument("-c", "--config", type=str, required=True, dest="config_file", metavar="config_file", help="JSON config file")
+    parser["evaluate_bam_performance"].add_argument("-m", "--model", type=str, required=True, dest="model_file", metavar="model_file", help="model file")
+    parser["evaluate_bam_performance"].add_argument("-b", "--bam_file", type=str, required=True, dest="bam_file", metavar="bam_file", help="input bam file")
+    parser["evaluate_bam_performance"].add_argument("-o", "--outdir", type=str, required=True, dest="outdir", metavar="outdir", help="output dir")
     
     #============================================================================    
     if len(sys.argv) <= 1 or sys.argv[1] in ['-h', '--help']:
@@ -113,7 +112,7 @@ if __name__ == '__main__':
     if mod == "postfilter_bam":
         postfilter_bam(args.config_file, args.bam_file, args.outdir)
         
-    if mod == "evaluate_overall_performance":
+    if mod == "evaluate_bam_performance":
         # load config to be able to react to config changes after model was built!
         config=json.load(open(args.config_file), object_pairs_hook=OrderedDict)
         # load model
@@ -122,6 +121,6 @@ if __name__ == '__main__':
         if "random_seed" in config:
             random.seed(config["random_seed"])
             logging.info("setting random seed to %i" % config["random_seed"])
-        evaluate_overall_performance(config, m, args.final_bam_dir, args.truth_bam_dir, outdir)
+        evaluate_bam_performance(config, m, args.bam_file, outdir)
     
     

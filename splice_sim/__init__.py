@@ -13,7 +13,10 @@ colors = {"exonexonfalse" : "228,26,28",
           "garbage" : "255,127,0",
           "intron" : "200,200,200"
 }
-
+def parse_info(info):
+    """ parse GFF3 info section """
+    return {k:v for k,v in [a.split('=') for a in info.split(';') if '=' in a]}
+    
 def reverse_complement(seq):
     """ Calculate reverse complement DNA sequence """
     rev=[]

@@ -273,17 +273,14 @@ class Model():
     def write_gff(self, outdir):
         """ Write a filtered GFF file containing all kept/simulated transcripts """
         logging.info("Writing filtered gene GFF")
-        out_file=outdir+"gene_anno.gff3"
-        d=pd.read_csv(self.config["gene_gff"],delimiter='\t',encoding='utf-8')
-        if not os.path.exists(out_file+".gz"):
-            with open(out_file, 'w') as out:
-                for index, row in d.iterrows():
-                    keep=False
-                    for k in row[8].split(';'):
-                        if k.startswith('transcript_id='):
-                            keep=k[len('transcript_id='):] in self.transcripts.keys()
-                    if keep:
-                        print('\t'.join(str(x) for x in row), file=out)
+        out_file=outdir+"gene_anno.gff3"        
+        f = pysam.TabixFile(self.config["gene_gff"], mode="r")
+        with open(out_file, 'w') as out:
+            for row in f.fetch(parser=pysam.asTuple()):
+                reference, source,ftype,fstart,fend,score,strand,phase,info=row
+                pinfo=parse_info( info )
+                if ('transcript_id' in pinfo) and (pinfo['transcript_id'] in self.transcripts.keys()):
+                    print('\t'.join(str(x) for x in row), file=out)
             bgzip_and_tabix(out_file, seq_col=0, start_col=3, end_col=4, line_skip=0, zerobased=False)
         out_file=out_file+".gz"
         return out_file
@@ -355,35 +352,27 @@ class Model():
         if config_file.startswith('/Volumes'): # localize file paths
             config=localize_config(config)
         config_dir = str(Path(config_file).parent.absolute())+'/'
-                         
         # ensure out_dir
         if not os.path.exists(out_dir):
             os.mkdirs(out_dir)
-            
         # build transcript data file
         logging.info("Creating external transcript config file")
         tfile = calculate_transcript_data(config, config_dir, out_dir)  
         tdata = json.load(open(tfile), object_pairs_hook=OrderedDict)
         config["transcripts"]=tdata
-
         # build model
         m=cls(config)
         f_model = out_dir+'/'+config["dataset_name"]+".model"
         print("Model saved to " + f_model)
-        m.save(f_model)
-        
+        m.save(f_model)       
         # write final isoform model truth file
         m.write_isoform_truth(out_dir)
-    
         # write considered transcripts to GFF
         m.write_gff(out_dir)
-
         # write considered transcripts to tsv
-        m.write_transcript_md(out_dir)
-    
+        m.write_transcript_md(out_dir)  
         # write isoform sequences
         m.write_isoform_sequences(out_dir)
-    
         return m, f_model
 
 # if __name__ == '__main__':

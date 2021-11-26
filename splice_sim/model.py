@@ -20,9 +20,10 @@ import os, sys, json
 import pickle
 import logging
 from pathlib import Path
-from splice_sim import *        
+from utils import localize_config, pad_n, reverse_complement, bgzip_and_tabix, parse_info
+import tqdm
 
-def calculate_transcript_data(config, config_dir, outdir):
+def calculate_transcript_data(config, tid_meta, tid_file):
     """ Calculate a data config file """ 
     mode = config['isoform_mode']      
     logging.info("Calculating transcript configuration with mode %s" % mode)
@@ -34,53 +35,38 @@ def calculate_transcript_data(config, config_dir, outdir):
     # ------------------------------------------------------------------------------------
     if mode == '1:1':
         assert 'transcript_ids' in config, "For 1:1 mode, a list of transcript ids must be provided in a file referenced by the 'transcript_ids' config property"
-        # load GFF
-        gff = pr.read_gff3(config["gene_gff"])
-        gff_df = gff.df
-        # create output
-        tfile = config["transcript_ids"]
-        if not os.path.isabs(tfile):
-            tfile = config_dir +'/' + tfile
-        transcripts = pd.read_csv(tfile,delimiter='\t',encoding='utf-8')
-        logging.info("read %i tids" % len(transcripts))
+        # generate data file
         base_abundance = config["base_abundance"] if 'base_abundance' in config else 10
-        abundances = [base_abundance] * len ( transcripts.index )
-        min_abundance = config["min_abundance"] if 'min_abundance' in config else 0.0
         frac_old_mature=min(1.0,config["frac_old_mature"]) if 'frac_old_mature' in config else 0.0 # fraction of 'old' (unlabeled), mature isoform
-        for i, t in transcripts.iterrows():
-            if abundances[i] > min_abundance:
-                tid = t['transcript_id']
-                df = gff_df[gff_df['transcript_id']==tid] 
-                rnk=len(df[df.Feature=='exon'].index)-1
-                gene_name = df[df.Feature=='transcript'].iloc[0]['gene_name']
-                isoform_data=OrderedDict()
-                if frac_old_mature>0: # add 'old' rna isoform
-                    isoform_data['old'] = OrderedDict()
-                    isoform_data['old']['splicing_status']=[1] * rnk
-                    isoform_data['old']['fraction']=frac_old_mature
-                    isoform_data['old']['is_labeled']=0
-                if frac_old_mature < 1.0:
-                    isoform_data['pre'] = OrderedDict()
-                    if rnk: # at least one intron
-                        isoform_data['pre']['splicing_status']=[0] * rnk
-                    isoform_data['pre']['fraction']=round((1-frac_old_mature) * 0.5,3)
-                    isoform_data['pre']['is_labeled']=1
-                # output data
-                tdata[tid] = OrderedDict()
-                tdata[tid]["gene_name"] = gene_name
-                tdata[tid]["abundance"] = abundances[i]
-                tdata[tid]["isoforms"] = isoform_data
-            else:
-                logging.warn("Skipped %s due to too-low abundance." % (tid) )
+        for tid, pinfo in tid_meta.items():
+            rnk=pinfo['rnk']-1 # number of  introns
+            gene_name = pinfo['gene_name']
+            isoform_data=OrderedDict()
+            if frac_old_mature>0: # add 'old' rna isoform
+                isoform_data['old'] = OrderedDict()
+                isoform_data['old']['splicing_status']=[1] * rnk
+                isoform_data['old']['fraction']=frac_old_mature
+                isoform_data['old']['is_labeled']=0
+            if frac_old_mature < 1.0:
+                isoform_data['pre'] = OrderedDict()
+                if rnk: # at least one intron
+                    isoform_data['pre']['splicing_status']=[0] * rnk
+                isoform_data['pre']['fraction']=round((1-frac_old_mature) * 0.5,3)
+                isoform_data['pre']['is_labeled']=1
+            # output data
+            tdata[tid] = OrderedDict()
+            tdata[tid]["gene_name"] = gene_name
+            tdata[tid]["abundance"] = base_abundance
+            tdata[tid]["isoforms"] = isoform_data
     else:
         logging.error("Unknown mode %s " % (args.mode))  
         sys.exit(1)    
     # Write JSON file
     out_file = config['transcript_data']
     with open(out_file, 'w') as out:
-        json.dump(tdata, out, indent=2)     
+        json.dump(tdata, out, indent=2)
     logging.info('Done. Results written to %s' % (out_file))
-    return out_file
+    return tdata
 
 class Condition():
     def __init__(self,ref, alt, conversion_rates, base_coverage ):
@@ -103,18 +89,18 @@ class Isoform():
         self.aln_block_len=0
         self.is_labeled=is_labeled
         if self.transcript is not None:
-            self.strand = self.transcript.Strand
+            self.strand = self.transcript.strand
             # extract alignment blocks. Those contain absolute coords and are always ordered by genomic coords 
             # (e.g., [(16101295, 16101359), (16101727, 16101936), (16102490, 16102599), (16102692, 16102829), (16103168, 16103334), (16103510, 16103684), (16104365, 16104662)])
             self.aln_blocks=[]
-            bstart=self.transcript.Start
+            bstart=self.transcript.start
             for idx, splicing in list(enumerate(self.splicing_status)):
                 if splicing==1:
-                    bend=self.transcript.introns[idx]['Start']-1 # last exonic 1-based pos
+                    bend=self.transcript.introns[idx]['start']-1 # last exonic 1-based pos
                     self.aln_blocks+=[(bstart, bend)]
                     self.aln_block_len+=(bend-bstart+1)
-                    bstart=self.transcript.introns[idx]['End']+1 # 1st exonic 1-based pos
-            bend=self.transcript.End
+                    bstart=self.transcript.introns[idx]['end']+1 # 1st exonic 1-based pos
+            bend=self.transcript.end
             self.aln_blocks+=[(bstart, bend)]
             self.aln_block_len+=(bend-bstart+1)
         #print("iso %s, alignment blocks: %s, len: %i" % (self.id, self.aln_blocks, self.aln_block_len))       
@@ -127,43 +113,41 @@ class Isoform():
         return (ret)   
     
 class Transcript():
-    def __init__(self, config, tid, df, genome, condition, max_ilen=None ):
+    def __init__(self, config, tid, tid_meta, tid_exon, genome, condition, max_ilen=None ):
         self.config = config
         self.tid = tid  
         self.is_valid = True
         self.cond=condition
-        self.transcript_data = df[df.Feature=='transcript'].iloc[0].to_dict()
+        self.transcript_data = tid_meta
         self.transcript_id=self.transcript_data['transcript_id']
-        self.Chromosome=self.transcript_data['Chromosome']
-        self.Start=self.transcript_data['Start']
-        self.End=self.transcript_data['End']
-        self.Strand=self.transcript_data['Strand']
-        self.region = "%s:%i-%i" % (self.Chromosome,self.Start,self.End)
-        self.len = self.End - self.Start + 1
+        self.chromosome=self.transcript_data['chromosome']
+        self.start=self.transcript_data['start']
+        self.end=self.transcript_data['end']
+        self.strand=self.transcript_data['strand']
+        self.region = "%s:%i-%i" % (self.chromosome,self.start,self.end)
+        self.len = self.end - self.start + 1
         self.transcript_seq = genome.fetch(region=self.region)
-        self.exons = []
+        self.exons = tid_exon
         self.introns = []
         last_end = -1
-        for index, ex in df[df.Feature=='exon'].iterrows():
-            exon=ex.to_dict()
-            self.exons.append(exon)
+        for index, exon in enumerate(tid_exon):
             if last_end > 0: # skip 1st
-                ilen=(exon['Start']-1) - (last_end+1) + 1
+                ilen=(exon['start']-1) - (last_end+1) + 1
                 intron={ 'transcript_id': self.transcript_id,
                       'Feature': 'intron',
-                      'Chromosome':self.Chromosome, 
-                      'Strand':self.Strand,
-                      'Start':last_end+1,
-                      'End':exon['Start']-1,
+                      'chromosome':self.chromosome, 
+                      'strand':self.strand,
+                      'start':last_end+1,
+                      'end':exon['start']-1,
                       'exon_number': int(exon['exon_number']),
                       'len': ilen
                       }
                 if (max_ilen is not None) and (ilen > max_ilen):
-                    logging.warn("Skipping transcript %s due to too long intron (%i vs %i). Skipping transcript..." % ( self.tid, ilen, max_ilen))
+                    logging.warning("Skipping transcript %s due to too long intron (%i vs %i). Skipping transcript..." % ( self.tid, ilen, max_ilen))
                     self.is_valid = False
                     return
                 self.introns.append(intron)
-            last_end = exon['End']
+            last_end = exon['end']
         # set abundance and isoforms
         self.abundance = math.ceil(self.config['transcripts'][tid]['abundance']) # abundance is float
         self.isoforms=OrderedDict()
@@ -172,7 +156,7 @@ class Transcript():
             frac=self.config['transcripts'][tid]['isoforms'][iso]['fraction']
             splicing_status=self.config['transcripts'][tid]['isoforms'][iso]['splicing_status'] if 'splicing_status' in self.config['transcripts'][tid]['isoforms'][iso] else []
             is_labeled=self.config['transcripts'][tid]['isoforms'][iso]['is_labeled'] if 'is_labeled' in self.config['transcripts'][tid]['isoforms'][iso] else 1
-            if self.Strand == "-":
+            if self.strand == "-":
                 splicing_status = list(reversed(splicing_status)) # so 1st entry in config refers to 1st intron.
             if len(splicing_status)!=len(self.introns):
                 logging.error("Misconfigured splicing status for some isoform of transcript %s (%i vs %i). Skipping transcript..." % ( self.tid, len(splicing_status), len(self.introns)))
@@ -193,13 +177,13 @@ class Transcript():
         seq = self.transcript_seq
         for idx, splicing in reversed(list(enumerate(splicing_status))):
             if splicing==1:
-                pos1=self.introns[idx]['Start'] - self.Start
-                pos2=self.introns[idx]['End'] - self.Start + 1
+                pos1=self.introns[idx]['start'] - self.start
+                pos2=self.introns[idx]['end'] - self.start + 1
                 seq = seq[:pos1]+seq[pos2:]
         return (seq)
     def get_rna_seq(self, iso):
         seq = self.get_dna_seq(self.isoforms[iso].splicing_status)
-        if self.Strand == '-':
+        if self.strand == '-':
             seq = reverse_complement(seq)
         return (seq)
     def get_sequences(self):
@@ -220,7 +204,7 @@ class Transcript():
             ret[id]=[ret[id][0], ret[id][1] + toadd]
         return (ret)
     def to_bed(self):
-        return ("%s\t%i\t%i\t%s\t%i\t%s" % (self.Chromosome, self.Start, self.End, self.transcript_data['ID'], 1000, self.Strand) )
+        return ("%s\t%i\t%i\t%s\t%i\t%s" % (self.chromosome, self.start, self.end, self.transcript_data['ID'], 1000, self.strand) )
     def __repr__(self):
         return self.__str__()  
     def __str__(self):
@@ -238,7 +222,7 @@ class Model():
             max_ilen:     maximum intron length. Transcriptrs with a longer intron will be filetered out.
             
     """
-    def __init__(self, config):
+    def __init__(self, config, base_dir):
         self.config = config
         self.threads=config["threads"] if "threads" in config else 1
         # init condition
@@ -247,12 +231,46 @@ class Model():
             config["condition"]["alt"], 
             config["condition"]["conversion_rates"], 
             config["condition"]["base_coverage"])
+        # load external list of considered transcripts
+        if "transcript_ids" in config:
+            tfile = config["transcript_ids"]
+            if not os.path.isabs(tfile):
+                tfile = base_dir +'/' + tfile
+            self.tids = set(pd.read_csv(tfile,delimiter='\t',encoding='utf-8')['transcript_id'])
+            logging.info("read %i unique tids" % len(self.tids))
+        else:
+            self.tids=None
+            logging.info("No tid list configured, will use all transcripts from the GFF3")
+        
         # load + filter gene gff
         logging.info("Loading gene GFF")
-        self.gff = pr.read_gff3(config["gene_gff"])
-        self.gff = self.gff[self.gff.transcript_id.isin(list(config['transcripts'].keys()))] # reduce to contain only configured transcripts. 
-        self.gff.Start = self.gff.Start+1# correct for pyranges bug?
-        df = self.gff.df.sort_values(by=['Chromosome', 'Start','End']) # sort!
+        tid_meta={} # tid 2 metadata
+        tid_exon={}
+        f = pysam.TabixFile(self.config["gene_gff"], mode="r")
+        for row in tqdm.tqdm(f.fetch(parser=pysam.asTuple()), "Loading transcript data"):
+            reference, source,ftype,fstart,fend,score,strand,phase,info=row
+            if ftype == 'transcript' or ftype=='exon':
+                pinfo=parse_info( info )
+                tid = pinfo['transcript_id'] if 'transcript_id' in pinfo else None
+                if self.tids is None or tid in self.tids:
+                    pinfo['chromosome']=reference
+                    pinfo['start']=int(fstart)
+                    pinfo['end']=int(fend)
+                    pinfo['strand']=strand
+                    if ftype == 'transcript':
+                        tid_meta[pinfo['transcript_id']]=pinfo
+                    elif ftype == 'exon':
+                        if tid not in tid_exon:
+                            tid_exon[tid]=[]
+                        tid_exon[tid].append(pinfo)
+        for tid, exons in tid_exon.items():
+            tid_meta[tid]['rnk']=len(exons)           
+        # build transcript data file if none existing
+        if "transcripts" not in config:
+            logging.info("Creating external transcript data file %s" % tfile)
+            tdata = calculate_transcript_data(config, tid_meta, tfile)  
+            config["transcripts"]=tdata
+       
         # load genome
         logging.info("Loading genome")
         genome = pysam.FastaFile(config["genome_fa"])
@@ -261,29 +279,23 @@ class Model():
         self.transcripts=OrderedDict()
         self.max_ilen = config["max_ilen"] if 'max_ilen' in config else None
         self.readlen = config["readlen"] if 'readlen' in config else None
-        for tid in list(config['transcripts'].keys()):
-            tid_df = df[df['transcript_id']==tid] # extract data for this transcript only
-            if tid_df.empty:
-                logging.warn("No annotation data found for configured tid %s, skipping..." % (tid))
-            else:
-                t = Transcript(config, tid, tid_df,genome, self.condition, max_ilen=self.max_ilen) 
-                if t.is_valid:
-                    self.transcripts[tid] = t
+        for tid in tid_meta.keys():
+            t = Transcript(config, tid, tid_meta[tid], tid_exon[tid], genome, self.condition, max_ilen=self.max_ilen) 
+            if t.is_valid:
+                self.transcripts[tid] = t
         logging.info("Instantiated %i transcripts" % len(self.transcripts))      
     def write_gff(self, outdir):
         """ Write a filtered GFF file containing all kept/simulated transcripts """
         logging.info("Writing filtered gene GFF")
-        out_file=outdir+"gene_anno.gff3"
-        d=pd.read_csv(self.config["gene_gff"],delimiter='\t',encoding='utf-8')
-        if not os.path.exists(out_file+".gz"):
-            with open(out_file, 'w') as out:
-                for index, row in d.iterrows():
-                    keep=False
-                    for k in row[8].split(';'):
-                        if k.startswith('transcript_id='):
-                            keep=k[len('transcript_id='):] in self.transcripts.keys()
-                    if keep:
-                        print('\t'.join(str(x) for x in row), file=out)
+        out_file=outdir+"gene_anno.gff3"        
+        f = pysam.TabixFile(self.config["gene_gff"], mode="r")
+        with open(out_file, 'w') as out:
+            for row in f.fetch(parser=pysam.asTuple()):
+                reference, source,ftype,fstart,fend,score,strand,phase,info=row
+                pinfo=parse_info( info )
+                tid = pinfo['transcript_id'] if 'transcript_id' in pinfo else None
+                if tid in self.transcripts.keys():
+                    print('\t'.join(str(x) for x in row), file=out)
             bgzip_and_tabix(out_file, seq_col=0, start_col=3, end_col=4, line_skip=0, zerobased=False)
         out_file=out_file+".gz"
         return out_file
@@ -298,7 +310,7 @@ class Model():
                     if headers is None:
                         headers=[str(h) for h in t.transcript_data if h not in ['Source', 'Feature', 'Score', 'Frame', 'ID', 'havana_gene', 'Parent', 'exon_number', 'exon_id']]
                         print('\t'.join(headers), file=out)            
-                    print('\t'.join([str(t.transcript_data[h]) for h in headers]), file=out)
+                    print('\t'.join([str(t.transcript_data[h]) if h in t.transcript_data else 'NA' for h in headers ]), file=out)
             bgzip_and_tabix(out_file, create_index=False)
         out_file=out_file+".gz"
         return out_file
@@ -324,7 +336,7 @@ class Model():
                 sequences = t.get_sequences()
                 for iso in t.isoforms.keys():
                     for i in range(sequences[iso][1]):
-                        buf+=[">%s_%s_%s_%i\n" %(t.tid, t.Strand, iso, i)]
+                        buf+=[">%s_%s_%s_%i\n" %(t.tid, t.strand, iso, i)]
                         buf+=[pad_n(sequences[iso][0], self.config['readlen'])+"\n"]
                         if len(buf)>10000:
                             out.writelines(buf)
@@ -354,20 +366,14 @@ class Model():
         config = json.load(open(config_file), object_pairs_hook=OrderedDict)
         if config_file.startswith('/Volumes'): # localize file paths
             config=localize_config(config)
-        config_dir = str(Path(config_file).parent.absolute())+'/'
+        base_dir = str(Path(config_file).parent.absolute())+'/'
                          
         # ensure out_dir
         if not os.path.exists(out_dir):
-            os.mkdirs(out_dir)
-            
-        # build transcript data file
-        logging.info("Creating external transcript config file")
-        tfile = calculate_transcript_data(config, config_dir, out_dir)  
-        tdata = json.load(open(tfile), object_pairs_hook=OrderedDict)
-        config["transcripts"]=tdata
+            os.mkdir(out_dir)
 
         # build model
-        m=cls(config)
+        m=cls(config, base_dir)
         f_model = out_dir+'/'+config["dataset_name"]+".model"
         print("Model saved to " + f_model)
         m.save(f_model)
@@ -388,7 +394,9 @@ class Model():
 
 # if __name__ == '__main__':
 #     import json, pickle
-#     m, f_model = Model.build_model('/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/nf1/config.json')
+#     print("build model")
+#     m, f_model = Model.build_model('/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/nf3/splice_sim.config.json', 
+#                                    '/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/nf3/tmp/')
 #     print(m)
 #     m2 = Model.load_from_file(f_model)
 #     print(m2) 

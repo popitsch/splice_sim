@@ -293,12 +293,8 @@ class Model():
             for row in f.fetch(parser=pysam.asTuple()):
                 reference, source,ftype,fstart,fend,score,strand,phase,info=row
                 pinfo=parse_info( info )
-<<<<<<< HEAD
                 tid = pinfo['transcript_id'] if 'transcript_id' in pinfo else None
                 if tid in self.transcripts.keys():
-=======
-                if ('transcript_id' in pinfo) and (pinfo['transcript_id'] in self.transcripts.keys()):
->>>>>>> branch 'nf' of https://github.com/popitsch/splice_sim.git
                     print('\t'.join(str(x) for x in row), file=out)
             bgzip_and_tabix(out_file, seq_col=0, start_col=3, end_col=4, line_skip=0, zerobased=False)
         out_file=out_file+".gz"
@@ -370,25 +366,10 @@ class Model():
         config = json.load(open(config_file), object_pairs_hook=OrderedDict)
         if config_file.startswith('/Volumes'): # localize file paths
             config=localize_config(config)
-<<<<<<< HEAD
         base_dir = str(Path(config_file).parent.absolute())+'/'
-                         
-=======
-        config_dir = str(Path(config_file).parent.absolute())+'/'
->>>>>>> branch 'nf' of https://github.com/popitsch/splice_sim.git
         # ensure out_dir
         if not os.path.exists(out_dir):
-<<<<<<< HEAD
             os.mkdir(out_dir)
-
-=======
-            os.mkdirs(out_dir)
-        # build transcript data file
-        logging.info("Creating external transcript config file")
-        tfile = calculate_transcript_data(config, config_dir, out_dir)  
-        tdata = json.load(open(tfile), object_pairs_hook=OrderedDict)
-        config["transcripts"]=tdata
->>>>>>> branch 'nf' of https://github.com/popitsch/splice_sim.git
         # build model
         m=cls(config, base_dir)
         f_model = out_dir+'/'+config["dataset_name"]+".model"

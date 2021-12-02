@@ -1,4 +1,5 @@
 """
+@author: niko.popitsch@imba.oeaw.ac.at
 
 Transcriptional model for splice_sim containing transcripts, isoforms and conditions.
 Usage:
@@ -20,7 +21,7 @@ import os, sys, json
 import pickle
 import logging
 from pathlib import Path
-from utils import localize_config, pad_n, reverse_complement, bgzip_and_tabix, parse_info
+from splice_sim.utils import *
 import tqdm
 from intervaltree import IntervalTree, Interval
 

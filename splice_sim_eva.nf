@@ -5,10 +5,15 @@ params.model=        "${workflow.launchDir}/sim/reference_model/${params.dataset
 params.final_bam_dir="${workflow.launchDir}/sim/final_bams/"
 params.truth_bam_dir="${workflow.launchDir}/sim/bams_truth/"
 
-final_bams = Channel.fromFilePairs("${params.final_bam_dir}*.{bam,bai}", flat:true) { file -> file.name.replaceAll(/.bam|.bai$/,'') }
-truth_bams = Channel.fromFilePairs("${params.truth_bam_dir}*.{bam,bai}", flat:true) { file -> file.name.replaceAll(/.bam|.bai$/,'') }
-all_bams=final_bams.mix(truth_bams)
-final_bams2 = Channel.fromFilePairs("${params.final_bam_dir}*.{bam,bai}", flat:true) { file -> file.name.replaceAll(/.bam|.bai$/,'') }
+
+Channel.fromFilePairs("${params.final_bam_dir}*.{bam,bai}", flat:true) { file -> file.name.replaceAll(/.bam|.bai$/,'') }.
+	into { final_bams; final_bams2 }
+ 
+Channel.fromFilePairs("${params.truth_bam_dir}*.{bam,bai}", flat:true) { file -> file.name.replaceAll(/.bam|.bai$/,'') }.
+	into { truth_bams }
+
+final_bams.mix(truth_bams).
+	into { all_bams; all_bams2 }
 
 log.info "====================================="
 log.info "Config file : ${params.config_file}"
@@ -51,7 +56,7 @@ process evaluate_bam_performance {
 	} 	
 
 /*
- * evaluate_splice_sites
+ * evaluate_splice_sites_performance
  */
 process evaluate_splice_sites_performance {
 	tag "$name" 
@@ -60,7 +65,7 @@ process evaluate_splice_sites_performance {
     module 'python/3.7.2-gcccore-8.2.0:sambamba/0.6.6'
     publishDir "eva/splice_sites_performance", mode: 'copy'
     input:   
-    	set name, file(bam), file(bai) from all_bams
+    	set name, file(bam), file(bai) from all_bams2
     output: 
     	file("*") into splice_sites_performance
     script:
@@ -83,7 +88,7 @@ process evaluate_splice_sites_performance {
 	} 	
 
 /*
- * evaluate_splice_sites
+ * calculate_splice_site_mappability
  */
 process calculate_splice_site_mappability {
 	tag "$name" 
@@ -97,7 +102,7 @@ process calculate_splice_site_mappability {
     	file("*") into splice_site_mappability
     script:
 	    """
-    		${params.splice_sim_cmd} evaluate_splice_sites_performance \
+    		${params.splice_sim_cmd} calculate_splice_site_mappability \
     			--config ${params.config_file} \
     			--model ${params.model} \
     			--truth_bam_dir ${params.truth_bam_dir} \

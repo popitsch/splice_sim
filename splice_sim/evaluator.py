@@ -1,19 +1,16 @@
 '''
 @author: niko.popitsch@imba.oeaw.ac.at, tobias.neumann@imp.ac.at
 '''
-
 from collections import *
 import csv, datetime, time, logging, sys, os, json, pickle
 import pysam
 from genomic_iterators import Location, get_chrom_dicts_from_bam
 from genomic_iterators.bam_iterators import ReadIterator
 from genomic_iterators.grouped_iterators import BlockedIterator, BlockLocationIterator, AnnotationOverlapIterator
-from utils import localize_config, pad_n, reverse_complement, bgzip_and_tabix, parse_info, colors
-from model import *
-from iterator import *
+from splice_sim.utils import *
+from splice_sim.model import *
+from splice_sim.iterator import *
 
-# Necessary for including python modules from a parent directory
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def basename(f):
     return os.path.splitext(os.path.basename(f))[0]
@@ -97,7 +94,7 @@ def evaluate_bam(bam_file, bam_out, m, mapper, cr, out_performance, out_reads):
     for c, c_len in dict_chr2len.items():
         chrom2trans[c]=[]
     for tid,t in m.transcripts.items():
-        chrom2trans[t.Chromosome].append((Location(dict_chr2idx[t.Chromosome], t.Start, t.End, strand=t.Strand),tid)) 
+        chrom2trans[t.chromosome].append((Location(dict_chr2idx[t.chromosome], t.start, t.end, strand=t.strand),tid)) 
     for c, c_len in dict_chr2len.items():
         if c not in samin.references:
             continue # no data on this chrom 
@@ -141,29 +138,30 @@ def evaluate_bam(bam_file, bam_out, m, mapper, cr, out_performance, out_reads):
         samout.close()
 
 def evaluate_bam_performance(config, m, bam_file, out_dir):
-    # write read data?
-    write_reads=config['write_reads'] if 'write_reads' in config else False
-    if write_reads:
-        out_reads=open(out_dir+'/reads.tsv', 'w') 
-        print("mapped_coords\ttrue_coords\tclassification\ttid\tis_converted_bam\tmapper\tcondition_id\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\tis_converted_read\toverlapping_tids\tread_name", file=out_reads)
-    else:
-        out_reads=None
-    logging.info("write_reads: %s" % str(write_reads))
     # parse mapper and cr from bam file name
     assert os.path.exists(bam_file) and os.path.exists(bam_file+'.bai'), "Could not find bam file (or idx) for %s" % (bam_file)
     assert '.cr' in bam_file, "Cannot parse bam file name %s" % (bam_file)
     tmp = bam_file[:-10] if bam_file.endswith('.final.bam') else bam_file[:-4] # file ends with .bam or .final.bam
     cr,mapper=tmp[tmp.find('.cr')+3:].rsplit('.', 1)
+    out_file_prefix=out_dir+'/'+config['dataset_name']+'.cr'+cr+'.'+mapper
     cr=float(cr)
     is_truth=mapper=='truth'
+    # write read data?
+    write_reads=config['write_reads'] if 'write_reads' in config else False
+    if write_reads:
+        out_reads=open(out_file_prefix+'.reads.tsv', 'w') 
+        print("mapped_coords\ttrue_coords\tclassification\ttid\tis_converted_bam\tmapper\tcondition_id\toverlap\ttrue_tid\ttrue_strand\ttrue_isoform\ttag\ttrue_chr\tn_true_seqerr\tn_tc_pos\tis_converted_read\toverlapping_tids\tread_name", file=out_reads)
+    else:
+        out_reads=None
+    logging.info("write_reads: %s" % str(write_reads))
     # evaluate
-    with open(out_dir+'/tid_performance.tsv', 'w') as out_performance:
+    with open(out_file_prefix+'.tid_performance.tsv', 'w') as out_performance:
         print("is_converted_bam\tmapper\tcondition_id\tiso\ttid\tTP\tFP\tFN", file=out_performance)
         if is_truth:
             # do not write unmapped bam or reads.tsv
             evaluate_bam(bam_file, None, m, mapper, cr, out_performance, None)
         else:
-            bam_out_file=out_dir+'/'+config["dataset_name"]+".cr"+str(cr)+"."+mapper+".mismapped.bam"
+            bam_out_file=out_file_prefix+".mismapped.bam"
             evaluate_bam(bam_file, bam_out_file, m, mapper, cr, out_performance, out_reads)        
     if write_reads:
         out_reads.close()    
@@ -179,15 +177,15 @@ def evaluate_splice_sites_performance(config, m, bam_file, out_dir):
     assert '.cr' in bam_file, "Cannot parse bam file name %s" % (bam_file)
     tmp = bam_file[:-10] if bam_file.endswith('.final.bam') else bam_file[:-4] # file ends with .bam or .final.bam
     cr,mapper=tmp[tmp.find('.cr')+3:].rsplit('.', 1)
-    cr=float(cr)
-    is_converted_bam=cr>0 # are there any conversions?
+    out_file_prefix=out_dir+'/'+config['dataset_name']+'.cr'+cr+'.'+mapper
+    is_converted_bam=float(cr)>0 # are there any conversions?
     is_truth=mapper=='truth'
-    bam_out_file=out_dir+'/'+config["dataset_name"]+".cr"+str(cr)+"."+mapper+".intron.bam"
+    bam_out_file=out_file_prefix+".intron.bam"
     # build transcript intervaltree
     tiv = m.build_transcript_iv()
     # evaluate
     performance = Counter()
-    with open(out_dir+'/splice_site_performance.tsv', 'w') as out_performance:
+    with open(out_file_prefix+'.splice_site_performance.tsv', 'w') as out_performance:
         print("is_converted_bam\tmapper\tcondition\ttid\tintron_id\tdonor_rc_splicing_TP\tdonor_rc_splicing_FP\tdonor_rc_overlapping_TP\tdonor_rc_overlapping_FP\tdonor_rc_splicing_wrong\tacceptor_rc_splicing_TP\tacceptor_rc_splicing_FP\tacceptor_rc_overlapping_TP\tacceptor_rc_overlapping_FP\tacceptor_rc_splicing_wrong", file=out_performance)
         n_reads = 0
         samin = pysam.AlignmentFile(bam_file, "rb")
@@ -201,7 +199,6 @@ def evaluate_splice_sites_performance(config, m, bam_file, out_dir):
                 ivTree.add(iv)
                 # get tids of overlapping features
                 annots=[x.data.tid for x in tiv[t.chromosome].overlap(iv.begin, iv.end)]
-    
                 # Donor
                 donorIterator = SimulatedReadIterator(samin.fetch(contig=t.chromosome, start=intron['start'] - 1, stop=intron['start']), flagFilter=0)
                 for read in donorIterator:
@@ -378,6 +375,7 @@ def calculate_splice_site_mappability(config, m, bam_file, truth_bam_dir, out_di
     assert '.cr' in bam_file, "Cannot parse bam file name %s" % (bam_file)
     tmp = bam_file[:-10] if bam_file.endswith('.final.bam') else bam_file[:-4] # file ends with .bam or .final.bam
     cr,mapper=tmp[tmp.find('.cr')+3:].rsplit('.', 1)
+    out_file_prefix=out_dir+'/'+config['dataset_name']+'.cr'+cr+'.'+mapper
     truth_bam_file =  truth_bam_dir+'/'+config['dataset_name']+'.cr'+cr+'.truth.bam'
     truthBam = pysam.AlignmentFile(truth_bam_file, "rb")
     mappedBam = pysam.AlignmentFile(bam_file, "rb")
@@ -386,9 +384,9 @@ def calculate_splice_site_mappability(config, m, bam_file, truth_bam_dir, out_di
     readlen=config['readlen']
     # build transcript intervaltree
     tiv = m.build_transcript_iv()
-    tmpBed = out_dir+ "/" + config['dataset_name']+'.cr'+cr+'.' + mapper+ ".conv.SJ_mappability.bedGraph.tmp"
+    tmpBed = out_file_prefix + ".conv.SJ_mappability.bedGraph.tmp"
     with open(tmpBed, 'w') as out_bed:
-        with open(out_dir+'/mappability.tsv', 'w') as out_mappability:
+        with open(out_file_prefix+'.mappability.tsv', 'w') as out_mappability:
             print("""is_converted_bam\tmapper\tcondition\ttid\tintron_id\tchromosome\tstart\tend\tstrand\t""" +
                                               """don_sj_mappability_TP\tdon_sj_mappability_FP\tdon_TP_reads\tdon_FP_reads\tdon_ex_A\tdon_ex_C\tdon_ex_T\tdon_ex_G\tdon_in_A\tdon_in_C\tdon_in_T\tdon_in_G\tdon_win_min_map\tdon_win_max_map\t""" +
                                               """acc_sj_mappability_TP\tacc_sj_mappability_FP\tacc_TP_reads\tacc_FP_reads\tacc_ex_A\tacc_ex_C\tacc_ex_T\tacc_ex_G\tacc_in_A\tacc_in_C\tacc_in_T\tacc_in_G\tacc_win_min_map\tacc_win_max_map""", 

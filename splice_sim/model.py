@@ -20,8 +20,12 @@ import os, sys, json
 import pickle
 import logging
 from pathlib import Path
-from splice_sim.utils import localize_config, pad_n, reverse_complement, bgzip_and_tabix, parse_info
+from utils import localize_config, pad_n, reverse_complement, bgzip_and_tabix, parse_info
 import tqdm
+from intervaltree import IntervalTree, Interval
+
+# Necessary for including python modules from a parent directory
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def calculate_transcript_data(config, tid_meta, tid_file):
     """ Calculate a data config file """ 
@@ -241,7 +245,6 @@ class Model():
         else:
             self.tids=None
             logging.info("No tid list configured, will use all transcripts from the GFF3")
-        
         # load + filter gene gff
         logging.info("Loading gene GFF")
         tid_meta={} # tid 2 metadata
@@ -270,7 +273,6 @@ class Model():
             logging.info("Creating external transcript data file %s" % tfile)
             tdata = calculate_transcript_data(config, tid_meta, tfile)  
             config["transcripts"]=tdata
-       
         # load genome
         logging.info("Loading genome")
         genome = pysam.FastaFile(config["genome_fa"])
@@ -283,12 +285,6 @@ class Model():
             t = Transcript(config, tid, tid_meta[tid], tid_exon[tid], genome, self.condition, max_ilen=self.max_ilen) 
             if t.is_valid:
                 self.transcripts[tid] = t
-        # build interval tree of transcripts
-        self.ivs={}
-        for tid, t in self.transcripts:
-            if t.chromosome not in self.ivs:
-                self.ivs[t.chromosome]=IntervalTree()
-            self.ivs[t.chromosome].add(Interval(t.start, t.end, t))
         logging.info("Instantiated %i transcripts" % len(self.transcripts))      
     def write_gff(self, outdir):
         """ Write a filtered GFF file containing all kept/simulated transcripts """
@@ -362,6 +358,14 @@ class Model():
     def __str__(self):
         ret = ("Model [t: %i]" % (len(self.transcripts) ) )
         return (ret)
+    def build_transcript_iv(self):
+        # build interval tree of transcripts
+        ivs={}
+        for tid, t in self.transcripts.items():
+            if t.chromosome not in ivs:
+                ivs[t.chromosome]=IntervalTree()
+            ivs[t.chromosome].add(Interval(t.start, t.end, t))
+        return ivs
     @classmethod
     def load_from_file(cls, model_file):
         return pickle.load( open( model_file, "rb" ) )
@@ -393,11 +397,14 @@ class Model():
 
 # if __name__ == '__main__':
 #     import json, pickle
-#     print("build model")
-#     m, f_model = Model.build_model('/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/nf3/splice_sim.config.json', 
-#                                    '/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/nf3/tmp/')
+#     #print("build model")
+#     #m, f_model = Model.build_model('/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/nf3/splice_sim.config.json', 
+#     #                               '/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/nf3/tmp/')
+#     #print(m)
+#     m = Model.load_from_file('/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/nf3/tmp/nf2.model')
 #     print(m)
-#     m2 = Model.load_from_file(f_model)
-#     print(m2) 
+#     iv=m.build_transcript_iv()
+#     print(iv) 
+#     print(iv['5'].overlap(142903115,142906754))
     
     

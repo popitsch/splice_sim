@@ -20,7 +20,7 @@ import os, sys, json
 import pickle
 import logging
 from pathlib import Path
-from utils import localize_config, pad_n, reverse_complement, bgzip_and_tabix, parse_info
+from splice_sim.utils import localize_config, pad_n, reverse_complement, bgzip_and_tabix, parse_info
 import tqdm
 
 def calculate_transcript_data(config, tid_meta, tid_file):
@@ -283,6 +283,12 @@ class Model():
             t = Transcript(config, tid, tid_meta[tid], tid_exon[tid], genome, self.condition, max_ilen=self.max_ilen) 
             if t.is_valid:
                 self.transcripts[tid] = t
+        # build interval tree of transcripts
+        self.ivs={}
+        for tid, t in self.transcripts:
+            if t.chromosome not in self.ivs:
+                self.ivs[t.chromosome]=IntervalTree()
+            self.ivs[t.chromosome].add(Interval(t.start, t.end, t))
         logging.info("Instantiated %i transcripts" % len(self.transcripts))      
     def write_gff(self, outdir):
         """ Write a filtered GFF file containing all kept/simulated transcripts """

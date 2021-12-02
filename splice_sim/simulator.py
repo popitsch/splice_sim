@@ -3,7 +3,7 @@
 '''
 import csv, datetime, time, logging, sys, os, json
 import pysam
-from splice_sim import *
+from splice_sim.utils import *
 from collections import Counter, OrderedDict
 import random
 
@@ -81,7 +81,7 @@ def transcript2genome_bam(m, transcript_bam_file, out_bam):
                 seq=""
                 qual=[]
                 rpos=0
-                gpos=iso.transcript.Start-1
+                gpos=iso.transcript.start-1
                 mismatches=[]
                 n_deletions, n_insertions = 0,0
                 # get read data
@@ -179,7 +179,7 @@ def transcript2genome_bam(m, transcript_bam_file, out_bam):
                 read.query_qualities = qual
                 read.reference_start = start_pos
                 read.cigartuples=genome_cigatuples
-                read.reference_id=dict_chr2idx[iso.transcript.Chromosome]
+                read.reference_id=dict_chr2idx[iso.transcript.chromosome]
                 read.mapping_quality = 60
                 read.set_tag(tag="NM", value=len(mismatches)+n_insertions+n_deletions, value_type="i")
                 if is_converted_read==0:
@@ -188,7 +188,7 @@ def transcript2genome_bam(m, transcript_bam_file, out_bam):
                 read.flag = 0 if iso.strand=='+' else 16
                 # read name encodes: true_tid, true_strand, true_isoform, read_tag, true_chr, true_cigar, n_seqerr, n_converted
                 read.query_name =  '_'.join([str(x) for x in [r.query_name, # true_tid, true_strand, true_isoform, tag
-                                                    iso.transcript.Chromosome, # true_isoform
+                                                    iso.transcript.chromosome, # true_isoform
                                                     read.reference_start,
                                                     read.cigarstring, # cigarstring for calculating aligned blocks
                                                     len(mismatches)+n_insertions+n_deletions, # number of seq errors

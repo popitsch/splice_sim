@@ -195,8 +195,6 @@ def evaluate_splice_sites_performance(config, m, bam_file, out_dir):
             for intron in t.introns:
                 intronID = tid + "_" + str(intron['exon_number'])
                 iv = Interval(intron['start'] - 1, intron['end'] + 1)
-                ivTree = IntervalTree()
-                ivTree.add(iv)
                 # get tids of overlapping features
                 annots=[x.data.tid for x in tiv[t.chromosome].overlap(iv.begin, iv.end)]
                 # Donor
@@ -205,14 +203,15 @@ def evaluate_splice_sites_performance(config, m, bam_file, out_dir):
                     start = read.start
                     end = read.end
                     bamRead = read.bamRead
-                    color = ""    
+                    color = ""  
                     if start <= iv.begin:
-                        if read.splicing and not read.hasSpliceSite(ivTree) and end > iv.begin:
+                        if read.splicing and not read.hasSpliceSite(iv) and end > iv.begin:
+                            print(read.splicing, iv, read.spliceSites)  
                             performance[tid, intronID, 'donor_rc_splicing_wrong'] += 1
                             bamRead.setTag('YC', colors["exonexonfalse"])
                             if (samout):
                                 samout.write(bamRead)
-                        elif read.splicing and read.hasSpliceSite(ivTree) and end > iv.begin:
+                        elif read.splicing and read.hasSpliceSite(iv) and end > iv.begin:
                             if read.trueTid == tid and read.trueSpliced:
                                 performance[tid, intronID, 'donor_rc_splicing_TP'] += 1
                                 bamRead.setTag('YC', colors["exonexontrue"])
@@ -246,12 +245,12 @@ def evaluate_splice_sites_performance(config, m, bam_file, out_dir):
                     end = read.end
                     bamRead = read.bamRead
                     if end >= iv.end:
-                        if read.splicing and not read.hasSpliceSite(ivTree) and start < iv.end:
+                        if read.splicing and not read.hasSpliceSite(iv) and start < iv.end:
                             performance[tid, intronID, 'acceptor_rc_splicing_wrong'] += 1
                             bamRead.setTag('YC', colors["exonexonfalse"])
                             if (samout):
                                 samout.write(bamRead)
-                        elif read.splicing and read.hasSpliceSite(ivTree) and start < iv.end:
+                        elif read.splicing and read.hasSpliceSite(iv) and start < iv.end:
                             if read.trueTid == tid and read.trueSpliced:
                                 performance[tid, intronID, 'acceptor_rc_splicing_TP'] += 1
                                 bamRead.setTag('YC', colors["exonexontrue"])

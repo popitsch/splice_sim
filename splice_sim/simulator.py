@@ -52,9 +52,13 @@ def postfilter_bam( config_file, bam_in, out_dir):
         print("error indexing bam: %s" % e)
     return True, n_reads, f_reads
 
-def transcript2genome_bam(m, transcript_bam_file, out_bam):
+def transcript2genome_bam(m, transcript_bam_file, out_bam, overwrite=False):
     """ Reads a transcriptome-mapped BAM and converts to a genome BAM. 
     Transcript ids, strand, isoform and tags are parsed from the input read names and matched with the model """
+    stats=Counter()
+    if not overwrite and os.path.isfile(out_bam):
+        print("Pre-existing file %s, will not recreate" % out_bam)
+        return stats
     genome = pysam.FastaFile(m.config["genome_fa"])    
     chromosomes = genome.references
     dict_chr2idx = {k: v for v, k in enumerate(chromosomes)}
@@ -62,7 +66,6 @@ def transcript2genome_bam(m, transcript_bam_file, out_bam):
     dict_chr2len = {c: genome.get_reference_length(c) for c in genome.references}
     header = { 'HD': {'VN': '1.4'}, 
                'SQ': [{'LN': l, 'SN': c} for c,l in dict_chr2len.items()] }
-    stats=Counter()
     with pysam.AlignmentFile(out_bam+'.tmp.bam', "wb", header=header) as bam_out:        
         sam = pysam.AlignmentFile(transcript_bam_file, "rb")
         for r in sam.fetch(until_eof=True):
@@ -237,9 +240,12 @@ def modify_bases(ref, alt, seq, is_reverse, conversion_rate ):
         convseq+=c
     return convseq, n_convertible, n_modified
 
-def add_read_modifications(in_bam, out_bam, ref, alt, conversion_rate, threads, tag_tc="xc", tag_isconvread="xm"):
+def add_read_modifications(in_bam, out_bam, ref, alt, conversion_rate, threads, tag_tc="xc", tag_isconvread="xm", overwrite=False):
     """ modify single nucleotides in reads. 
     """
+    if not overwrite and os.path.isfile(out_bam):
+        print("Pre-existing file %s, will not recreate" % out_bam)
+        return
     sam = pysam.AlignmentFile(in_bam, "rb")
     with pysam.AlignmentFile(out_bam+'.tmp.bam', "wb", header=sam.header) as bam_out:
         for r in sam.fetch(until_eof=True):
@@ -279,8 +285,11 @@ def add_read_modifications(in_bam, out_bam, ref, alt, conversion_rate, threads, 
     print("All done.")
     
     
-def bam_to_fastq(in_bam, out_fastq):
+def bam_to_fastq(in_bam, out_fastq, overwrite=False):
     """ Convert a BAM to fastq """
+    if not overwrite and os.path.isfile(out_fastq):
+        print("Pre-existing file %s, will not recreate" % out_fastq)
+        return
     sam = pysam.AlignmentFile(in_bam, "rb")
     with open(out_fastq, 'w') as out_fq:
         for r in sam.fetch(until_eof=True):
@@ -297,7 +306,7 @@ def bam_to_fastq(in_bam, out_fastq):
 
 
 def create_genome_bam(m, art_sam_file, threads, out_dir):
-    """ create a genome bam file and exprot to fastq """
+    """ create genome bam files per condition and export to fastq """
     config=m.config
     
     # file names

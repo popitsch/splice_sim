@@ -34,6 +34,7 @@ process build_model {
  * simulate reads
  */
 process simulate_reads {
+	label "long"
     module 'art/2016.06.05-gcc-7.3.0-2.30:python/3.7.2-gcccore-8.2.0:htslib/1.10.2-gcccore-7.3.0:samtools/1.10-foss-2018b'
     publishDir "sim/bams_truth", mode: 'copy'
     input: 
@@ -53,10 +54,19 @@ process simulate_reads {
     }
     script:
 	    """
-	    	art_illumina -ss HS25 -i ${isoform_fasta} -l ${params.readlen} -f ${params.double_cov} \
-	    	-na --samout -o ${params.dataset_name} ${params.seed} ${params.additional_art_params} > art.log
-	    	# drop fastq - we dont need it
-	    	rm ${params.dataset_name}.fq
+	    	# Copy pre-existing result files that stem from partial pipeline runs. 
+	    	# Useful for large simulations that crashed/ran oot/oom
+	    	if [ -d ${params.pre_existing_results} ]; then
+	    		cp ${params.pre_existing_results}/* .
+	    	fi
+	    
+	    	# do not recreate if in pre-existing files dir
+	    	if [ ! -f ${params.dataset_name}.sam ]; then
+	    		art_illumina -ss HS25 -i ${isoform_fasta} -l ${params.readlen} -f ${params.double_cov} \
+	    		-na --samout -o ${params.dataset_name} ${params.seed} ${params.additional_art_params} > art.log
+	    	fi
+	    	# drop fastq - we dont need it and it might be huge
+	    	rm -f ${params.dataset_name}.fq
 	    	
 	    	# create genome bam + fq
 	    	${params.splice_sim_cmd} create_genome_bam \
@@ -74,6 +84,9 @@ process simulate_reads {
 	    		samtools calmd --threads ${task.cpus} -b \${bam} ${params.genome_fa} > tmp.bam && mv tmp.bam \${bam}
 	    		samtools index \${bam}
 	    	done
+	    	
+	    	# rm sam file as it might be huge
+	    	rm -f ${params.dataset_name}.sam
 	    """
 	} 
 
@@ -103,7 +116,7 @@ process map_star {
 		      	--genomeDir ${params.mappers.STAR.star_genome_idx} \
 		      	--readFilesIn ${fq} \
 		      	--outSAMattributes NH HI AS nM MD \
-		      	--outReadsUnmapped Fastx \
+		      	--outSAMunmapped Within \
 		      	--sjdbGTFfile ${params.mappers.STAR.star_splice_gtf}
 
 		   sambamba view -S -f bam -t ${task.cpus}  ${fq.getBaseName(3)}Aligned.out.sam -o ${fq.getBaseName(3)}.pre.bam
@@ -191,7 +204,7 @@ process map_merangs {
 process postprocess_bams {
 	cpus 1
 	memory '64 GB'
-	time 2.h
+	time 5.h
 	//cache false 
 	module 'python/3.7.2-gcccore-8.2.0'
 	publishDir "sim/final_bams", mode: 'copy'

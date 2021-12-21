@@ -25,6 +25,7 @@ profiles {
   //SLURM (cbe)
   cbe {
     process {
+      container = 'tobneu/splice_sim:latest'
       executor = 'slurm'
       queue='c'
       memory='64 GB'
@@ -47,6 +48,11 @@ profiles {
       }
      beforeScript = 'hostname; module purge; ml list; export DISPLAY=""; export R_LIBS_USER=""; export R_LIBS=""; export PYTHONPATH=""; export PERL5LIB="";'
     }
+
+   singularity {
+     enabled = true
+     cacheDir = '/resources/containers'
+   }
   }
 
 }

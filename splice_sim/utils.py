@@ -53,5 +53,5 @@ def localize_config(config):
         elif isinstance(v, dict):
             config[k]=localize_config(v)
         elif isinstance(v, list):
-            config[k]=['/Volumes'+x if str(x).startswith('/groups') else '' for x in v]
+            config[k]=['/Volumes'+x if str(x).startswith('/groups') else x for x in v]
     return config

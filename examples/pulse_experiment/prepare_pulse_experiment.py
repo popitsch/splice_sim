@@ -161,7 +161,7 @@ if __name__ == '__main__':
         tab=pd.read_csv(config['isoform_config'],delimiter='\t',encoding='utf-8').set_index('transcript_id').to_dict()
         print(tab)
         # build a reference transcriptome
-        #build_transcriptome(config, tab, out_dir+'ref/')
+        build_transcriptome(config, tab, out_dir+'ref/')
         
         # create timepoint configs
         tp_dir=out_dir+'/conf/'

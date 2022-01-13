@@ -56,7 +56,7 @@ def classify_read(read, overlapping_tids, cr, mapper, dict_chr2idx, performance,
                                               ','.join(overlapping_tids) if len(overlapping_tids) > 0 else 'NA', 
                                               read_name)]), file=out_reads)
         for tid in overlapping_tids:
-            performance[tid, true_isoform, 'FP'] += 1/len(overlapping_tids)
+            performance[tid, true_isoform, 'FP'] += 1/len(overlapping_tids) # fixme; true_isoform refers to the read origin, not the target!
             if out_reads is not None:
                 print('\t'.join([str(x) for x in (read_coord, true_coord, 'FP', tid, 
                                                   1 if is_converted_bam else 0, mapper, 
@@ -90,7 +90,7 @@ def evaluate_bam(bam_file, bam_out, m, mapper, cr, out_performance, out_reads):
     is_converted_bam=cr>0
     samin = pysam.AlignmentFile(bam_file, "rb") 
     samout = pysam.AlignmentFile(bam_out+'.tmp.bam', "wb", template=samin ) if bam_out is not None else None
-    chrom2trans={}
+    chrom2trans=OrderedDict()
     for c, c_len in dict_chr2len.items():
         chrom2trans[c]=[]
     for tid,t in m.transcripts.items():
@@ -510,13 +510,14 @@ def calculate_splice_site_mappability(config, m, bam_file, truth_bam_dir, out_di
     # f.close()
     # os.remove(tmpBed)           
 # if __name__ == '__main__':
-#     config_file='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/nf3/splice_sim.config.json'
-#     model_file='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/nf3/tmp/nf2.model'
-#     out_dir='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/nf3/tmp/'
-#     bam_file='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/nf3/sim/final_bams/nf2.cr0.STAR.final.bam'
+#     config_file='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/splice_sim.config.json'
+#     model_file='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/sim/reference_model/big3_slamseq_nf.model'
+#     out_dir='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/sim/reference_model/delme/'
+#     bam_file='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/sim/final_bams/big3_slamseq_nf.cr0.1.STAR.final.bam'
 #     config=json.load(open(config_file), object_pairs_hook=OrderedDict)
 #     config=localize_config(config)
 #     m = Model.load_from_file(model_file)
-#     #evaluate_splice_sites_performance(config, m, bam_file,out_dir)
-#     truth_bam_dir='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/nf3/sim/bams_truth'
-#     calculate_splice_site_mappability(config, m, bam_file, truth_bam_dir, out_dir)
+#     print(m)
+    #evaluate_splice_sites_performance(config, m, bam_file,out_dir)
+    #truth_bam_dir='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/nf3/sim/bams_truth'
+    #calculate_splice_site_mappability(config, m, bam_file, truth_bam_dir, out_dir)

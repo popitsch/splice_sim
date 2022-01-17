@@ -13,24 +13,30 @@ output:
 geometry: margin=1in
 classoption: a4paper
 params:
-    #splice_sim_config:
-    #    value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_biseq/config.json"
-    #slam_out_dir:
-    #    value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_biseq/slam_out/"
-    #out_dir:
-    #    value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_biseq/analysis/"
-    #plot_type:
-    #    value: "by_mapper"
-    splice_sim_config:
-       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq/config.json"
-    slam_out_dir:
-        value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq/slam_out/"
-    out_dir:
-        value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq/analysis/"
-    plot_type:
-       value: "by_condition"
     extra_transcript_table:
-        value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/data/slamstr/pooled.mm10.all/pooled.mm10.all.Slamstr.stats.trans.final.tsv.gz"  
+       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/data/slamstr/pooled.mm10.all/pooled.mm10.all.Slamstr.stats.trans.final.tsv.gz"  
+    # splice_sim_config:
+    #    value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_biseq_nf/splice_sim.config.json"
+    # slam_out_dir:
+    #    value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_biseq_nf/slam_out/"
+    # out_dir:
+    #    value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_biseq_nf/analysis/"
+    # plot_type:
+    #    value: "by_mapper"
+    # splice_sim_config:
+    #    value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/splice_sim.config.json"
+    # slam_out_dir:
+    #     value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/slam_out/"
+    # out_dir:
+    #     value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/analysis/"
+    splice_sim_config:
+       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/splice_sim.config.json"
+    slam_out_dir:
+        value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/slam_out/"
+    out_dir:
+        value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/analysis/"
+    plot_type:
+      value: "by_condition"
 
 ---
 <style type="text/css">
@@ -69,6 +75,28 @@ load_table = function(dataF, append="", header=T) {
   }
 }
 
+# multiple plots with single title
+my_plot_grid = function(plots, main, ncol=NULL, nrow=NULL) {
+  plot_row=plot_grid(plotlist=plots, ncol=ncol, nrow=nrow)
+  title <- ggdraw() + draw_label( main, fontface = 'bold', x = 0, hjust = 0 ) + theme(plot.margin = margin(0, 0, 0, 7))
+  return (plot_grid(title, plot_row, ncol = 1, rel_heights = c(0.1, 1)))
+}
+
+# calculate confidence interval
+# call with calc_ci( mtcars, mpg)
+calc_ci = function(d, col, min_lower_ci=NA, max_upper_ci=NA) {
+  ret = d %>% summarise(
+            col.mean := mean({{col}}, na.rm = TRUE),
+            col.sd = sd({{col}}, na.rm = TRUE),
+            col.n = n()) %>%
+  mutate(stderr = col.sd / sqrt(col.n),
+         lower.ci = col.mean - qt(1 - (0.05 / 2), col.n - 1) * stderr,
+         upper.ci = col.mean + qt(1 - (0.05 / 2), col.n - 1) * stderr) %>% 
+  ungroup() %>% 
+  mutate(lower.ci = pmax(min_lower_ci, lower.ci, na.rm=T),
+         upper.ci = pmin(max_upper_ci, upper.ci, na.rm=T))
+  return (ret)
+}
 ```
 
 # data
@@ -77,37 +105,59 @@ load_table = function(dataF, append="", header=T) {
 home_dir=paste0(dirname(params$splice_sim_config),'/')
 conf=fromJSON(paste(readLines(params$splice_sim_config), collapse=""))
 
-
-# load truth data
-isoform_truth=load_table(paste0(home_dir, conf$dataset_name, '/sim/isoform_truth.tsv.gz'))
 # load evaluation results
-tid_performance=load_table(paste0(home_dir, conf$dataset_name, '/eva/tid_performance.tsv'))
-reads=load_table(paste0(home_dir, conf$dataset_name, '/eva/reads.tsv.gz'))
-md=load_table(paste0(home_dir, conf$dataset_name, '/eva/metadata.tsv'))
-splice_site_performance=load_table(paste0(home_dir, conf$dataset_name, '/eva/splice_site_performance.tsv')) 
-splice_site_mappability=load_table(paste0(home_dir, conf$dataset_name, '/eva/mappability.tsv'))
-splice_site_performance = splice_site_performance %>% 
-  merge(splice_site_mappability, by=c("is_converted_bam","mapper","condition","tid","intron_id"))
-# additional transcript md
-gene_anno=load_table(paste0(home_dir, conf$dataset_name, '/sim/gene_anno.tsv.gz')) %>% mutate(len=End-Start+1)
-extra_transcript_table=load_table(params$extra_transcript_table) %>% select(transcript_id, rnk, GC_frac, mappability_median, mappability_mean, T_Pos)
-
-# add mappability, coords, etc.
-tid_performance=tid_performance %>% merge(gene_anno, by.x='tid', by.y='transcript_id', all.x=T) %>% merge(extra_transcript_table, by.x='tid', by.y='transcript_id', all.x=T)
-tid_performance$category=factor(tid_performance$category)
-tid_performance$mapper=factor(tid_performance$mapper)
-tid_performance$condition=factor(tid_performance$condition)
-
-# add performance measures
-tid_performance = tid_performance %>% mutate(
-  precision=TP/(TP+FP), 
-  recall=TP/(TP+FN), 
-  F1=2*TP/(2*TP+FP+FN))
-
-# reads
-reads$is_converted_bam=factor(reads$is_converted_bam)
-
-by_cond = ifelse(params$plot_type=='by_cond',T,F)
+data_file=paste0(params$out_dir,'/evaluation_results.rds')
+if (file.exists(data_file) ) {
+  d = readRDS(data_file)
+} else {
+  # load truth data
+  isoform_truth=load_table(paste0(home_dir, '/sim/reference_model/isoform_truth.tsv.gz'))
+  # additional transcript md
+  gene_anno=load_table(paste0(home_dir, '/sim/reference_model/gene_anno.tsv.gz')) %>% mutate(len=end-start+1)
+  extra_transcript_table=load_table(params$extra_transcript_table) %>% select(transcript_id, rnk, GC_frac, mappability_median, mappability_mean, T_Pos)
+  # load data per dataset
+  tid_performance=tibble()
+  reads=tibble()
+  splice_site_performance=tibble()
+  splice_site_mappability=tibble()
+  conversion_rates=c('0', as.character(conf$condition$conversion_rates))
+  for ( m in c( 'truth', names(conf$mappers))) {
+    for ( cr in conversion_rates) {
+      pre=paste0(home_dir, '/eva/overall_performance/', conf$dataset_name, '.cr',cr, '.', m)
+      tid_performance=tid_performance %>% rbind(load_table(paste0(pre, '.tid_performance.tsv')))
+      if (file.exists(paste0(pre, '.reads.tsv'))) {
+        reads=reads %>% rbind(load_table(paste0(pre, '.reads.tsv')))
+      }
+      pre=paste0(home_dir, '/eva/splice_sites_performance/', conf$dataset_name, '.cr',cr, '.', m)
+      if (file.exists(paste0(pre, '.splice_site_performance.tsv'))) {
+        splice_site_performance=splice_site_performance %>% rbind(load_table(paste0(pre, '.splice_site_performance.tsv')))
+      }
+      pre=paste0(home_dir, '/eva/splice_site_mappability/', conf$dataset_name, '.cr',cr, '.', m)
+      if (file.exists(paste0(pre, '.mappability.tsv'))) {
+        splice_site_mappability=splice_site_mappability %>% rbind(load_table(paste0(pre, '.mappability.tsv')))
+      }
+    }
+  }
+  
+  # add mappability, coords, etc.
+  tid_performance=tid_performance %>% 
+    merge(gene_anno, by.x='tid', by.y='transcript_id', all.x=T) %>% 
+    merge(extra_transcript_table, by.x='tid', by.y='transcript_id', all.x=T) %>% 
+    mutate(mapper=factor(mapper),
+           condition_id=factor(condition_id),
+           precision=TP/(TP+FP), 
+           recall=TP/(TP+FN), 
+           F1=2*TP/(2*TP+FP+FN)
+    )
+  # combine
+  d=list()
+  d[['isoform_truth']]=isoform_truth
+  d[['tid_performance']]=tid_performance
+  d[['reads']]=reads
+  d[['splice_site_performance']]=splice_site_performance
+  d[['splice_site_mappability']]=splice_site_mappability
+  saveRDS(d, data_file)
+}
 
 
 ```
@@ -124,7 +174,7 @@ This is either because
 ```{r}
 
 all_tids=load_table(paste0(home_dir, 'tids.tsv')) %>% pull(transcript_id)
-found_tids=unique(tid_performance %>% pull(tid))
+found_tids=unique(d[['tid_performance']] %>% pull(tid))
 print(paste0("We have data for ", length(found_tids), '/', length(all_tids), " transcripts"))
 
 # what tids are missing?
@@ -134,75 +184,144 @@ extra_transcript_table2=load_table(params$extra_transcript_table) %>%
   mutate(missing=ifelse(transcript_id %in% found_tids, 0,1))
 extra_transcript_table2 %>% ggplot(aes(x=factor(missing), y=len)) + 
   geom_violin()  +scale_y_log10() + ggtitle("Length distribution of missing transcripts")
-# expla
 
+# did we recover all reads?
+d[['tid_performance']] %>% mutate(all=TP+FN) %>% group_by(mapper, condition_id) %>% summarise(tc=sum(all))
 
 ```
+## Compare numbers for unspliced transcripts
+```{r}
+tab = d[['tid_performance']] %>% 
+  filter(rnk.x==1, condition_id=='0.1') %>% 
+  select(mapper, tid, iso, TP, FP, FN, F1) %>% 
+  pivot_wider(names_from = iso, values_from = c(TP,FP,FN,F1), id_cols = c('tid', 'mapper')) %>%
+  mutate(f1_diff=F1_mat-F1_pre) %>% 
+  merge(gene_anno, by.x = 'tid', by.y='transcript_id') %>% 
+  merge(extra_transcript_table, by.x = 'tid', by.y='transcript_id')
 
+p1 = tab %>% ggplot(aes(x=f1_diff)) + geom_density() + ggtitle("Difference in F1 value between pre/mat for unspliced transcripts. Should be zero!") +
+  facet_wrap(mapper~.)
+p2 = tab %>% filter(mappability_mean>0.5) %>% ggplot(aes(x=f1_diff)) + geom_density() + ggtitle("Difference in F1 value between pre/mat for unspliced transcripts. Map>0.5. Should be zero!") +
+  facet_wrap(mapper~.)
+p3 = tab %>% ggplot(aes(x=FP_mat, y=FP_pre, col=mappability_mean, alpha=0.1)) +
+  geom_point() +
+  scale_x_sqrt() +
+  scale_y_sqrt() +
+  facet_wrap(mapper~.)
+p4 = tab %>% ggplot(aes(x=FN_mat, y=FN_pre, col=mappability_mean, alpha=0.1)) +
+  geom_point() +
+  scale_x_sqrt() +
+  scale_y_sqrt() +
+  facet_wrap(mapper~.)
 
+my_plot_grid(list(p1,p2,p3,p4), main="QC: comparing isoform performance of unspliced transcripts (cr=0.1)") 
+ggsave(paste0(params$out_dir,'/qc_isoform_comparison_of_unspliced_transcripts.pdf'), width = 10, height = 8)
+
+```
 
 # Performance 
 
 ## Performance per transcript
 ```{r performance}
-# overall performance per isoform/mapper
-plot_overall_performance = function(d, subtitle='') {
-  p = ggplot( d, aes(x=paste0(condition,'/',iso), y=F1, fill=condition) ) +
-    geom_violin() +
-    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-    xlab("condition / isoform") +
-    geom_boxplot(width=.1) +
-    facet_grid(is_converted_bam~mapper) +
-    ggtitle(paste0("F1 measure per transcript (n=",length(unique(d$tid)),")"), subtitle)
-  return(p)
-}
-
-plot_median_performance = function(d, subtitle='') {
-  dat = d %>% group_by(mapper, condition, iso, is_converted_bam) %>% 
+plot_median_performance_by_bin = function(tab, subtitle='', facet=NA) {
+  group_vars=c('mapper', 'condition_id', 'iso', 'is_converted_bam')
+  if (!is.na(facet)) {
+    # rename by addint '(n=xxx)')
+    cnts = tab %>% 
+      group_by_at(facet) %>% 
+      summarise(n_tid=n_distinct(tid)) %>% 
+      setNames(., c("a", "b")) %>% mutate(c=paste0(a,' (n=',b,')'))
+    labs = setNames(cnts$c, cnts$a)
+    tab[['facet']]=factor( labs[tab[[facet]]], levels=cnts$c)
+    group_vars=c(group_vars, 'facet')
+  }
+  dat = tab %>% group_by_at(group_vars) %>% 
     summarise(median_F1=median(F1, na.rm = T))
-  if ( by_cond) {
-    p=dat %>% ggplot(aes(x=condition, y=median_F1, col=mapper, linetype=iso, group=paste0(mapper, iso))) + 
+  if ( params$plot_type=='by_condition') {
+    p=dat %>% ggplot(aes(x=condition_id, y=median_F1, col=mapper, linetype=iso, group=paste0(mapper, iso))) + 
       geom_line() + 
       geom_point() +
-      facet_wrap(is_converted_bam~.) +
-      ggtitle(paste0("Median F1 measure per transcript (n=",length(unique(d$tid)),")"), subtitle)
+      #facet_wrap(is_converted_bam~.) +
+      ggtitle(paste0("Median F1 measure per transcript (n=",length(unique(tab$tid)),")"), subtitle)
+    if (!is.na(facet)) {
+      p=p+facet_wrap(facet~.)
+    }
   } else {
     p=dat %>% ggplot(aes(x=mapper, y=median_F1, col=mapper, shape=iso, group=paste0(mapper, iso))) + 
       geom_point() +
-      facet_wrap(is_converted_bam~.) +
-      ggtitle(paste0("Median F1 measure per transcript (n=",length(unique(d$tid)),")"), subtitle) + 
+      #facet_wrap(is_converted_bam~.) +
+      ggtitle(paste0("Median F1 measure per transcript (n=",length(unique(tab$tid)),")"), subtitle) + 
       theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+    if (!is.na(facet)) {
+      p=p+facet_wrap(facet~.)
+    }
   }
   return(p)
 }
 
+tab = d[['tid_performance']] %>% 
+  mutate(num_exons=case_when(rnk.x<=5 ~ as.character(rnk.x), 
+                             rnk.x>5 ~ '>5',
+                             T ~ 'NA'),
+         mappability=case_when(mappability_mean<0.2 ~ 'low',
+                               mappability_mean>0.9 ~ 'high',
+                               T ~ 'medium')
+  ) %>% mutate(
+    num_exons=factor(num_exons, levels = c('1','2','3','4','5','>5')),
+    mappability=factor(mappability, levels=c('high', 'medium', 'low'))
+  )
+p1 = plot_median_performance_by_bin(tab, 'by conversion rate', facet=NA)
+p2 = plot_median_performance_by_bin(tab, 'by regular read mappability', facet='mappability')
+p3 = plot_median_performance_by_bin(tab %>% filter(mappability=='high'), 'by number of exons (high mappability only)', facet='num_exons')
+p4 = plot_median_performance_by_bin(tab %>% filter(mappability=='medium'), 'by number of exons (medium mappability only)', facet='num_exons')
+#p4 = plot_median_performance_by_bin(tab %>% filter(mappability=='high'), 'by transcript_type (high mappability only)', facet='transcript_type')
+
+my_plot_grid(list(p1,p2,p3,p4), main="Overall mapping performance per transcript") 
+ggsave(paste0(params$out_dir,'/tid_performance.pdf'), width = 10, height = 8)
+
+```
+
+## Performance correlations
+```{r correlations}
+
 # some correlations
-plot_corr = function(d, a, b, subtitle='', xlog=F) {
+plot_corr = function(d, a, b, subtitle='', xlog=F, draw_diag=T) {
   thecor = paste("r_pearson = ", round(cor(d[[a]], d[[b]], use = "complete.obs"), 4), 
                  "\nr_spearman = ", round(cor(d[[a]], d[[b]], use = "complete.obs", method="spearman"), 4),
                  "\nn =",nrow(d)  )
-  p = ggplot( d %>% filter(!is.na(mapper)), aes_string(x=a, y=b) ) +
-    #geom_point(aes(col=condition, alpha=0.5), size=.5)  +
+  p = ggplot( d %>% filter(!is.na(mapper)), aes_string(x=a, y=b, col='iso') ) +
+    #geom_point(aes(col=condition_id, alpha=0.5), size=.5)  +
     #annotation_custom(thecor) + 
-    stat_binhex(bins=50) + scale_fill_gradientn("", colours = rev(rainbow(10, end = 4/6))) +
+    #geom_point(aes(col=iso, alpha=0.05), size=.5)  +
+    stat_binhex(bins=100) + scale_fill_gradientn("", colours = rev(rainbow(5, end = 4/6))) +
     facet_grid(is_converted_bam ~ mapper) +
-    geom_abline(intercept = 0, slope = 1, col="black",linetype="dotted") +
-    ggtitle(paste0("Correlation between ",a," and ",b, '. ', subtitle), thecor)
+    ggtitle(paste0("Correlation between ",a," and ",b, '\n', subtitle), thecor)
+  if (draw_diag) {
+    p=p+geom_abline(intercept = 0, slope = 1, col="black",linetype="dotted") 
+  }
   if ( xlog ) {
     p=p+scale_x_log10()
   }
   return(p)
 }
 
+tab = d[['tid_performance']] %>% 
+  mutate(num_exons=rnk.x,
+         mappability=case_when(mappability_mean<0.2 ~ 'low',
+                               mappability_mean>0.9 ~ 'high',
+                               T ~ 'medium')
+  ) %>% mutate(
+    mappability=factor(mappability, levels=c('high', 'medium', 'low'))
+  )
 
-
-p1=plot_median_performance(tid_performance)
-p2=plot_median_performance(tid_performance %>% filter(mappability_mean>0.5), subtitle='mean(map) > 0.5')
-p3=plot_corr(tid_performance, "mappability_mean", "F1")
-p4=plot_corr(tid_performance, "GC_frac", "F1")  
-
-plot_grid(p1,p2,p3,p4) 
-ggsave(paste0(params$out_dir,'/tid_performance.pdf'), width = 10, height = 8)
+p1=plot_corr(tab %>% filter(mapper != 'truth', condition_id=='0.1'), "mappability_mean", "F1")
+p2=plot_corr(tab %>% filter(mapper != 'truth', condition_id=='0.1'), "GC_frac", "F1")  
+p3=plot_corr(tab %>% filter(mapper != 'truth', condition_id=='0.1'), "len", "F1", xlog=T, draw_diag=F)  
+p4=plot_corr(tab %>% filter(mapper != 'truth', condition_id=='0.1'), "num_exons", "F1", draw_diag=F)  
+p5=plot_corr(tab %>% filter(mapper != 'truth', condition_id=='0.1', mappability=='high'), "num_exons", "F1", draw_diag=F, subtitle = 'high mappability only')  
+p6=plot_corr(tab %>% filter(mapper != 'truth', mappability=='medium'), "num_exons", "F1", draw_diag=F, subtitle = 'medium mappability only')  
+my_plot_grid(list(p1,p2,p3,p4,p5,p6), main="Correlations with mapping performance") 
+ggsave(paste0(params$out_dir,'/tid_performance_corr.pdf'), width = 16, height = 12)
 
 ```
 
@@ -210,10 +329,10 @@ ggsave(paste0(params$out_dir,'/tid_performance.pdf'), width = 10, height = 8)
 ```{r mismapped_reads}
 
 plot_mismapped_reads = function(d, subtitle='') {
-  dat = d %>% group_by(mapper, condition, iso, is_converted_bam) %>% 
+  dat = d %>% group_by(mapper, condition_id, iso, is_converted_bam) %>% 
     summarise(median_F1=median(F1, na.rm = T))
-  if ( by_cond ) {
-    p=dat %>% ggplot(aes(x=condition, y=median_F1, col=mapper, linetype=iso, group=paste0(mapper, iso))) + 
+  if ( params$plot_type=='by_condition' ) {
+    p=dat %>% ggplot(aes(x=condition_id, y=median_F1, col=mapper, linetype=iso, group=paste0(mapper, iso))) + 
       geom_line() + geom_point() +
       facet_wrap(is_converted_bam~.) +
       ggtitle(paste0("Median F1 measure per transcript (n=",length(unique(d$tid)),")"), subtitle)
@@ -229,22 +348,22 @@ plot_mismapped_reads = function(d, subtitle='') {
 
 
 tab = reads %>% group_by(classification, is_converted_bam, mapper, condition_id, true_isoform) %>% count() 
-if (by_cond) {
+if (params$plot_type=='by_condition') {
   p1 = tab %>% ggplot(aes(x=condition_id, y=n, col=mapper, linetype=true_isoform, group=paste0(mapper, true_isoform, classification))) + 
     geom_line() + 
-    facet_wrap(classification~is_converted_bam) +
+    facet_wrap(classification~.) +
     ggtitle( "Mismapped reads per mapper" )
 } else {
   p1 = tab %>% ggplot(aes(x=mapper, y=n, col=mapper, shape=true_isoform, group=paste0(mapper, true_isoform, classification))) + 
     geom_point() + 
-    facet_wrap(classification~is_converted_bam) +
+    facet_wrap(classification~.) +
     ggtitle( "Mismapped reads per mapper" ) + 
       theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 }
 
 tab = reads %>% filter(is_converted_bam==1) %>% 
   group_by(classification, mapper, condition_id, true_isoform) %>% summarise(m_ntc=mean(n_tc_pos, na.rm=T))
-if (by_cond) {
+if (params$plot_type=='by_condition') {
   p2 = tab %>% ggplot(aes(x=condition_id, y=m_ntc, col=mapper, linetype=true_isoform, group=paste0(mapper, true_isoform, classification))) + 
     geom_line() +
     facet_wrap(classification~.) +
@@ -259,7 +378,7 @@ if (by_cond) {
 
 tab = reads %>% filter(is_converted_bam==1) %>% 
   group_by(classification, mapper, condition_id, true_isoform) %>% summarise(m_seqerr_perc=mean(n_true_seqerr, na.rm=T))
-if (by_cond) {
+if (params$plot_type=='by_condition') {
   p3 = tab %>% ggplot(aes(x=condition_id, y=m_seqerr_perc, col=mapper, linetype=true_isoform, group=paste0(mapper, true_isoform, classification))) + 
     geom_line() + geom_point() +
     facet_wrap(classification~.) +
@@ -273,28 +392,26 @@ if (by_cond) {
 }
 
 plot_grid(p1,p2,p3) 
-ggsave(paste0(params$out_dir,'/read_performance.pdf'), width = 10, height = 8)
+ggsave(paste0(params$out_dir,'/read_performance.pdf'), width = 12, height = 8)
 
 ```
 
 
 ## per-gene stats
-```{r init, include=FALSE}
+```{r}
 gn2tid = function(gn) {
-  return(unique( tid_performance %>% filter(gene_name == gn) %>% pull(tid) ))
+  return(unique( d[['tid_performance']] %>% filter(gene_name == gn) %>% pull(tid) ))
 }
 
 plot_gene = function(gname) {
   tid=gn2tid(gname)
-  if (by_cond) {
-    tid_performance%>% filter(tid==!!gn2tid(gname)) %>% ggplot(aes(x=condition_id, y=F1, col=mapper, linetype=iso, group=paste0(mapper, iso, is_converted_bam ))) + 
+  if (params$plot_type=='by_condition') {
+    tid_performance%>% filter(tid==!!gn2tid(gname)) %>% ggplot(aes(x=condition_id, y=F1, col=mapper, linetype=iso, group=paste0(mapper, iso))) + 
       geom_line() + geom_point() +
-      facet_wrap(is_converted_bam ~.) +
       ggtitle( paste0("F1 for ", gname) )
   } else {
-  tid_performance%>% filter(tid==!!gn2tid(gname)) %>% ggplot(aes(x=mapper, y=F1, col=mapper, shape=iso, group=paste0(mapper, iso, is_converted_bam ))) + 
+  tid_performance%>% filter(tid==!!gn2tid(gname)) %>% ggplot(aes(x=mapper, y=F1, col=mapper, shape=iso, group=paste0(mapper, iso ))) + 
     geom_line() + geom_point() +
-    facet_wrap(is_converted_bam ~.) +
     ggtitle( paste0("F1 for ", gname) ) + 
     theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
   }
@@ -304,9 +421,100 @@ p1=plot_gene('Actb')
 p2=plot_gene('Mat2a')
 p3=plot_gene('Gm10243')
 p4=plot_gene('Ybx1-ps2')
-plot_grid(p1,p2,p3,p4)
+p5=plot_gene('Gm23306')
+p6=plot_gene('Gm38323')
+my_plot_grid(list(p1,p2,p3,p4,p5,p6), main = "example genes")
 ggsave(paste0(params$out_dir,'/example_genes.pdf'), width = 10, height = 8)
 ```     
+
+
+## splice site mappability
+```{r}
+plot_mappability_by_bin = function(tab, type='donor', subtitle='', facet=NA) {
+  group_vars=c('mapper', 'condition_id')
+  if (!is.na(facet)) {
+    # rename by addint '(n=xxx)')
+    cnts = tab %>% 
+      group_by_at(facet) %>% 
+      summarise(n_tid=n_distinct(tid)) %>% 
+      setNames(., c("a", "b")) %>% mutate(c=paste0(a,' (n=',b,')'))
+    labs = setNames(cnts$c, cnts$a)
+    tab[['facet']]=factor( labs[tab[[facet]]], levels=cnts$c)
+    group_vars=c(group_vars, 'facet')
+  }
+  if (type=='donor') {
+    dat = calc_ci(tab %>% group_by_at(group_vars), mean_don_prec, min_lower_ci=0) %>% mutate(name='mean_don_prec')
+  } else {
+    dat = calc_ci(tab %>% group_by_at(group_vars), mean_acc_prec, min_lower_ci=0) %>% mutate(name='mean_acc_prec')
+  }
+  if ( params$plot_type=='by_condition') {
+    p=dat %>% 
+      ggplot(aes(x=condition_id, y=col.mean, col=mapper, group=mapper)) + 
+        geom_ribbon(aes(ymin=lower.ci, ymax=upper.ci), linetype=2, alpha=0.2) +
+        geom_line() +
+        ggtitle(paste0(type, " splice site precision  (n=",length(unique(tab$tid)),")"), subtitle)
+    if (!is.na(facet)) {
+      p=p+facet_wrap(facet~.)
+    }
+  } else {
+    
+  }
+  return(p)
+}
+
+tab = d[['splice_site_mappability']] %>% mutate(
+    mapper=factor(mapper),
+    condition_id=factor(condition),
+    don_prec=ifelse(don_TP_reads+don_FP_reads>0,don_TP_reads/(don_TP_reads+don_FP_reads),0), 
+    acc_prec=ifelse(acc_TP_reads+acc_FP_reads>0,acc_TP_reads/(acc_TP_reads+acc_FP_reads),0)
+    ) %>% 
+  group_by(mapper, condition_id, tid) %>% 
+  summarise(mean_don_prec=mean(don_prec), 
+            mean_acc_prec=mean(acc_prec),
+            mean_don_win_min_map=mean(don_win_min_map),
+            mean_acc_win_min_map=mean(acc_win_min_map)
+            ) %>% 
+  mutate(don_win_map_cat=case_when(
+            mean_don_win_min_map<0.2 ~ 'low',
+            mean_don_win_min_map>0.9 ~ 'high',
+            T ~ 'medium'),
+         acc_win_map_cat=case_when(
+            mean_acc_win_min_map<0.2 ~ 'low',
+            mean_acc_win_min_map>0.9 ~ 'high',
+            T ~ 'medium')
+    ) %>% 
+  mutate(don_win_map_cat=factor(don_win_map_cat, levels=c('high', 'medium', 'low')),
+         acc_win_map_cat=factor(acc_win_map_cat, levels=c('high', 'medium', 'low'))
+         )
+
+p1 = plot_mappability_by_bin(tab, type='donor')
+p2 = plot_mappability_by_bin(tab, type='acceptor')
+p3 = plot_mappability_by_bin(tab, type='donor', subtitle='by SJ mappability', facet='don_win_map_cat')
+p4 = plot_mappability_by_bin(tab, type='acceptor', subtitle='by SJ mappability', facet='acc_win_map_cat')
+my_plot_grid(list(p1,p2,p3,p4), main = "Splice site mappability")
+ggsave(paste0(params$out_dir,'/splice_site_mappability.pdf'), width = 12, height = 8)
+
+# this looks a bit weird: why is STAR mappability so good for SJ with low SJ mappability?
+# check: tab %>% group_by(mapper,  don_win_map_cat) %>% summarise(m=mean(mean_don_prec)) 
+```
+
+## Genes with big mapper differences
+```{r big_diff}
+tab = d[['tid_performance']] %>% 
+  filter(mapper!='truth') %>% 
+  select(condition_id, gene_name, tid, iso, chromosome,start,end,  mapper, F1) %>% 
+  pivot_wider(names_from = mapper, values_from = F1, id_cols = c(condition_id, gene_name, tid, iso, chromosome,start,end)) %>% 
+  mutate(f1_diff=STAR-HISAT3N) 
+tab %>% ggplot(aes(x=condition_id, y=f1_diff, fill=iso)) +
+  geom_boxplot() +
+  geom_hline(yintercept = 0, col='grey', linetype='dotted') +
+  ggtitle("Difference in F1 value per transcript") 
+
+# example gene where there are no mapped reads in HISAT3N / cr==0 for some reason
+d[['tid_performance']] %>% filter(tid=='ENSMUST00000179058.1') %>% select(tid, gene_name,TP,FP,FN,F1, everything())
+
+```
+
 
 # Density
 

@@ -21,8 +21,23 @@ def calc_coverage(true_chr, read_chr, true_pos, read_pos):
         return 0
     cov = len(true_pos & read_pos) / len(true_pos)
     return cov
+def blocks_overlap(a,b):
+    return a[0] <= b[1] and b[0] <= a[1]
+def get_overlapping_isoforms(read, tid, m):
+    """ gets all ids of isoforms of the passed transcript that overlap the passed read """
+    t=m.transcripts[tid]
+    ret=[]
+    for iso_id, iso in t.isoforms.items():
+        overlaps=False
+        for ablock in iso.aln_blocks:
+            for rblock in read.get_blocks():
+                if blocks_overlap(ablock, rblock):
+                    overlaps=True
+        if overlaps:
+            ret+=[iso_id]
+    return ret
 
-def classify_read(read, overlapping_tids, cr, mapper, dict_chr2idx, performance, out_reads, sam_out, overlap_cutoff = 0.8):
+def classify_read(m, read, overlapping_tids, cr, mapper, dict_chr2idx, performance, out_reads, sam_out, overlap_cutoff = 0.8):
     """ Classifies a read """
     read_name = read.query_name
     is_converted_bam=cr>0 # are there any conversions?
@@ -38,7 +53,7 @@ def classify_read(read, overlapping_tids, cr, mapper, dict_chr2idx, performance,
     true_read.reference_start=int(true_start)
     true_pos = set([b for a,b in true_read.get_aligned_pairs() if a is not None and b is not None])
     
-    overlap = calc_coverage(true_chr, read_chr, true_pos, read_pos)
+    overlap = calc_coverage(true_chr, read_chr, true_pos, read_pos) #overlap with transcript region
     true_coord = "%s:%i-%i" % ( true_chr, min(true_pos),  max(true_pos))
     
     # read strongly overlaps with real location; FIXME: check strand!
@@ -55,17 +70,23 @@ def classify_read(read, overlapping_tids, cr, mapper, dict_chr2idx, performance,
                                               is_converted_read, 
                                               ','.join(overlapping_tids) if len(overlapping_tids) > 0 else 'NA', 
                                               read_name)]), file=out_reads)
+        # ignore case where overlap with true transcript is too small.
+        overlapping_tids=[t for t in overlapping_tids if t != true_tid]    
+        # count for each isoform
         for tid in overlapping_tids:
-            performance[tid, true_isoform, 'FP'] += 1/len(overlapping_tids) # fixme; true_isoform refers to the read origin, not the target!
-            if out_reads is not None:
-                print('\t'.join([str(x) for x in (read_coord, true_coord, 'FP', tid, 
-                                                  1 if is_converted_bam else 0, mapper, 
-                                                  cr, 
-                                                  overlap, true_tid, 
-                                                  true_strand, true_isoform, read_tag, true_chr,n_seqerr, n_converted, 
-                                                  is_converted_read,
-                                                  ','.join(overlapping_tids) if len(overlapping_tids) > 0 else 'NA', 
-                                                  read_name)]), file=out_reads)
+            # check overlap with all isoforms:
+            iso_ids=get_overlapping_isoforms(read, tid, m)
+            for iso_id in iso_ids:
+                performance[tid, iso_id, 'FP'] += 1/len(overlapping_tids)
+                if out_reads is not None:
+                    print('\t'.join([str(x) for x in (read_coord, true_coord, 'FP', tid, 
+                                                      1 if is_converted_bam else 0, mapper, 
+                                                      cr, 
+                                                      overlap, iso_id, 
+                                                      true_strand, true_isoform, read_tag, true_chr,n_seqerr, n_converted, 
+                                                      is_converted_read,
+                                                      ','.join(overlapping_tids) if len(overlapping_tids) > 0 else 'NA', 
+                                                      read_name)]), file=out_reads)
         # write FN/FP reads
         if sam_out is not None:
             true_read.query_name = read_name
@@ -102,7 +123,7 @@ def evaluate_bam(bam_file, bam_out, m, mapper, cr, out_performance, out_reads):
             rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=c_len, max_span=None, flag_filter=0) # max_span=m.max_ilen
             for loc, read in rit:
                 n_reads+=1
-                performance = classify_read(read, [], cr, mapper, dict_chr2idx, performance, out_reads, samout)
+                performance = classify_read(m, read, [], cr, mapper, dict_chr2idx, performance, out_reads, samout)
         else:
             aits = [BlockLocationIterator(iter(chrom2trans[c]))]
             rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=c_len, max_span=None, flag_filter=0) # max_span=m.max_ilen
@@ -110,13 +131,13 @@ def evaluate_bam(bam_file, bam_out, m, mapper, cr, out_performance, out_reads):
             for loc, (read, annos) in it:
                 n_reads+=1
                 overlapping_tids = [t[0] for (_, (_, t)) in annos[0]]
-                performance = classify_read(read, overlapping_tids, cr, mapper, dict_chr2idx, performance, out_reads, samout)             
+                performance = classify_read(m, read, overlapping_tids, cr, mapper, dict_chr2idx, performance, out_reads, samout)             
     # add unmapped reads
     for read in samin.fetch(contig=None, until_eof=True):
         if not read.is_unmapped:
             continue
         n_reads+=1
-        performance = classify_read(read, [], cr, mapper, dict_chr2idx, performance, out_reads, samout)
+        performance = classify_read(m, read, [], cr, mapper, dict_chr2idx, performance, out_reads, samout)
     # print("%s reads:  %i %i %i" % (bam_file, n_reads, samin.mapped, samin.unmapped))
     # write tid performance table
     tids= set([x for x, y, z in performance.keys()])
@@ -206,6 +227,7 @@ def evaluate_splice_sites_performance(config, m, bam_file, out_dir):
                     color = ""  
                     if start <= iv.begin:
                         if read.splicing and not read.hasSpliceSite(iv) and end > iv.begin:
+                            # mapped read contains a splice-site but it doesn't cover the intron.  
                             print(read.splicing, iv, read.spliceSites)  
                             performance[tid, intronID, 'donor_rc_splicing_wrong'] += 1
                             bamRead.setTag('YC', colors["exonexonfalse"])
@@ -245,7 +267,7 @@ def evaluate_splice_sites_performance(config, m, bam_file, out_dir):
                     end = read.end
                     bamRead = read.bamRead
                     if end >= iv.end:
-                        if read.splicing and not read.hasSpliceSite(iv) and start < iv.end:
+                        if read.splicing and not read.hasSpliceSite(iv) and start < iv.end: # simulated (true) read is splicing, mapped read is not splicing
                             performance[tid, intronID, 'acceptor_rc_splicing_wrong'] += 1
                             bamRead.setTag('YC', colors["exonexonfalse"])
                             if (samout):
@@ -325,6 +347,288 @@ def evaluate_splice_sites_performance(config, m, bam_file, out_dir):
             intronBuffer['acceptor_rc_splicing_wrong'],
         ]]), file=out_performance)
         if samout is not None:
+            samout.close()
+
+
+def calc_splicesite_performance_OLD(config, m, bam_file, out_dir):
+    """ Count and classify reads overlapping splice_sites """
+    logging.info("Evaluating splice sites in %s" % bam_file)
+    # write intron bam?
+    write_intron_bam=config['write_intron_bam'] if 'write_intron_bam' in config else False
+    # parse mapper and cr from bam file name
+    assert os.path.exists(bam_file) and os.path.exists(bam_file+'.bai'), "Could not find bam file (or idx) for %s" % (bam_file)
+    assert '.cr' in bam_file, "Cannot parse bam file name %s" % (bam_file)
+    tmp = bam_file[:-10] if bam_file.endswith('.final.bam') else bam_file[:-4] # file ends with .bam or .final.bam
+    cr,mapper=tmp[tmp.find('.cr')+3:].rsplit('.', 1)
+    out_file_prefix=out_dir+'/'+config['dataset_name']+'.cr'+cr+'.'+mapper
+    is_converted_bam=float(cr)>0 # are there any conversions?
+    is_truth=mapper=='truth'
+    bam_out_file=out_file_prefix+".intron.bam"
+    # build transcript intervaltree
+    tiv = m.build_transcript_iv()
+    # evaluate
+    performance = Counter()
+    with open(out_file_prefix+'.splice_site_performance.tsv', 'w') as out_performance:
+        print("is_converted_bam\tmapper\tcondition\ttid\tintron_id\tdonor_rc_splicing_TP\tdonor_rc_splicing_FP\tdonor_rc_overlapping_TP\tdonor_rc_overlapping_FP\tdonor_rc_splicing_wrong\tacceptor_rc_splicing_TP\tacceptor_rc_splicing_FP\tacceptor_rc_overlapping_TP\tacceptor_rc_overlapping_FP\tacceptor_rc_splicing_wrong", file=out_performance)
+        n_reads = 0
+        samin = pysam.AlignmentFile(bam_file, "rb")
+        samout = pysam.AlignmentFile(bam_out_file+'.tmp.bam', "wb", template=samin) if write_intron_bam else None
+        performance = Counter()
+        for tid, t in m.transcripts.items():
+            for intron in t.introns:
+                intronID = tid + "_" + str(intron['exon_number'])
+                iv = Interval(intron['start'] - 1, intron['end'] + 1)
+                # get tids of overlapping features
+                annots=[x.data.tid for x in tiv[t.chromosome].overlap(iv.begin, iv.end)]
+                # Iterate reads overlapping Donor read
+                donorIterator = SimulatedReadIterator(samin.fetch(contig=t.chromosome, start=intron['start'] - 1, stop=intron['start']), flagFilter=0)
+                for read in donorIterator:
+                    start = read.start
+                    end = read.end
+                    bamRead = read.bamRead
+                    color = ""  
+                    if start <= iv.begin:
+                        if read.splicing and not read.hasSpliceSite(iv) and end > iv.begin:
+                            # mapped read contains a splice-site but it doesn't cover the intron.  
+                            print(read.splicing, iv, read.spliceSites)  
+                            performance[tid, intronID, 'donor_rc_splicing_wrong'] += 1
+                            bamRead.setTag('YC', colors["exonexonfalse"])
+                            if (samout):
+                                samout.write(bamRead)
+                        elif read.splicing and read.hasSpliceSite(iv) and end > iv.begin:
+                            if read.trueTid == tid and read.trueSpliced:
+                                performance[tid, intronID, 'donor_rc_splicing_TP'] += 1
+                                bamRead.setTag('YC', colors["exonexontrue"])
+                                if (samout):
+                                    samout.write(bamRead)
+                            elif not read.trueTid in annots or not read.trueSpliced:
+                                performance[tid, intronID, 'donor_rc_splicing_FP'] += 1
+                                bamRead.setTag('YC', colors["exonexonfalse"])
+                                if (samout):
+                                    samout.write(bamRead)
+                        elif end > iv.begin:
+                            if read.trueTid == tid and not read.trueSpliced:
+                                performance[tid, intronID, 'donor_rc_overlapping_TP'] += 1
+                                bamRead.setTag('YC', colors["exonintron"])
+                                if (samout):
+                                    samout.write(bamRead)
+                            elif not read.trueTid in annots or read.trueSpliced:
+                                performance[tid, intronID, 'donor_rc_overlapping_FP'] += 1
+                                bamRead.setTag('YC', colors["exonexonfalse"])
+                                if (samout):
+                                    samout.write(bamRead)
+                        else:
+                            bamRead.setTag('YC', colors["intron"])
+                            if (samout):
+                                samout.write(bamRead)
+                    n_reads += 1
+                # Acceptor
+                acceptorIterator = SimulatedReadIterator(samin.fetch(contig=t.chromosome, start=intron['end'], stop=intron['end'] + 1), flagFilter=0)
+                for read in acceptorIterator:
+                    start = read.start
+                    end = read.end
+                    bamRead = read.bamRead
+                    if end >= iv.end:
+                        if read.splicing and not read.hasSpliceSite(iv) and start < iv.end: # simulated (true) read is splicing, mapped read is not splicing
+                            performance[tid, intronID, 'acceptor_rc_splicing_wrong'] += 1
+                            bamRead.setTag('YC', colors["exonexonfalse"])
+                            if (samout):
+                                samout.write(bamRead)
+                        elif read.splicing and read.hasSpliceSite(iv) and start < iv.end:
+                            if read.trueTid == tid and read.trueSpliced:
+                                performance[tid, intronID, 'acceptor_rc_splicing_TP'] += 1
+                                bamRead.setTag('YC', colors["exonexontrue"])
+                                if (samout):
+                                    samout.write(bamRead)
+                            elif not read.trueTid in annots or not read.trueSpliced:
+                                performance[tid, intronID, 'acceptor_rc_splicing_FP'] += 1
+                                bamRead.setTag('YC', colors["exonexonfalse"])
+                                if (samout):
+                                    samout.write(bamRead)
+                        elif start < iv.end:
+                            if read.trueTid == tid and not read.trueSpliced:
+                                performance[tid, intronID, 'acceptor_rc_overlapping_TP'] += 1
+                                bamRead.setTag('YC', colors["exonintron"])
+                                if (samout):
+                                    samout.write(bamRead)
+                            elif not read.trueTid in annots or read.trueSpliced:
+                                performance[tid, intronID, 'acceptor_rc_overlapping_FP'] += 1
+                                bamRead.setTag('YC', colors["exonexonfalse"])
+                                if (samout):
+                                    samout.write(bamRead)
+                        else:
+                            # Start ends at first exon position of acceptor
+                            pass
+                            # bamRead.setTag('YC', colors["intron"])
+                            # if (samout):
+                            #     samout.write(bamRead)    
+                    n_reads += 1
+        print("%s reads:  %i %i %i" % (bam_file, n_reads, samin.mapped, samin.unmapped))
+        samin.close()
+        prevIntron = ""
+        prevTid = ""
+        intronBuffer = Counter()
+        for tid, intron, classification in performance.keys():
+            if intron != prevIntron and prevIntron != "":
+                print("\t".join([str(x) for x in [
+                    1 if is_converted_bam else 0,
+                    mapper,
+                    cr,
+                    prevTid,
+                    prevIntron,
+                    intronBuffer['donor_rc_splicing_TP'],
+                    intronBuffer['donor_rc_splicing_FP'],
+                    intronBuffer['donor_rc_overlapping_TP'],
+                    intronBuffer['donor_rc_overlapping_FP'],
+                    intronBuffer['donor_rc_splicing_wrong'],
+                    intronBuffer['acceptor_rc_splicing_TP'],
+                    intronBuffer['acceptor_rc_splicing_FP'],
+                    intronBuffer['acceptor_rc_overlapping_TP'],
+                    intronBuffer['acceptor_rc_overlapping_FP'],
+                    intronBuffer['acceptor_rc_splicing_wrong']
+                ]]), file=out_performance)    
+                intronBuffer = Counter()
+            intronBuffer[classification] = performance[tid, intron, classification]
+            prevTid = tid
+            prevIntron = intron
+        print("\t".join([str(x) for x in [
+            1 if is_converted_bam else 0,
+            mapper,
+            cr,
+            prevTid,
+            prevIntron,
+            intronBuffer['donor_rc_splicing_TP'],
+            intronBuffer['donor_rc_splicing_FP'],
+            intronBuffer['donor_rc_overlapping_TP'],
+            intronBuffer['donor_rc_overlapping_FP'],
+            intronBuffer['donor_rc_splicing_wrong'],
+            intronBuffer['acceptor_rc_splicing_TP'],
+            intronBuffer['acceptor_rc_splicing_FP'],
+            intronBuffer['acceptor_rc_overlapping_TP'],
+            intronBuffer['acceptor_rc_overlapping_FP'],
+            intronBuffer['acceptor_rc_splicing_wrong'],
+        ]]), file=out_performance)
+        if samout is not None:
+            samout.close()
+
+def supports_splice_site(unal, intron_iv, max_diff=5):
+        """ Checks overlap of passed intron interval and read unaligned blocks. 
+            Overlap check is fuzzy to account for some small alignment errors.
+            Total diff between endpoints must be <= max_diff
+        """ 
+        for ss in unal:
+            diff=abs(ss[0]-intron_iv.begin)+abs(ss[1]-intron_iv.end)
+            if diff <= max_diff:
+                return True
+        return False
+    
+def set_compare(truth, found):
+    """ Compares two sets """
+    TP = truth & found
+    FP = found.difference(truth)
+    FN = truth.difference(found)
+    return TP, FP, FN
+
+def evaluate_splice_site_performance(config, m, bam_file, truth_bam_dir, out_dir):
+    """ Count and classify reads overlapping splice_sites """
+    logging.info("Evaluating splice sites in %s" % bam_file)
+    dict_chr2idx, dict_idx2chr, dict_chr2len=get_chrom_dicts_from_bam(bam_file)
+    # write intron bam?
+    write_intron_bam=config['write_intron_bam'] if 'write_intron_bam' in config else False
+    # parse mapper and cr from bam file name
+    assert os.path.exists(bam_file) and os.path.exists(bam_file+'.bai'), "Could not find bam file (or idx) for %s" % (bam_file)
+    assert '.cr' in bam_file, "Cannot parse bam file name %s" % (bam_file)
+    tmp = bam_file[:-10] if bam_file.endswith('.final.bam') else bam_file[:-4] # file ends with .bam or .final.bam
+    cr,mapper=tmp[tmp.find('.cr')+3:].rsplit('.', 1)
+    out_file_prefix=out_dir+'/'+config['dataset_name']+'.cr'+cr+'.'+mapper
+    is_converted_bam=float(cr)>0 # are there any conversions?
+    bam_out_file=out_file_prefix+".intron.bam"
+    truth_bam_file =  truth_bam_dir+'/'+config['dataset_name']+'.cr'+cr+'.truth.bam'
+    truthBam = pysam.AlignmentFile(truth_bam_file, "rb")
+    # build transcript intervaltree
+    tiv = m.build_transcript_iv()
+    # open BAMs
+    truth_bam = pysam.AlignmentFile(truth_bam_file, "rb")
+    bam = pysam.AlignmentFile(bam_file, "rb")
+    samout = pysam.AlignmentFile(bam_out_file+'.tmp.bam', "wb", template=bam) if write_intron_bam else None
+    # iterate transcripts/introns
+    with open(out_file_prefix+'.splice_site_performance.tsv', 'w') as out_performance:
+        print("is_converted_bam\tmapper\tcondition\ttid\tintron_id\tspl_TP\tspl_FP\tspl_FN\tdon_TP\tdon_FP\tdon_FN\tacc_TP\tacc_FP\tacc_FN", file=out_performance)
+        for tid, t in m.transcripts.items():
+            for intron in t.introns:
+                intronID = tid + "_" + str(intron['exon_number'])
+                iv = Interval(intron['start'] - 1, intron['end'] + 1)
+                # get all true reads that splice/overlap an intron. 
+                true_overlapping_don=set()
+                true_overlapping_acc=set()
+                true_splicing=set()
+                rit = ReadIterator(truth_bam, dict_chr2idx, reference=t.chromosome, start=intron['start'] - 1, end=intron['end'], max_span=None, flag_filter=0)
+                for _,read in rit:
+                    true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted_read = read.query_name.split('_')
+                    # NOTE: read may also stem from different (overlapping) tid, but we ignore for this analysis
+                    # recreate true read
+                    true_read = pysam.AlignedSegment()
+                    true_read.cigarstring=true_cigar
+                    true_read.reference_start=int(true_start)
+                    # check SJ support
+                    true_spliced = supports_splice_site(get_unaligned_blocks(true_read), iv)
+                    true_overlaps_don = true_read.reference_start <= iv.begin and true_read.reference_end >= iv.begin and true_read.reference_end<=iv.end
+                    true_overlaps_acc = true_read.reference_start <= iv.end and true_read.reference_end >= iv.end and true_read.reference_start>iv.begin
+                    if true_spliced:
+                        true_splicing.add(read.query_name)
+                    elif true_overlaps_don:
+                        true_overlapping_don.add(read.query_name)
+                    elif true_overlaps_acc:
+                        true_overlapping_acc.add(read.query_name)
+                # calc mapped overlap
+                mapped_overlapping_don=set()
+                mapped_overlapping_acc=set()
+                mapped_splicing=set()
+                rit = ReadIterator(bam, dict_chr2idx, reference=t.chromosome, start=intron['start'] - 1, end=intron['end'], max_span=None, flag_filter=0)
+                for _, read in rit:
+                    true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted_read = read.query_name.split('_')
+                    spliced = supports_splice_site(get_unaligned_blocks(read), iv)
+                    overlaps_don = read.reference_start <= iv.begin and read.reference_end >= iv.begin and read.reference_end<=iv.end
+                    overlaps_acc = read.reference_start <= iv.end and read.reference_end >= iv.end and read.reference_start>iv.begin
+                    if spliced:
+                        mapped_splicing.add(read.query_name)
+                    elif overlaps_don:
+                        mapped_overlapping_don.add(read.query_name)
+                    elif overlaps_acc:
+                        mapped_overlapping_acc.add(read.query_name)
+                # if transcript is on negative strand: switch donor/acceptor sets
+                if t.strand=='-':
+                    true_overlapping_don,true_overlapping_acc=true_overlapping_acc,true_overlapping_don
+                    mapped_overlapping_don,mapped_overlapping_acc=mapped_overlapping_acc,mapped_overlapping_don
+                # compare sets and calc TP,FP,FN
+                spl_TP,spl_FP,spl_FN=set_compare(true_splicing, mapped_splicing)
+                don_TP,don_FP,don_FN=set_compare(true_overlapping_don, mapped_overlapping_don)
+                acc_TP,acc_FP,acc_FN=set_compare(true_overlapping_acc, mapped_overlapping_acc)
+                # write results
+                print("\t".join([str(x) for x in [
+                    1 if is_converted_bam else 0,
+                    mapper,
+                    cr,
+                    tid,
+                    intronID,
+                    len(spl_TP), len(spl_FP), len(spl_FN),
+                    len(don_TP), len(don_FP), len(don_FN),
+                    len(acc_TP), len(acc_FP), len(acc_FN)]]), file=out_performance)
+                if samout is not None:
+                    # FIXME: slow. can we improve?
+                    FPs=spl_FP | don_FP | acc_FP
+                    FNs=spl_FN | don_FN | acc_FN
+                    rit = ReadIterator(bam, dict_chr2idx, reference=t.chromosome, start=intron['start'] - 1, end=intron['end'], max_span=None, flag_filter=0)
+                    for _, read in rit:
+                        if read.query_name in FPs:
+                           read.set_tag(tag='YC', value='255,0,0', value_type="Z")
+                           samout.write(read)
+                    rit = ReadIterator(truth_bam, dict_chr2idx, reference=t.chromosome, start=intron['start'] - 1, end=intron['end'], max_span=None, flag_filter=0)
+                    for _, read in rit:
+                        if read.query_name in FNs:
+                           read.set_tag(tag='YC', value='255,255,255', value_type="Z")
+                           samout.write(read)
+    if samout is not None:
             samout.close()
 
 def get_spliced_fraction(bam, tid, iv, chromosome, start, end, annots, donor = True) :
@@ -508,7 +812,90 @@ def calculate_splice_site_mappability(config, m, bam_file, truth_bam_dir, out_di
     #     chr, start, end, ovlp, score = line.strip().split()
     #     print("\t".join([chr, start, end, score]), file = f)
     # f.close()
-    # os.remove(tmpBed)           
+    # os.remove(tmpBed)
+    
+    
+    
+    
+def calc_feature_overlap(config, m, mismapped_bam_file, out_dir):
+    """ Calculate FP/FN overlap with transcript feature """
+    # expected filename: big3_slamseq_nf.cr0.HISAT3N.mismapped.bam
+    # parse mapper and cr from bam file name
+    assert os.path.exists(mismapped_bam_file) and os.path.exists(mismapped_bam_file+'.bai'), "Could not find bam file (or idx) for %s" % (mismapped_bam_file)
+    assert '.cr' in mismapped_bam_file, "Cannot parse bam file name %s" % (mismapped_bam_file)
+    assert mismapped_bam_file.endswith('.mismapped.bam')
+    tmp = mismapped_bam_file[:-len('.mismapped.bam')] 
+    cr,mapper=tmp[tmp.find('.cr')+3:].rsplit('.', 1)
+    out_file_prefix=out_dir+'/'+config['dataset_name']+'.cr'+cr+'.'+mapper
+    # calculate list of features
+    dict_chr2idx, dict_idx2chr, dict_chr2len=get_chrom_dicts_from_bam(mismapped_bam_file)
+    chrom2feat=OrderedDict()
+    tid2info={}
+    # build transcript intervaltree
+    tiv = m.build_transcript_iv()
+    for c, c_len in dict_chr2len.items():
+        chrom2feat[c]=[]
+        for tid,t in m.transcripts.items():
+            exon_len=0
+            for exon in t.exons:
+                fid = tid + "_ex" + str(exon['exon_number'])
+                loc=Location(dict_chr2idx[t.chromosome], exon['start'], exon['end'], strand=t.strand)
+                chrom2feat[c].append((loc,(tid, 'exon', fid)))
+                exon_len+=len(loc)
+            intron_len=0
+            for intron in t.introns:
+                loc=Location(dict_chr2idx[t.chromosome], intron['start'], intron['end'], strand=t.strand)
+                fid = tid + "_" + str(intron['exon_number'])
+                chrom2feat[c].append((loc,(tid, 'intron', fid)))
+                intron_len+=len(loc)
+            overlapping=[x.data.tid for x in tiv[t.chromosome].overlap(t.start, t.end) if x.data.tid != tid]
+            tid2info[tid]=(exon_len, intron_len, overlapping)
+    # count FP/FN
+    feat_counter_fp=Counter()
+    feat_counter_fn=Counter()
+    samin = pysam.AlignmentFile(mismapped_bam_file, "rb") 
+    for c, c_len in dict_chr2len.items():
+        if c not in samin.references:
+            continue # no data on this chrom 
+        if len(chrom2feat[c])==0:
+            continue # no annos on this chrom   
+        aits = [BlockLocationIterator(iter(sorted(chrom2feat[c], key=lambda x: x[0]) ))]
+        rit = ReadIterator(samin, dict_chr2idx, reference=c, start=1, end=c_len, max_span=None, flag_filter=0) # max_span=m.max_ilen
+        it = AnnotationOverlapIterator(rit, aits)
+        for loc, (read, annos) in it:
+            true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted_read = read.query_name.split('_')
+            #annos [[('ENSMUST00000029124.7', 'exon', 'ENSMUST00000029124.7_ex1'), ('ENSMUST00000029124.7', 'intron', 'ENSMUST00000029124.7_1')]]
+            overlapping_annos = [t for (_, (_, t)) in annos[0]]
+            if len(overlapping_annos)==0:
+                continue
+            if read.get_tag("YC")=='255,255,255':
+                # count FN for true tid annos           
+                for tid, ftype, fid in overlapping_annos[0]:
+                    if tid == true_tid:
+                        feat_counter_fn[(tid, ftype, fid)]+=1
+            elif read.get_tag("YC")=='255,0,0':
+                # count FP for all overlapping annos            
+                for tid, ftype, fid in overlapping_annos[0]:
+                    feat_counter_fp[(tid, ftype, fid)]+=1
+                
+    with open(out_file_prefix+'.feature_counts.tsv', 'w') as out:
+        print("tid\tftype\tfid\tchromosome\tstart\tend\tFP\tFN", file=out)
+        for c, c_len in dict_chr2len.items():            
+            for loc, (tid, ftype, fid) in sorted(chrom2feat[c], key=lambda x: x[0]):
+                print('\t'.join([str(x) for x in [tid,ftype,fid,c,loc.start,loc.end,
+                                                  feat_counter_fp[(tid, ftype, fid)],
+                                                  feat_counter_fn[(tid, ftype, fid)]
+                                                  ]]), file=out)        
+    with open(out_file_prefix+'.transcript_info.tsv', 'w') as out:
+        print("tid\texon_len\tintron_len\tn_overlapping\toverapping_tids", file=out)
+        for tid,(exon_len, intron_len, overlapping) in tid2info.items():
+            print('\t'.join([str(x) for x in [tid,exon_len,intron_len,len(overlapping),','.join(overlapping)
+                                                  ]]), file=out)  
+        
+        # exon length
+        # overlaps_other_transcripts
+        # FP/FN per feature (exon, intron)
+               
 # if __name__ == '__main__':
 #     config_file='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/splice_sim.config.json'
 #     model_file='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/sim/reference_model/big3_slamseq_nf.model'

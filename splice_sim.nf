@@ -8,6 +8,10 @@ log.info "Dataset : ${params.dataset_name}"
 log.info "====================================="
 log.info "\n"
 
+
+params.create_bams=true
+params.mappers=[:]
+
 /*
  * build model
  */
@@ -100,7 +104,7 @@ process map_star {
     publishDir "sim/bams_star", mode: 'copy'
     
     when: 
-    	params.mappers.STAR
+    	params.mappers.STAR && params.create_bams
     input: 
     	file(fq) from fq1.flatten()
     output: 
@@ -133,7 +137,7 @@ process map_hisat_3n {
     publishDir "sim/bams_hisat3n", mode: 'copy'
     
     when: 
-    	params.mappers.HISAT3N
+    	params.mappers.HISAT3N && params.create_bams
     input: 
     	file(fq) from fq2.flatten()
     output: 
@@ -167,7 +171,7 @@ process map_merangs {
     publishDir "sim/bams_merangs", mode: 'copy'
     
     when: 
-    	params.mappers.MERANGS
+    	params.mappers.MERANGS && params.create_bams
     input: 
     	file(fq) from fq3.flatten()
     output: 
@@ -208,6 +212,8 @@ process postprocess_bams {
 	//cache false 
 	module 'python/3.7.2-gcccore-8.2.0'
 	publishDir "sim/final_bams", mode: 'copy'
+	when: 
+		params.create_bams
 	input: 
 		file(bam) from bams_star.mix(bams_hisat3n, bams_merangs).ifEmpty([])
 		file(bai) from bais_star.mix(bais_hisat3n, bais_merangs).ifEmpty([])

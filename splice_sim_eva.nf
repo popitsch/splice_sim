@@ -29,13 +29,13 @@ log.info "\n"
 process evaluate_bam_performance {
 	tag "$name" 
     cpus 1
-    time 2.h
     module 'python/3.7.2-gcccore-8.2.0:sambamba/0.6.6'
     publishDir "eva/overall_performance", mode: 'copy'
     input:   
     	set name, file(bam), file(bai) from all_bams
     output: 
     	file("*") into bam_performance
+    	set name, file("*mismapped.bam"),file("*mismapped.bam.bai") optional true into mismapped_bams
     script:
 	    """
     		${params.splice_sim_cmd} evaluate_bam_performance \
@@ -56,23 +56,25 @@ process evaluate_bam_performance {
 	} 	
 
 /*
- * evaluate_splice_sites_performance
+ * evaluate_splice_site_performance
  */
-process evaluate_splice_sites_performance {
+process evaluate_splice_site_performance {
 	tag "$name" 
     cpus 1
-    time 2.h
+    time 8.h
     module 'python/3.7.2-gcccore-8.2.0:sambamba/0.6.6'
-    publishDir "eva/splice_sites_performance", mode: 'copy'
+    publishDir "eva/splice_site_performance", mode: 'copy'
+    //cache false
     input:   
     	set name, file(bam), file(bai) from all_bams2
     output: 
     	file("*") into splice_sites_performance
     script:
 	    """
-    		${params.splice_sim_cmd} evaluate_splice_sites_performance \
+    		${params.splice_sim_cmd} evaluate_splice_site_performance \
     			--config ${params.config_file} \
     			--model ${params.model} \
+    			--truth_bam_dir ${params.truth_bam_dir} \
     			--bam_file ${bam} \
     			--outdir .
     			
@@ -93,8 +95,9 @@ process evaluate_splice_sites_performance {
 process calculate_splice_site_mappability {
 	tag "$name" 
     cpus 1
-    time 2.h
-    module 'python/3.7.2-gcccore-8.2.0:bedtools/2.27.1-foss-2018b'
+    time 8.h
+    label "bigmem"
+    module 'python/3.7.2-gcccore-8.2.0:bedtools/2.27.1-foss-2018b:htslib/1.10.2-gcccore-7.3.0'
     publishDir "eva/splice_site_mappability", mode: 'copy'
     input:   
     	set name, file(bam), file(bai) from final_bams2
@@ -109,15 +112,39 @@ process calculate_splice_site_mappability {
     			--bam_file ${bam} \
     			--outdir .
     			
-    		# sort output bed
+    		# sort output bedgraph files
     		shopt -s nullglob
     		for bed in *.bedGraph.tmp
 	    	do
 	    		final_bed="\${bed%.tmp}"
-	    		bedtools sort -i \${bed} | bedtools genomecov -bg -i stdin -g ${params.genome_chromosome_sizes}
+    			bedtools sort -i \${bed} > \${bed}.sorted
+    			bedtools genomecov -bg -i \${bed}.sorted -g ${params.genome_chromosome_sizes} | bedtools map -a stdin -b \${bed}.sorted -o max | cut -f1,2,3,5 > \${final_bed} && rm \${bed}.sorted
+    			bgzip \${final_bed} && tabix \${final_bed}.gz
 	    	done
     	    
 	    """
 	} 	
 
 
+/*
+ * calc_feature_overlap
+ */
+process calc_feature_overlap {
+	tag "$name" 
+    cpus 1
+    module 'python/3.7.2-gcccore-8.2.0:sambamba/0.6.6'
+    publishDir "eva/feature_overlap", mode: 'copy'
+    cache false
+    input:   
+    	set name, file(bam), file(bai) from mismapped_bams
+    output: 
+    	file("*") into feature_overlaps
+    script:
+	    """
+    		${params.splice_sim_cmd} calc_feature_overlap \
+    			--config ${params.config_file} \
+    			--model ${params.model} \
+    			--bam_file ${bam} \
+    			--outdir .    	    
+	    """
+	} 	

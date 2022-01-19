@@ -63,8 +63,45 @@ def calculate_transcript_data(config, tid_meta, tid_file):
             tdata[tid]["gene_name"] = gene_name
             tdata[tid]["abundance"] = base_abundance
             tdata[tid]["isoforms"] = isoform_data
+    elif mode == 'from_file':
+        assert 'transcript_ids' in config, "For 'from_file' mode, a transcript metadata file with headers ['transcript_id','abundance','frac_mature','frac_old_mature'] must be provided in a file referenced by the 'transcript_ids' config property"
+        tid_table_data = pd.read_csv(tid_file,delimiter='\t',encoding='utf-8').set_index('transcript_id').to_dict()
+        assert 'abundance' in tid_table_data.keys(), "For 'from_file' mode, a transcript metadata file with headers ['transcript_id','abundance','frac_mature','frac_old_mature'] must be provided in a file referenced by the 'transcript_ids' config property"
+        assert 'frac_old_mature' in tid_table_data.keys(), "For 'from_file' mode, a transcript metadata file with headers ['transcript_id','abundance','frac_mature','frac_old_mature'] must be provided in a file referenced by the 'transcript_ids' config property"
+        base_abundance = config["base_abundance"] if 'base_abundance' in config else 10
+        for tid, pinfo in tid_meta.items():
+            rnk=pinfo['rnk']-1 # number of  introns
+            gene_name = pinfo['gene_name']
+            isoform_data=OrderedDict()
+            frac_mature=tid_table_data['frac_mature'][tid]
+            if frac_mature=='random':
+                frac_mature=random.uniform(0, 1)
+            frac_old_mature=tid_table_data['frac_old_mature'][tid]
+            if frac_old_mature=='random':
+                frac_old_mature=random.uniform(0, 1)
+            abundance=tid_table_data['abundance'][tid]
+            if abundance=='random':
+                abundance=random.uniform(0, 1)
+            # create per-isoform data
+            isoform_data=OrderedDict()
+            if frac_old_mature>0: # add 'old' rna isoform
+                isoform_data['old'] = OrderedDict()
+                isoform_data['old']['splicing_status']=[1] * rnk
+                isoform_data['old']['fraction']=round(frac_old_mature,3)
+                isoform_data['old']['is_labeled']=0
+            if frac_old_mature < 1.0:
+                isoform_data['pre'] = OrderedDict()
+                if rnk: # at least one intron
+                    isoform_data['pre']['splicing_status']=[0] * rnk
+                isoform_data['pre']['fraction']=round((1-frac_old_mature) * (1-frac_mature),3)
+                isoform_data['pre']['is_labeled']=1
+            # output data
+            tdata[tid] = OrderedDict()
+            tdata[tid]["gene_name"] = gene_name
+            tdata[tid]["abundance"] = base_abundance *  abundance
+            tdata[tid]["isoforms"] = isoform_data
     else:
-        logging.error("Unknown mode %s " % (args.mode))  
+        logging.error("Unknown mode %s " % (mode))  
         sys.exit(1)    
     # Write JSON file
     out_file = config['transcript_data']
@@ -109,6 +146,8 @@ class Isoform():
             self.aln_blocks+=[(bstart, bend)]
             self.aln_block_len+=(bend-bstart+1)
         #print("iso %s, alignment blocks: %s, len: %i" % (self.id, self.aln_blocks, self.aln_block_len))       
+    def len(self):
+        return self.aln_block_len
     def block_contains(self, bstart, bend, abs_pos):
         return abs_pos>=bstart and abs_pos<=bend 
     def __repr__(self):
@@ -320,14 +359,14 @@ class Model():
     def write_isoform_truth(self, outdir):
         """ Write a TSV file with isoform truth data"""
         logging.info("Writing isoform truth data")
-        out_file=outdir+"isoform_truth.tsv"
+        out_file=outdir+self.config["dataset_name"]+".isoform_truth.tsv"
         if not os.path.exists(out_file+".gz"):
             with open(out_file, 'w') as out:
-                print('\t'.join([str(x) for x in ['tid', 'iso', 'is_labeled', 'true_abundance', 'true_fraction', 'splicing_status']]), file=out)
+                print('\t'.join([str(x) for x in ['tid', 'iso', 'is_labeled', 'true_abundance', 'true_fraction', 'splicing_status', 'feature_length']]), file=out)
                 for t in self.transcripts.values():
                     for iso in t.isoforms.values():
                         splice_status=','.join([str(y) for y in iso.splicing_status]) if len(iso.splicing_status)>0 else 'NA'
-                        print('\t'.join([str(x) for x in [t.tid, iso.id, iso.is_labeled, t.abundance, iso.fraction, splice_status]]), file=out)
+                        print('\t'.join([str(x) for x in [t.tid, iso.id, iso.is_labeled, t.abundance, iso.fraction, splice_status, iso.len()]]), file=out)
             bgzip_and_tabix(out_file, create_index=False)
         out_file=out_file+".gz"
         return out_file    

@@ -54,7 +54,7 @@ def get_unaligned_blocks(r, min_len=10):
             last=(x,y)
         else:
             if last[1]==x: # special case, adjacent aligned blocks
-                last=(last[0],x)
+                last=(last[0],y)
                 continue
             missing+=[(last[1], x)]
         last=(x,y)

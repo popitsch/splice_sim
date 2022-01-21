@@ -17,24 +17,18 @@ params:
        value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/data/slamstr/pooled.mm10.all/pooled.mm10.all.Slamstr.stats.trans.final.tsv.gz"  
     # splice_sim_config:
     #    value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_biseq_nf/splice_sim.config.json"
-    # slam_out_dir:
-    #    value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_biseq_nf/slam_out/"
     # out_dir:
     #    value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_biseq_nf/analysis/"
     # plot_type:
     #    value: "by_mapper"
     # splice_sim_config:
     #    value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/splice_sim.config.json"
-    # slam_out_dir:
-    #     value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/slam_out/"
     # out_dir:
     #     value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/analysis/"
     splice_sim_config:
        value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/splice_sim.config.json"
-    slam_out_dir:
-        value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/slam_out/"
     out_dir:
-        value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/analysis/"
+       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/analysis/"
     plot_type:
       value: "by_condition"
 
@@ -63,6 +57,8 @@ require(rjson)
 require(stringr)
 require(VGAM)
 require(cowplot)
+require(arrow)
+require(tictoc)
 
 # load data from TSV
 load_table = function(dataF, append="", header=T) {
@@ -102,67 +98,183 @@ calc_ci = function(d, col, min_lower_ci=NA, max_upper_ci=NA) {
 # data
 ```{r data, include=FALSE}
 
+# # load evaluation results
+# data_file=paste0(params$out_dir,'/evaluation_results.rds')
+# if (file.exists(data_file) ) {
+#   d = readRDS(data_file)
+# } else {
+#   # additional transcript md
+#   gene_anno=load_table(paste0(home_dir, '/sim/reference_model/gene_anno.tsv.gz')) %>% mutate(len=end-start+1)
+#   extra_transcript_table=load_table(params$extra_transcript_table) %>% select(transcript_id, rnk, GC_frac, mappability_median, mappability_mean, T_Pos)
+#   # load data per dataset
+#   tid_performance=tibble()
+#   reads=tibble()
+#   splice_site_performance=tibble()
+#   splice_site_mappability=tibble()
+#   feature_overlap=tibble()
+#   transcript_info=tibble()
+#   conversion_rates=c('0', as.character(conf$condition$conversion_rates))
+#   for ( m in c( 'truth', names(conf$mappers))) {
+#     for ( cr in conversion_rates) {
+#       pre=paste0(home_dir, '/eva/overall_performance/', conf$dataset_name, '.cr',cr, '.', m)
+#       tid_performance=tid_performance %>% rbind(load_table(paste0(pre, '.tid_performance.tsv')))
+#       if (file.exists(paste0(pre, '.reads.tsv'))) {
+#         reads=reads %>% rbind(load_table(paste0(pre, '.reads.tsv')))
+#       }
+#       pre=paste0(home_dir, '/eva/splice_site_performance/', conf$dataset_name, '.cr',cr, '.', m)
+#       if (file.exists(paste0(pre, '.splice_site_performance.tsv'))) {
+#         splice_site_performance=splice_site_performance %>% rbind(load_table(paste0(pre, '.splice_site_performance.tsv')))
+#       }
+#       pre=paste0(home_dir, '/eva/splice_site_mappability/', conf$dataset_name, '.cr',cr, '.', m)
+#       if (file.exists(paste0(pre, '.mappability.tsv'))) {
+#         splice_site_mappability=splice_site_mappability %>% rbind(load_table(paste0(pre, '.mappability.tsv')))
+#       }
+#       pre=paste0(home_dir, '/eva/feature_overlap/', conf$dataset_name, '.cr',cr, '.', m)
+#       #if (file.exists(paste0(pre, '.feature_counts.tsv'))) {
+#       #  feature_overlap=feature_overlap %>% rbind(load_table(paste0(pre, '.feature_counts.tsv')))
+#       #}
+#       if (file.exists(paste0(pre, '.transcript_info.tsv'))) {
+#         transcript_info=transcript_info %>% rbind(load_table(paste0(pre, '.transcript_info.tsv')))
+#       }
+#     }
+#   }
+#   
+#   # add mappability, coords, etc.
+#   tid_performance=tid_performance %>% 
+#     merge(gene_anno, by.x='tid', by.y='transcript_id', all.x=T) %>% 
+#     merge(extra_transcript_table, by.x='tid', by.y='transcript_id', all.x=T) %>% 
+#     mutate(mapper=factor(mapper),
+#            condition_id=factor(condition_id),
+#            precision=TP/(TP+FP), 
+#            recall=TP/(TP+FN), 
+#            F1=2*TP/(2*TP+FP+FN)
+#     )
+#   # combine
+#   d=list()
+#   d[['tid_performance']]=tid_performance
+#   d[['reads']]=reads
+#   d[['splice_site_performance']]=splice_site_performance
+#   d[['splice_site_mappability']]=splice_site_mappability
+#   d[['gene_anno']]=gene_anno
+#   d[['extra_transcript_table']]=extra_transcript_table
+#   d[['feature_overlap']]=feature_overlap
+#   d[['transcript_info']]=transcript_info
+#   saveRDS(d, data_file)
+# }
+
 home_dir=paste0(dirname(params$splice_sim_config),'/')
 conf=fromJSON(paste(readLines(params$splice_sim_config), collapse=""))
 
-# load evaluation results
-data_file=paste0(params$out_dir,'/evaluation_results.rds')
-if (file.exists(data_file) ) {
-  d = readRDS(data_file)
+tic("load evaluation data") # ca. 5-10min.
+d=list()
+d[['tid_performance']]=open_dataset(paste0(home_dir,'/results/overall_performance/')) %>% collect()
+d[['splice_site_performance']]=open_dataset(paste0(home_dir,'/results/splice_site_performance/')) %>% collect()
+d[['splice_site_mappability']]=open_dataset(paste0(home_dir,'/results/splice_site_mappability/')) %>% collect()
+d[['gene_anno']]=open_dataset(paste0(home_dir,'/results/gene_anno/')) %>% collect()
+fc_schema=schema(
+  condition_id = string(), # need to set explicit types as otherwise arrow thinks this is an int
+  tid = string(),
+  fid = string(),
+  start = int64(),
+  end = int64(),
+  FP = int64(),
+  FN = int64(),
+  mapper = string(),
+  chromosome = string(),
+  ftype = string()
+)
+d[['feature_counts']]=open_dataset(paste0(home_dir,'/results/feature_counts/'), schema = fc_schema) # too big, do not collect
+d[['transcript_info']]=open_dataset(paste0(home_dir,'/results/transcript_info/')) %>% collect()
+# optional: read info
+if (file.exists(paste0(home_dir,'/results/reads/')) ) {
+  d[['reads']]=open_dataset(paste0(home_dir,'/results/reads/')) # too big, do not collect
 } else {
-  # load truth data
-  isoform_truth=load_table(paste0(home_dir, '/sim/reference_model/isoform_truth.tsv.gz'))
-  # additional transcript md
-  gene_anno=load_table(paste0(home_dir, '/sim/reference_model/gene_anno.tsv.gz')) %>% mutate(len=end-start+1)
-  extra_transcript_table=load_table(params$extra_transcript_table) %>% select(transcript_id, rnk, GC_frac, mappability_median, mappability_mean, T_Pos)
-  # load data per dataset
-  tid_performance=tibble()
-  reads=tibble()
-  splice_site_performance=tibble()
-  splice_site_mappability=tibble()
-  conversion_rates=c('0', as.character(conf$condition$conversion_rates))
-  for ( m in c( 'truth', names(conf$mappers))) {
-    for ( cr in conversion_rates) {
-      pre=paste0(home_dir, '/eva/overall_performance/', conf$dataset_name, '.cr',cr, '.', m)
-      tid_performance=tid_performance %>% rbind(load_table(paste0(pre, '.tid_performance.tsv')))
-      if (file.exists(paste0(pre, '.reads.tsv'))) {
-        reads=reads %>% rbind(load_table(paste0(pre, '.reads.tsv')))
-      }
-      pre=paste0(home_dir, '/eva/splice_sites_performance/', conf$dataset_name, '.cr',cr, '.', m)
-      if (file.exists(paste0(pre, '.splice_site_performance.tsv'))) {
-        splice_site_performance=splice_site_performance %>% rbind(load_table(paste0(pre, '.splice_site_performance.tsv')))
-      }
-      pre=paste0(home_dir, '/eva/splice_site_mappability/', conf$dataset_name, '.cr',cr, '.', m)
-      if (file.exists(paste0(pre, '.mappability.tsv'))) {
-        splice_site_mappability=splice_site_mappability %>% rbind(load_table(paste0(pre, '.mappability.tsv')))
-      }
-    }
-  }
-  
-  # add mappability, coords, etc.
-  tid_performance=tid_performance %>% 
-    merge(gene_anno, by.x='tid', by.y='transcript_id', all.x=T) %>% 
-    merge(extra_transcript_table, by.x='tid', by.y='transcript_id', all.x=T) %>% 
-    mutate(mapper=factor(mapper),
-           condition_id=factor(condition_id),
-           precision=TP/(TP+FP), 
-           recall=TP/(TP+FN), 
-           F1=2*TP/(2*TP+FP+FN)
-    )
-  # combine
-  d=list()
-  d[['isoform_truth']]=isoform_truth
-  d[['tid_performance']]=tid_performance
-  d[['reads']]=reads
-  d[['splice_site_performance']]=splice_site_performance
-  d[['splice_site_mappability']]=splice_site_mappability
-  saveRDS(d, data_file)
+  d[['reads']]=NA
 }
+d[['extra_transcript_table']]=load_table(params$extra_transcript_table) %>% select(transcript_id, rnk, GC_frac, mappability_median, mappability_mean, T_Pos)
+conversion_rates=c('0', as.character(conf$condition$conversion_rates))
+toc()
 
+tic("data cleaning") 
+# data cleaning ~1min
+# add mappability, coords, etc.
+d[['gene_anno']] = d[['gene_anno']] %>% 
+  mutate(len=end-start+1) %>% 
+  rename(tid=transcript_id)
+d[['extra_transcript_table']] = d[['extra_transcript_table']] %>% 
+  rename(tid=transcript_id) %>% 
+  select(-rnk)
+d[['tid_performance']]=d[['tid_performance']] %>% 
+  merge(d[['gene_anno']], by='tid', all.x=T) %>% 
+  merge(d[['extra_transcript_table']], by='tid', all.x=T) %>% 
+  mutate(mapper=factor(mapper),
+         condition_id=factor(condition_id),
+         precision=TP/(TP+FP), 
+         recall=TP/(TP+FN), 
+         F1=2*TP/(2*TP+FP+FN)
+  )
+d[['splice_site_mappability']] = d[['splice_site_mappability']] %>% 
+  mutate(
+         acc_win_min_map=replace(acc_win_min_map, acc_win_min_map == "None", 0), # set mappability to zero if 'None' reported
+         acc_win_max_map=replace(acc_win_max_map, acc_win_max_map == "None", 0),
+         don_win_min_map=replace(don_win_min_map, don_win_min_map == "None", 0),
+         don_win_max_map=replace(don_win_max_map, don_win_max_map == "None", 0),
+  ) %>% 
+  mutate(acc_win_min_map=as.numeric(acc_win_min_map),
+         acc_win_max_map=as.numeric(acc_win_max_map),
+         don_win_min_map=as.numeric(don_win_min_map),
+         don_win_max_map=as.numeric(don_win_max_map))
+d[['splice_site_performance']] = d[['splice_site_performance']] %>% 
+  merge(d[['gene_anno']], by='tid', all.x=T) %>% 
+  merge(d[['extra_transcript_table']], by='tid', all.x=T) %>% 
+  mutate(mapper=factor(mapper),
+         condition_id=factor(condition),
+         spl_pre=spl_TP/(spl_TP+spl_FP), 
+         spl_rec=spl_TP/(spl_TP+spl_FN), 
+         spl_F1=2*spl_TP/(2*spl_TP+spl_FP+spl_FN),
+         don_pre=don_TP/(don_TP+don_FP), 
+         don_rec=don_TP/(don_TP+don_FN), 
+         don_F1=2*don_TP/(2*don_TP+don_FP+don_FN),
+         acc_pre=acc_TP/(acc_TP+acc_FP), 
+         acc_rec=acc_TP/(acc_TP+acc_FN), 
+         acc_F1=2*acc_TP/(2*acc_TP+acc_FP+acc_FN)
+  )
+toc()
 
 ```
 
 # QC
+
+## Data completeness
+```{r}
+
+# count non-NA values per column for all passed tables
+count_na_per_column = function(d, tables) {
+ counts=tibble()
+  for ( tab in tables ) {
+    nr=nrow(d[[tab]])
+    if (nr>0) {
+      counts=counts %>% rbind(
+        d[[tab]] %>% select(everything()) %>% summarise_all(funs(sum(is.na(.)))) %>% mutate(table=!!tab) %>% collect() %>% pivot_longer(-table) %>% mutate(nr=!!nr, frac=value/nr)
+      )
+    }
+  }
+  return (counts)
+}
+
+# count non NA values per column in all tables (long!)
+#non_na_counts = count_na_per_column(d, names(d))
+non_na_counts = count_na_per_column(d, c("tid_performance","splice_site_performance","splice_site_mappability","gene_anno","transcript_info","extra_transcript_table"))
+ggplot(non_na_counts, aes(x=name, y=frac)) +
+  geom_bar(stat='identity') +
+  facet_wrap(table~., scales = 'free') +
+  ggtitle("Fraction of NA counts per table column") + 
+  xlab("") + ylab("") +
+  ylim(0,1) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+ggsave(paste0(params$out_dir,'/qc_na_counts.pdf'), width = 10, height = 8)
+```
+
 
 ## Missing tids
 
@@ -184,20 +296,31 @@ extra_transcript_table2=load_table(params$extra_transcript_table) %>%
   mutate(missing=ifelse(transcript_id %in% found_tids, 0,1))
 extra_transcript_table2 %>% ggplot(aes(x=factor(missing), y=len)) + 
   geom_violin()  +scale_y_log10() + ggtitle("Length distribution of missing transcripts")
+ggsave(paste0(params$out_dir,'/qc_missing_transcripts.pdf'), width = 10, height = 8)
 
 # did we recover all reads?
 d[['tid_performance']] %>% mutate(all=TP+FN) %>% group_by(mapper, condition_id) %>% summarise(tc=sum(all))
 
 ```
+
+## transcript o erlaps
+```{r}
+
+d[['transcript_info']] %>% count(n_overlapping) %>% 
+  ggplot(aes(x=n_overlapping, y=n)) + 
+  geom_bar(stat='identity') +
+  ggtitle("Histogram of number of overlapping annotations per transcript")
+# example: Sfmbt2 is a miRNA host gene with 120 overlapping annotations
+```
 ## Compare numbers for unspliced transcripts
 ```{r}
 tab = d[['tid_performance']] %>% 
-  filter(rnk.x==1, condition_id=='0.1') %>% 
+  filter(rnk==1, condition_id=='0.1') %>% 
   select(mapper, tid, iso, TP, FP, FN, F1) %>% 
   pivot_wider(names_from = iso, values_from = c(TP,FP,FN,F1), id_cols = c('tid', 'mapper')) %>%
   mutate(f1_diff=F1_mat-F1_pre) %>% 
-  merge(gene_anno, by.x = 'tid', by.y='transcript_id') %>% 
-  merge(extra_transcript_table, by.x = 'tid', by.y='transcript_id')
+  merge(d[['gene_anno']], by = 'tid') %>% 
+  merge(d[['extra_transcript_table']], by = 'tid')
 
 p1 = tab %>% ggplot(aes(x=f1_diff)) + geom_density() + ggtitle("Difference in F1 value between pre/mat for unspliced transcripts. Should be zero!") +
   facet_wrap(mapper~.)
@@ -260,8 +383,8 @@ plot_median_performance_by_bin = function(tab, subtitle='', facet=NA) {
 }
 
 tab = d[['tid_performance']] %>% 
-  mutate(num_exons=case_when(rnk.x<=5 ~ as.character(rnk.x), 
-                             rnk.x>5 ~ '>5',
+  mutate(num_exons=case_when(rnk<=5 ~ as.character(rnk), 
+                             rnk>5 ~ '>5',
                              T ~ 'NA'),
          mappability=case_when(mappability_mean<0.2 ~ 'low',
                                mappability_mean>0.9 ~ 'high',
@@ -289,12 +412,12 @@ plot_corr = function(d, a, b, subtitle='', xlog=F, draw_diag=T) {
   thecor = paste("r_pearson = ", round(cor(d[[a]], d[[b]], use = "complete.obs"), 4), 
                  "\nr_spearman = ", round(cor(d[[a]], d[[b]], use = "complete.obs", method="spearman"), 4),
                  "\nn =",nrow(d)  )
-  p = ggplot( d %>% filter(!is.na(mapper)), aes_string(x=a, y=b, col='iso') ) +
+  p = ggplot( d %>% filter(!is.na(mapper)), aes_string(x=a, y=b) ) +
     #geom_point(aes(col=condition_id, alpha=0.5), size=.5)  +
     #annotation_custom(thecor) + 
     #geom_point(aes(col=iso, alpha=0.05), size=.5)  +
     stat_binhex(bins=100) + scale_fill_gradientn("", colours = rev(rainbow(5, end = 4/6))) +
-    facet_grid(is_converted_bam ~ mapper) +
+    facet_grid(iso ~ mapper) +
     ggtitle(paste0("Correlation between ",a," and ",b, '\n', subtitle), thecor)
   if (draw_diag) {
     p=p+geom_abline(intercept = 0, slope = 1, col="black",linetype="dotted") 
@@ -306,7 +429,7 @@ plot_corr = function(d, a, b, subtitle='', xlog=F, draw_diag=T) {
 }
 
 tab = d[['tid_performance']] %>% 
-  mutate(num_exons=rnk.x,
+  mutate(num_exons=rnk,
          mappability=case_when(mappability_mean<0.2 ~ 'low',
                                mappability_mean>0.9 ~ 'high',
                                T ~ 'medium')
@@ -406,11 +529,11 @@ gn2tid = function(gn) {
 plot_gene = function(gname) {
   tid=gn2tid(gname)
   if (params$plot_type=='by_condition') {
-    tid_performance%>% filter(tid==!!gn2tid(gname)) %>% ggplot(aes(x=condition_id, y=F1, col=mapper, linetype=iso, group=paste0(mapper, iso))) + 
+    d[['tid_performance']] %>% filter(tid==!!gn2tid(gname)) %>% ggplot(aes(x=condition_id, y=F1, col=mapper, linetype=iso, group=paste0(mapper, iso))) + 
       geom_line() + geom_point() +
       ggtitle( paste0("F1 for ", gname) )
   } else {
-  tid_performance%>% filter(tid==!!gn2tid(gname)) %>% ggplot(aes(x=mapper, y=F1, col=mapper, shape=iso, group=paste0(mapper, iso ))) + 
+  d[['tid_performance']] %>% filter(tid==!!gn2tid(gname)) %>% ggplot(aes(x=mapper, y=F1, col=mapper, shape=iso, group=paste0(mapper, iso ))) + 
     geom_line() + geom_point() +
     ggtitle( paste0("F1 for ", gname) ) + 
     theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
@@ -475,12 +598,12 @@ tab = d[['splice_site_mappability']] %>% mutate(
             mean_acc_win_min_map=mean(acc_win_min_map)
             ) %>% 
   mutate(don_win_map_cat=case_when(
-            mean_don_win_min_map<0.2 ~ 'low',
-            mean_don_win_min_map>0.9 ~ 'high',
+            mean_don_win_min_map<0.25 ~ 'low',
+            mean_don_win_min_map>0.75 ~ 'high',
             T ~ 'medium'),
          acc_win_map_cat=case_when(
-            mean_acc_win_min_map<0.2 ~ 'low',
-            mean_acc_win_min_map>0.9 ~ 'high',
+            mean_acc_win_min_map<0.25 ~ 'low',
+            mean_acc_win_min_map>0.75 ~ 'high',
             T ~ 'medium')
     ) %>% 
   mutate(don_win_map_cat=factor(don_win_map_cat, levels=c('high', 'medium', 'low')),
@@ -497,6 +620,150 @@ ggsave(paste0(params$out_dir,'/splice_site_mappability.pdf'), width = 12, height
 # this looks a bit weird: why is STAR mappability so good for SJ with low SJ mappability?
 # check: tab %>% group_by(mapper,  don_win_map_cat) %>% summarise(m=mean(mean_don_prec)) 
 ```
+
+## splice-site mappability corrections
+
+Can we correct for low SJ mappability? 
+- find SJ with low mappabililty across conversion rates + mappers
+- filter: remove genes with too-short exons (e.g., chr13:55,132,787-55,133,731 or chr6:115,227,343-115,259,294) where there are no simulated spliced reads!
+
+
+```{r map_corr}
+ss_perf_per_intron = d[['splice_site_performance']] %>% 
+  group_by(mapper,condition_id,tid,rnk,mappability_mean) %>% 
+  mutate(true_mat=spl_FN+spl_TP,
+         found_mat=spl_FP+spl_TP,
+         true_pre=don_FN+don_TP+acc_FN+acc_TP,
+         found_pre=don_FP+don_TP+acc_FP+acc_TP,
+         ) %>% 
+  mutate(
+         true_spliced=ifelse(true_pre>0,true_mat/(true_pre+true_mat), NA),
+         found_spliced=ifelse(found_pre>0,found_mat/(found_pre+found_mat), NA),
+         diff=abs(true_spliced-found_spliced),
+         low_map=diff>0.01
+  ) %>% ungroup()
+
+CUTOFF=0.05
+max_diff_introns=ss_perf_per_intron %>% 
+  filter(mapper != 'truth') %>% 
+  group_by(intron_id) %>% 
+  summarise(max_diff=max(diff, na.rm = T)) %>% 
+  mutate(low_map=max_diff>!!CUTOFF)
+max_diff_introns %>% dplyr::count(low_map) %>% ggplot(aes(x=low_map, y=n)) + geom_bar(stat='identity') + ggtitle("number of low_mappability introns")
+
+
+high_map_introns = max_diff_introns %>% filter(!low_map) %>% pull(intron_id)
+  
+ss_perf_per_tid = d[['splice_site_performance']] %>% 
+  group_by(mapper,condition_id,tid,rnk,mappability_mean) %>% 
+  summarise(true_mat=sum(spl_FN)+sum(spl_TP),
+         found_mat=sum(spl_FP)+sum(spl_TP),
+         true_pre=sum(don_FN)+sum(don_TP)+sum(acc_FN)+sum(acc_TP),
+         found_pre=sum(don_FP)+sum(don_TP)+sum(acc_FP)+sum(acc_TP),
+         .groups = 'drop'
+         ) %>% 
+  mutate(
+         true_spliced=ifelse(true_pre>0,true_mat/(true_pre+true_mat), NA),
+         found_spliced=ifelse(found_pre>0,found_mat/(found_pre+found_mat), NA),
+  ) %>%  
+  mutate(num_exons=case_when(rnk<=5 ~ as.character(rnk), 
+                             rnk>5 ~ '>5',
+                             T ~ 'NA'),
+         mappability=case_when(mappability_mean<0.2 ~ 'low',
+                               mappability_mean>0.9 ~ 'high',
+                               T ~ 'medium') 
+  )  %>% 
+  mutate(num_exons=factor(num_exons, levels=c('1','2','3','4','5','>5')),
+         mappability=factor(mappability, levels=c('high', 'medium', 'low'))
+  ) %>% 
+  merge(d[['transcript_info']], by='tid', all.x=T)
+
+
+ss_perf_per_tid_filtered = d[['splice_site_performance']] %>%
+  filter(intron_id %in% high_map_introns ) %>% 
+  group_by(mapper,condition_id,tid,rnk,mappability_mean) %>% 
+  summarise(true_mat=sum(spl_FN)+sum(spl_TP),
+         found_mat=sum(spl_FP)+sum(spl_TP),
+         true_pre=sum(don_FN)+sum(don_TP)+sum(acc_FN)+sum(acc_TP),
+         found_pre=sum(don_FP)+sum(don_TP)+sum(acc_FP)+sum(acc_TP),
+         .groups = 'drop'
+         ) %>% 
+  mutate(
+         true_spliced=ifelse(true_pre>0,true_mat/(true_pre+true_mat), NA),
+         found_spliced=ifelse(found_pre>0,found_mat/(found_pre+found_mat), NA),
+  ) %>%  
+  mutate(num_exons=case_when(rnk<=5 ~ as.character(rnk), 
+                             rnk>5 ~ '>5',
+                             T ~ 'NA'),
+         mappability=case_when(mappability_mean<0.2 ~ 'low',
+                               mappability_mean>0.9 ~ 'high',
+                               T ~ 'medium') 
+  )  %>% 
+  mutate(num_exons=factor(num_exons, levels=c('1','2','3','4','5','>5')),
+         mappability=factor(mappability, levels=c('high', 'medium', 'low'))
+  ) %>% 
+  merge(d[['transcript_info']], by='tid', all.x=T)
+
+
+# p1=ss_perf_per_tid %>% 
+#   ggplot(aes(x=condition_id, y=found_spliced)) +
+#     geom_boxplot() +
+#     facet_wrap(mapper~.) +
+#     geom_hline(yintercept = 1/3, linetype='dotted', color='grey') 
+# p2=ss_perf_per_tid %>% 
+#   filter(rnk==2) %>% 
+#   ggplot(aes(x=condition_id, y=found_spliced)) +
+#     geom_boxplot() +
+#     facet_wrap(mapper~.) +
+#     geom_hline(yintercept = 1/3, linetype='dotted', color='grey') 
+
+# unfiltered
+p1=calc_ci(ss_perf_per_tid %>% group_by(mapper, condition_id, num_exons, mappability), found_spliced, min_lower_ci=0) %>% 
+  ggplot(aes(x=condition_id, y=col.mean, col=mapper, group=mapper)) +
+    geom_ribbon(aes(ymin=lower.ci, ymax=upper.ci), linetype=2, alpha=0.2) +
+    geom_line() +
+    ggtitle("frac_mature (uncorrected)", 
+            paste0("n_tids=", ss_perf_per_tid %>% summarise(n=n_distinct(tid)))) +
+    facet_grid(mappability~num_exons) +
+    geom_hline(yintercept = 1/3, linetype='dotted', color='grey') 
+
+p2=calc_ci(ss_perf_per_tid %>% filter(n_overlapping<1) %>% group_by(mapper, condition_id, num_exons, mappability), found_spliced, min_lower_ci=0) %>% 
+  ggplot(aes(x=condition_id, y=col.mean, col=mapper, group=mapper)) +
+    geom_ribbon(aes(ymin=lower.ci, ymax=upper.ci), linetype=2, alpha=0.2) +
+    geom_line() +
+    ggtitle("frac_mature (uncorrected, no overlapping)", 
+            paste0("n_tids=", ss_perf_per_tid %>% filter(n_overlapping<1) %>% summarise(n=n_distinct(tid)))) +
+    facet_grid(mappability~num_exons) +
+    geom_hline(yintercept = 1/3, linetype='dotted', color='grey') 
+
+# filtered 
+p3=calc_ci(ss_perf_per_tid_filtered %>% group_by(mapper, condition_id, num_exons, mappability), found_spliced, min_lower_ci=0) %>% 
+  ggplot(aes(x=condition_id, y=col.mean, col=mapper, group=mapper)) +
+    geom_ribbon(aes(ymin=lower.ci, ymax=upper.ci), linetype=2, alpha=0.2) +
+    geom_line() +
+    ggtitle("frac_mature (corrected)", 
+            paste0("n_tids=", ss_perf_per_tid_filtered %>% summarise(n=n_distinct(tid)))) +
+    facet_grid(mappability~num_exons) +
+    geom_hline(yintercept = 1/3, linetype='dotted', color='grey') 
+
+p4=calc_ci(ss_perf_per_tid_filtered %>% filter(n_overlapping<1) %>% group_by(mapper, condition_id, num_exons, mappability), found_spliced, min_lower_ci=0) %>% 
+  ggplot(aes(x=condition_id, y=col.mean, col=mapper, group=mapper)) +
+    geom_ribbon(aes(ymin=lower.ci, ymax=upper.ci), linetype=2, alpha=0.2) +
+    geom_line() +
+    ggtitle("frac_mature (corrected, no overlapping)", 
+            paste0("n_tids=", ss_perf_per_tid_filtered %>% filter(n_overlapping<1) %>% summarise(n=n_distinct(tid)))) +
+    facet_grid(mappability~num_exons) +
+    geom_hline(yintercept = 1/3, linetype='dotted', color='grey') 
+my_plot_grid(list(p1,p2,p3,p4), main = "Splice site analysis")
+
+```
+
+
+## todo, example genes
+
+- Ttn
+- Npm1
+- Gas5 (snoRNA host gene)
 
 ## Genes with big mapper differences
 ```{r big_diff}
@@ -515,108 +782,3 @@ d[['tid_performance']] %>% filter(tid=='ENSMUST00000179058.1') %>% select(tid, g
 
 ```
 
-
-# Density
-
-```{r dens}
-
-# load tc histogram
-tc_hist=rbind(
-  load_table(paste0(params$slam_out_dir, 'truth_tc_hist.tsv')) %>% mutate(dens=ntc/(ntc+ntt)),
-  load_table(paste0(params$slam_out_dir, 'hisat_tc_hist.tsv')) %>% mutate(dens=ntc/(ntc+ntt)) 
-)
-tc_hist=tc_hist %>% merge(md, by='bam', all.x=T)
-#tc_hist=tc_hist %>% filter(ntt>5) # remove edge situations
-tc_hist[is.na(mapper)]$mapper='truth'
-
-ggplot( tc_hist, aes(x=bam, y=dens)) + 
-  geom_boxplot() + 
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  facet_wrap(is_converted_bam~mapper, scales='free') +
-  ggtitle("tc hist") +
-  scale_y_log10() +
-  ggtitle('ntc/(ntc+ntt)')
-
-ggplot( tc_hist %>% filter(ntt==20, is_converted_bam==1), aes(x=ntc, y=count) ) +
-  geom_bar(stat='identity') +
-  facet_wrap(mapper~condition_id)
-
-# # calculate number of tc reads
-# ftc1=tab1 %>% filter(ntc>1) %>% group_by(bam) %>% summarise(ntc2=sum(count)) %>% merge(
-#   tab1 %>% filter(ntc>0) %>% group_by(bam) %>% summarise(ntc=sum(count)) %>% 
-#   merge(
-#   tab1 %>% group_by(bam) %>% summarise(nall=sum(count)), by='bam'
-#   ) ) %>% mutate(ftc=ntc/nall, ftc2=ntc2/nall)
-# ftc1=ftc1 %>% pivot_longer(-bam) %>% merge(md, by='bam', all.x=T) %>% mutate(sample=paste0('cr=',condition_cr,', cov=',condition_cov, 'X'))
-# ftc1 = ftc1 %>% filter(! name %in% c('ftc2', 'ntc2'))
-# 
-# ftc2=tab2 %>% filter(ntc>1) %>% group_by(bam) %>% summarise(ntc2=sum(count)) %>% merge(
-#   tab2 %>% filter(ntc>0) %>% group_by(bam) %>% summarise(ntc=sum(count)) %>% 
-#   merge(
-#   tab2 %>% group_by(bam) %>% summarise(nall=sum(count)), by='bam'
-#   ) ) %>% mutate(ftc=ntc/nall, ftc2=ntc2/nall)
-# ftc2=ftc2 %>% pivot_longer(-bam) %>% merge(md, by='bam', all.x=T) %>% mutate(sample=paste0('cr=',condition_cr,', cov=',condition_cov, 'X'))
-# ftc2 = ftc2 %>% filter(! name %in% c('ftc2', 'ntc2'))
-# 
-# p3=ggplot(ftc1, aes(x=sample, y=value, fill=bam)) +
-#   geom_bar(stat='identity', position='dodge')+
-#   facet_wrap(is_converted_bam~name, scales='free') + 
-#   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
-# 
-# p4=ggplot(ftc2, aes(x=sample, y=value, fill=bam)) +
-#   geom_bar(stat='identity', position='dodge')+
-#   facet_wrap(is_converted_bam~name, scales='free', nrow = 2) + 
-#   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
-# 
-# plot_grid(p1,p2,p3,p4)
-# 
-# ggplot( tab1 %>% filter(ntt==20, is_converted_bam==1) %>% group_by(condition_cov, condition_cr, ntc) %>% summarise(s=sum(count)), aes(x=ntc, y=s)) + geom_bar(stat='identity', position='dodge') + facet_wrap(condition_cr~condition_cov, nrow = 3)
-# 
-# # for comparison: plot binomial 
-# barplot(table(rbinom( sum( tab1 %>% filter(ntt==20, is_converted_bam==1, condition_cr==0.05, condition_cov==10) %>%  pull(count) ), 20, 0.05)), ylim = c(0,40000))
-# 
-# 
-# CHROM=c(as.character(seq(1,19)), "X", "Y")
-# 
-# # TP/FN reads per chrom/mapper
-# reads=reads%>% mutate(mapped_chr=factor(str_extract(mapped_coords, "[^:]+"), levels=CHROM), true_chr=factor(true_chr, levels=CHROM) )
-# 
-# tab1=reads %>% filter(mapped_chr==true_chr, condition_id=='c_10')%>% group_by(classification, mapper, true_chr, is_converted_bam) %>% summarise(n_reads=n())
-# p1 = ggplot(tab1, aes(x=true_chr, y=n_reads, fill=is_converted_bam)) + geom_bar(stat='identity', position='dodge') + facet_grid(classification~mapper)
-# 
-# tab2=reads %>% filter(mapped_chr==true_chr, condition=='c_10')%>% group_by(classification, mapper, mapped_chr, is_converted_bam) %>% summarise(n_reads=n())
-# p2 = ggplot(tab2, aes(x=mapped_chr, y=n_reads, fill=is_converted_bam)) + geom_bar(stat='identity', position='dodge') + facet_grid(classification~mapper) + ggtitle('Intrachromosomally mismapped reads per mapper for cr=10%')
-# 
-# plot_grid(p1, p2)
-```
-
-## Calculate p from data via ZIB model
-```{r}
-fit_zib_data = function( d, size=20, main='', max_n=NA ) {
-  dat=rep(d$ntc, d$count) # unroll data
-  if ( !is.na(max_n) && (length(dat)>max_n) ) {
-    dat=sample(dat, max_n)
-  }
-  nn=length(dat)
-  zfit <- vglm(cbind(dat,size-dat)~1, zibinomialff(zero = NULL, ionempstr0=0.99), trace = TRUE)
-  pfit=Coef(zfit)[1]
-  pobs0=1-Coef(zfit)[2] # for zibinomialff, onempstr0=1-pstr0
-  sim=rzibinom(nn, size, pfit, pobs0)
-  pdat=rbind( data.frame(value=dat, type='data'), data.frame(value=sim, type='sim') )
-  p=ggplot(pdat, aes(x=value, col=type, fill=type)) + 
-    geom_histogram(position="dodge", bins=max(pdat$value)) +
-    ggtitle(paste0(main,'\nn=',nn,'\np_fit:', pfit, '\npobs0:', pobs0,'\nAIC=',AIC(zfit)))
-  return(p)
-}
-
-size=20 # only reads with this number of convertible positions
-plt=list()
-for ( m in unique(tc_hist$mapper)) {
-  for ( cond in unique(tc_hist$condition_id)) {
-    d =  tc_hist %>% filter(ntt==size, is_converted_bam==1, mapper==m, condition_id==cond )
-    id=paste0(m, '_', cond)
-    plt[[id]] =fit_zib_data(d, size=size, max_n=50000, main=id)
-  }
-}
-plot_grid(plotlist=plt, ncol=6)
-```

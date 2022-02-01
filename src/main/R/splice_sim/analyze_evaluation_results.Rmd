@@ -59,6 +59,10 @@ require(VGAM)
 require(cowplot)
 require(arrow)
 require(tictoc)
+require(ggpubr)
+
+# to ensure stripping '\0' (nul) from character vector
+options(arrow.skip_nul = TRUE)
 
 # load data from TSV
 load_table = function(dataF, append="", header=T) {
@@ -274,7 +278,22 @@ ggplot(non_na_counts, aes(x=name, y=frac)) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 ggsave(paste0(params$out_dir,'/qc_na_counts.pdf'), width = 10, height = 8)
 ```
+## Summary stats
+```{r}
+pdf(paste0(params$out_dir,'/qc_summary_stats.pdf'), width = 10, height = 16)
+d[['splice_site_mappability']] %>% 
+  group_by(mapper) %>% slice_sample(n=10000) %>% ungroup() %>% 
+  select(-c(is_converted_bam,condition,tid,chromosome,start,end,strand )) %>% 
+  pivot_longer(-c('intron_id','mapper')) %>% 
+  ggsummarystats(x = "name", y = "value", color="name",
+    ggfunc = ggboxplot, add = NA,
+    palette = "npg",
+    facet.by = c("mapper")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ggtitle("Summary stats for splice_site_mappability (subsample, n=10k)")
 
+dev.off()
+```
 
 ## Missing tids
 
@@ -303,7 +322,7 @@ d[['tid_performance']] %>% mutate(all=TP+FN) %>% group_by(mapper, condition_id) 
 
 ```
 
-## transcript o erlaps
+## transcript overlaps
 ```{r}
 
 d[['transcript_info']] %>% count(n_overlapping) %>% 

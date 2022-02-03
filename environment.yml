@@ -22,3 +22,5 @@ dependencies:
   - star=2.5.2a
   - biobambam
   - tqdm
+  - rseqc
+  - bedops

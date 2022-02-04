@@ -25,3 +25,4 @@ dependencies:
   - rseqc
   - transdecoder
   - conda-forge::r-base=4.1.2
+  - multiqc

@@ -152,10 +152,21 @@ process calc_feature_overlap {
 	/*
 	 * Prepare rseqc input bams
 	 */
+	 final_bams.mix(truth_bams).
+	 	into { all_bams; all_bams2 }
+
 	Channel.
-		fromPath( 'sim/final_bams/*bam' ).
-		map { file -> tuple(file.baseName, file) }
-		into { rseqc_deletion_input ; rseqc_insertion_input}
+		fromPath( "${workflow.launchDir}/sim/bams_truth/*bam" ).
+		set{ truth_bams_channel }
+
+	Channel.
+		fromPath( "${workflow.launchDir}/sim/final_bams/" ).
+		set{ mapped_bams_channel }
+
+	truth_bams_channel.
+	  mix(mapped_bams_channel).
+		map { file -> tuple(file.baseName, file) }.
+		into { rseqc_deletion_input; rseqc_insertion_input }
 
 	/*
 	 * Prepare rseqc input bed
@@ -163,20 +174,22 @@ process calc_feature_overlap {
 	process gff_to_bed {
 		tag "$name"
 	    cpus 1
-	    module 'bedops/2.4.35'
+	    module 'transdecoder/5.5.0-foss-2018b-perl-5.28.0'
 	    cache false
 
 			when:
     	params.rseqc
 
 	    input:
-	    	set name, file(bam), file(bai) from mismapped_bams
+
 	    output:
 	    	file("gene_anno.bed") into rseqcbed_channel
 	    script:
 		    """
 				  gunzip -c ${params.gene_gff} > gene_anno.gff3
-				  gff2bed < gene_anno.gff3 > gene_anno.bed
+					sed -i 's/\ttranscript\t/\tmRNA\t/g' gene_anno.gff3
+					gff3_file_to_bed.pl gene_anno.gff3 > gene_anno.bed
+				  #gff2bed < gene_anno.gff3 > gene_anno.bed
 		    """
 		}
 
@@ -187,7 +200,7 @@ process calc_feature_overlap {
 			tag "$name"
 	    cpus 1
 	    module 'rseqc/2.6.5-foss-2018b-python-2.7.15'
-			publishDir "eva/rseqc", mode: 'copy'
+			publishDir "eva/rseqc/deletion_profile", mode: 'copy'
 	    cache false
 
 			when:
@@ -202,3 +215,27 @@ process calc_feature_overlap {
 				  deletion_profile.py -i $bam -o $name -l ${params.readlen}
 		    """
 			}
+
+			/*
+			 * Calculate rseqc deletion profile
+			 */
+			process rseqc_deletion_profile {
+				tag "$name"
+		    cpus 1
+		    module 'rseqc/2.6.5-foss-2018b-python-2.7.15'
+				publishDir "eva/rseqc/geneBody_coverage", mode: 'copy'
+		    cache false
+
+				when:
+	    	params.rseqc
+
+		    input:
+		    	set val(name), file(bam) from rseqc_insertion_input.collect()
+					file(reference) from rseqcbed_channel
+		    output:
+		    	file("output") into rseqc_deletion_output
+		    script:
+			    """
+					  geneBody_coverage.py -r $reference -i . -o output
+			    """
+				}

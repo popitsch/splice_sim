@@ -23,4 +23,5 @@ dependencies:
   - biobambam
   - tqdm
   - rseqc
-  - bedops
+  - transdecoder
+  - conda-forge::r-base=4.1.2

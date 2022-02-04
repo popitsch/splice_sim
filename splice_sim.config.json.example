@@ -37,5 +37,6 @@
     "max_ilen": 100000,
     "min_abundance": 1,
     "random_seed": 1234,
-    "readlen": 100
+    "readlen": 100,
+    "rseqc" : true,
 }

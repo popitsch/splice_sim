@@ -184,13 +184,13 @@ process calc_feature_overlap {
 
 	truth_bams_bais_channel.
 		mix(mapped_bams_bais_channel).
-		into { rseqc_deletion_input2; rseqc_genebody_input }
+		set { rseqc_genebody_input }
 
 	/*
 	 * Prepare rseqc input bed
 	 */
 	process gff_to_bed {
-		tag "$name"
+		tag "${params.dataset_name}"
 	    cpus 1
 	    module 'transdecoder/5.5.0-foss-2018b-perl-5.28.0'
 	    cache false
@@ -424,10 +424,10 @@ process calc_feature_overlap {
 
 			/*
 			 * Calculate rseqc genebody profile
-			 *
+			 */
 			process rseqc_genebody_profile {
 				tag "${params.dataset_name}"
-		    cpus 1
+				time='8.h'
 		    module 'rseqc/2.6.5-foss-2018b-python-2.7.15'
 				publishDir "eva/rseqc/geneBody_coverage", mode: 'copy'
 		    cache false
@@ -445,7 +445,6 @@ process calc_feature_overlap {
 					  geneBody_coverage.py -r $reference -i . -o ${params.dataset_name}
 			    """
 				}
-				*/
 
 				/*
 				 * MultiQC
@@ -466,18 +465,18 @@ process calc_feature_overlap {
 						file(rseqc_insertion) from rseqc_insertion_output.collect().ifEmpty([])
 						file(rseqc_deletion) from rseqc_deletion_output.collect().ifEmpty([])
 						file(rseqc_duplication) from rseqc_read_duplication_output.collect().ifEmpty([])
-						file(rseqc_read_distribution) from rseqc_read_distribution_output.collect().ifEmpty([])
+						//file(rseqc_read_distribution) from rseqc_read_distribution_output.collect().ifEmpty([])
 						file(rseqc_read_quality) from rseqc_read_quality_output.collect().ifEmpty([])
 						file(rseqc_junction_annotation) from rseqc_junction_annotation_output.collect().ifEmpty([])
 						file(rseqc_junction_saturation) from rseqc_junction_saturation_output.collect().ifEmpty([])
+						file(rseqc_genebody_profile) from rseqc_genebody_output.collect().ifEmpty([])
 
 			    output:
 			    file "*multiqc_report.html" into ch_multiqc_report
 			    file "*_data"
-			    file "multiqc_plots"
 
 			    script:
 			    """
-			    multiqc -m rseqc -f .
+			      multiqc -m rseqc -f .
 			    """
 				}

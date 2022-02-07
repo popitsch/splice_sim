@@ -24,6 +24,28 @@ log.info "====================================="
 log.info "\n"
 
 /*
+ * extract splice-junction features
+ */
+process extract_splice_junction_features {
+	tag "$name"
+    cpus 1
+    module 'python/3.7.2-gcccore-8.2.0'
+    publishDir "eva/meta", mode: 'copy'
+    input:
+			file(config) from Channel.fromPath("${params.config_file}")
+    	file(model) from Channel.fromPath("${params.model}")
+    output:
+    	file("*SJ.metadata.tsv") into sj_metadata
+    script:
+	    """
+    		${params.splice_sim_cmd} extract_splice_site_features \
+    			--config $config \
+    			--model $model \
+    			--outdir .
+	    """
+	}
+
+/*
  * evaluate_overall_performance
  */
 process evaluate_bam_performance {

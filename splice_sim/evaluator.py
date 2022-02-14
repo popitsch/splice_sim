@@ -4,7 +4,7 @@
 from collections import *
 import csv, datetime, time, logging, sys, os, json, pickle
 import pysam
-from genomic_iterators import Location, get_chrom_dicts_from_bam
+from genomic_iterators import Location, get_chrom_dicts_from_bam, get_chrom_dicts
 from genomic_iterators.bam_iterators import ReadIterator
 from genomic_iterators.grouped_iterators import BlockedIterator, BlockLocationIterator, AnnotationOverlapIterator
 from splice_sim.utils import *
@@ -848,12 +848,6 @@ def calc_feature_overlap(config, m, mismapped_bam_file, out_dir):
                                                   feat_counter_fp[(tid, ftype, fid)],
                                                   feat_counter_fn[(tid, ftype, fid)]
                                                   ]]), file=out)
-    with open(out_file_prefix+'.transcript_info.tsv', 'w') as out:
-        print("tid\texon_len\tintron_len\tn_overlapping\toverapping_tids", file=out)
-        for tid,(exon_len, intron_len, overlapping) in tid2info.items():
-            print('\t'.join([str(x) for x in [tid,exon_len,intron_len,len(overlapping),','.join(overlapping)
-                                                  ]]), file=out)
-
         # exon length
         # overlaps_other_transcripts
         # FP/FN per feature (exon, intron)
@@ -922,6 +916,39 @@ def extract_splice_site_features(config, m, out_dir):
                     acc_win_min_map,
                     acc_win_max_map
                 ]]), file=out)
+
+def extract_transcript_features(config, m, out_dir) :
+    """ Extract transcripts into metadata file"""
+    out_file=out_dir+'/'+config['dataset_name']+'.transcript.metadata.tsv'
+    # calculate list of features
+    dict_chr2idx, dict_idx2chr, dict_chr2len = get_chrom_dicts(config['genome_fa'])
+    chrom2feat=OrderedDict()
+    tid2info={}
+    # build transcript intervaltree
+    tiv = m.build_transcript_iv()
+    for c, c_len in dict_chr2len.items():
+        chrom2feat[c]=[]
+        for tid,t in m.transcripts.items():
+            exon_len=0
+            for exon in t.exons:
+                fid = tid + "_ex" + str(exon['exon_number'])
+                loc=Location(dict_chr2idx[t.chromosome], exon['start'], exon['end'], strand=t.strand)
+                chrom2feat[c].append((loc,(tid, 'exon', fid)))
+                exon_len+=len(loc)
+            intron_len=0
+            for intron in t.introns:
+                loc=Location(dict_chr2idx[t.chromosome], intron['start'], intron['end'], strand=t.strand)
+                fid = tid + "_" + str(intron['exon_number'])
+                chrom2feat[c].append((loc,(tid, 'intron', fid)))
+                intron_len+=len(loc)
+            overlapping=[x.data.tid for x in tiv[t.chromosome].overlap(t.start, t.end) if x.data.tid != tid]
+            tid2info[tid]=(exon_len, intron_len, overlapping)
+
+    with open(out_file, 'w') as out:
+        print("tid\texon_len\tintron_len\tn_overlapping\toverapping_tids", file=out)
+        for tid,(exon_len, intron_len, overlapping) in tid2info.items():
+            print('\t'.join([str(x) for x in [tid,exon_len,intron_len,len(overlapping),','.join(overlapping)
+                                                  ]]), file=out)
 
 # if __name__ == '__main__':
 #     config_file='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/splice_sim.config.json'

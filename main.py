@@ -94,6 +94,11 @@ if __name__ == '__main__':
     parser["extract_splice_site_features"].add_argument("-m", "--model", type=str, required=True, dest="model_file", metavar="model_file", help="model file")
     parser["extract_splice_site_features"].add_argument("-o", "--outdir", type=str, required=True, dest="outdir", metavar="outdir", help="output dir")
 
+    parser["extract_transcript_features"] = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
+    parser["extract_transcript_features"].add_argument("-c", "--config", type=str, required=True, dest="config_file", metavar="config_file", help="JSON config file")
+    parser["extract_transcript_features"].add_argument("-m", "--model", type=str, required=True, dest="model_file", metavar="model_file", help="model file")
+    parser["extract_transcript_features"].add_argument("-o", "--outdir", type=str, required=True, dest="outdir", metavar="outdir", help="output dir")
+
     #============================================================================
     if len(sys.argv) <= 1 or sys.argv[1] in ['-h', '--help']:
         print("usage: splice_sim.py [-h] " + ",".join(parser.keys()))
@@ -191,3 +196,14 @@ if __name__ == '__main__':
             random.seed(config["random_seed"])
             logging.info("setting random seed to %i" % config["random_seed"])
         extract_splice_site_features(config, m, outdir)
+
+    if mod == "extract_transcript_features":
+        # load config to be able to react to config changes after model was built!
+        config=json.load(open(args.config_file), object_pairs_hook=OrderedDict)
+        # load model
+        m = Model.load_from_file(args.model_file)
+        # set random seed
+        if "random_seed" in config:
+            random.seed(config["random_seed"])
+            logging.info("setting random seed to %i" % config["random_seed"])
+        extract_transcript_features(config, m, outdir)

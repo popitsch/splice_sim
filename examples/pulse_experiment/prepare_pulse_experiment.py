@@ -128,7 +128,17 @@ def build_transcriptome(config, tab, out_dir):
     print("GFF file + idx:\t"+out_file_gff3)
     print("BED file + idx:\t"+out_file_bed)
                     
+usage = '''                           
 
+  Copyright 2021 Niko Popitsch. All rights reserved.
+  
+  Licensed under the Apache License 2.0
+  http://www.apache.org/licenses/LICENSE-2.0
+  
+  Distributed on an "AS IS" basis without warranties
+  or conditions of any kind, either express or implied.
+
+'''
 if __name__ == '__main__':
     
     parser = {}

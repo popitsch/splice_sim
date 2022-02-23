@@ -27,8 +27,7 @@ log.info "\n"
  * extract transcript features
  */
 process extract_transcript_features {
-	tag "$name"
-    cpus 1
+	tag "${params.dataset_name}"
     module 'python/3.7.2-gcccore-8.2.0'
     publishDir "eva/meta", mode: 'copy'
     input:
@@ -49,8 +48,7 @@ process extract_transcript_features {
  * extract splice-junction features
  */
 process extract_splice_junction_features {
-	tag "$name"
-    cpus 1
+	tag "${params.dataset_name}"
     module 'python/3.7.2-gcccore-8.2.0'
     publishDir "eva/meta", mode: 'copy'
     input:
@@ -72,7 +70,7 @@ process extract_splice_junction_features {
  */
 process evaluate_bam_performance {
 	tag "$name"
-    cpus 1
+	label "medium"
     module 'python/3.7.2-gcccore-8.2.0:sambamba/0.6.6'
     publishDir "eva/overall_performance", mode: 'copy'
     input:
@@ -104,8 +102,6 @@ process evaluate_bam_performance {
  */
 process evaluate_splice_site_performance {
 	tag "$name"
-    cpus 1
-    time 8.h
     module 'python/3.7.2-gcccore-8.2.0:sambamba/0.6.6'
     publishDir "eva/splice_site_performance", mode: 'copy'
     //cache false
@@ -138,9 +134,6 @@ process evaluate_splice_site_performance {
  */
 process calculate_splice_site_mappability {
 	tag "$name"
-    cpus 1
-    time 8.h
-    label "bigmem"
     module 'python/3.7.2-gcccore-8.2.0:bedtools/2.27.1-foss-2018b:htslib/1.10.2-gcccore-7.3.0'
     publishDir "eva/splice_site_mappability", mode: 'copy'
     input:
@@ -266,8 +259,6 @@ process calc_feature_overlap {
 			publishDir "eva/rseqc/clipping_profile", mode: 'copy'
 			cache false
 
-			label 'highmem'
-
 			when:
 			params.rseqc
 
@@ -290,8 +281,6 @@ process calc_feature_overlap {
 			module 'rseqc/2.6.5-foss-2018b-python-2.7.15'
 			publishDir "eva/rseqc/mismatch_profile", mode: 'copy'
 			cache false
-
-			label 'highmem'
 
 			when:
 			params.rseqc
@@ -316,8 +305,6 @@ process calc_feature_overlap {
 			publishDir "eva/rseqc/insertion_profile", mode: 'copy'
 	    cache false
 
-			label 'highmem'
-
 			when:
     	params.rseqc
 
@@ -340,8 +327,6 @@ process calc_feature_overlap {
 	    module 'rseqc/2.6.5-foss-2018b-python-2.7.15'
 			publishDir "eva/rseqc/deletion_profile", mode: 'copy'
 	    cache false
-
-			label 'highmem'
 
 			when:
     	params.rseqc
@@ -391,8 +376,6 @@ process calc_feature_overlap {
 			publishDir "eva/rseqc/read_distribution", mode: 'copy'
 			cache false
 
-			label 'highmem'
-
 			when:
 			params.rseqc
 
@@ -409,7 +392,7 @@ process calc_feature_overlap {
 
 			/*
 			 * Calculate rseqc read quality
-			 */
+			 *
 			process rseqc_read_quality {
 				tag "$name"
 				cpus 1
@@ -431,6 +414,7 @@ process calc_feature_overlap {
 					  read_quality.py -i $bam -o $name
 					"""
 				}
+				*/
 
 			/*
 			 * Calculate rseqc junction annotation
@@ -441,8 +425,6 @@ process calc_feature_overlap {
 		    module 'rseqc/2.6.5-foss-2018b-python-2.7.15'
 				publishDir "eva/rseqc/junction_annotation", mode: 'copy'
 		    cache false
-
-				label 'highmem'
 
 				when:
 	    	params.rseqc
@@ -467,8 +449,6 @@ process calc_feature_overlap {
 		    module 'rseqc/2.6.5-foss-2018b-python-2.7.15'
 				publishDir "eva/rseqc/junction_saturation", mode: 'copy'
 		    cache false
-
-				label 'highmem'
 
 				when:
 	    	params.rseqc
@@ -530,7 +510,7 @@ process calc_feature_overlap {
 						file(rseqc_deletion) from rseqc_deletion_output.collect().ifEmpty([])
 						file(rseqc_duplication) from rseqc_read_duplication_output.collect().ifEmpty([])
 						//file(rseqc_read_distribution) from rseqc_read_distribution_output.collect().ifEmpty([])
-						file(rseqc_read_quality) from rseqc_read_quality_output.collect().ifEmpty([])
+						//file(rseqc_read_quality) from rseqc_read_quality_output.collect().ifEmpty([])
 						file(rseqc_junction_annotation) from rseqc_junction_annotation_output.collect().ifEmpty([])
 						file(rseqc_junction_saturation) from rseqc_junction_saturation_output.collect().ifEmpty([])
 						file(rseqc_genebody_profile) from rseqc_genebody_output.collect().ifEmpty([])

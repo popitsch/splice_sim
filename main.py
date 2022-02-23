@@ -89,6 +89,15 @@ if __name__ == '__main__':
     parser["calc_feature_overlap"].add_argument("-b", "--bam_file", type=str, required=True, dest="bam_file", metavar="bam_file", help="input bam file")
     parser["calc_feature_overlap"].add_argument("-o", "--outdir", type=str, required=True, dest="outdir", metavar="outdir", help="output dir")
 
+    parser["calc_transcript_info"] = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
+    parser["calc_transcript_info"].add_argument("-c", "--config", type=str, required=True, dest="config_file", metavar="config_file", help="JSON config file")
+    parser["calc_transcript_info"].add_argument("-m", "--model", type=str, required=True, dest="model_file", metavar="model_file", help="model file")
+    parser["calc_transcript_info"].add_argument("-o", "--outdir", type=str, required=True, dest="outdir", metavar="outdir", help="output dir")
+
+    parser["write_parquet_db"] = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
+    parser["write_parquet_db"].add_argument("-c", "--config", type=str, required=True, dest="config_file", metavar="config_file", help="JSON config file")
+    parser["write_parquet_db"].add_argument("-i", "--indir", type=str, required=True, dest="indir", metavar="indir", help="input splice_sim directory")
+    parser["write_parquet_db"].add_argument("-o", "--outdir", type=str, required=True, dest="outdir", metavar="outdir", help="output dir")
 
 
     #============================================================================    
@@ -178,3 +187,14 @@ if __name__ == '__main__':
             logging.info("setting random seed to %i" % config["random_seed"])
         calc_feature_overlap(config, m, args.bam_file, outdir)
  
+    if mod == "calc_transcript_info":
+        # load config to be able to react to config changes after model was built!
+        config=json.load(open(args.config_file), object_pairs_hook=OrderedDict)
+        # load model
+        m = Model.load_from_file(args.model_file)
+        calc_transcript_info(config, m, outdir)
+        
+    if mod == "write_parquet_db":
+        # load config to be able to react to config changes after model was built!
+        config=json.load(open(args.config_file), object_pairs_hook=OrderedDict)
+        write_parquet_db(config, args.indir, outdir)

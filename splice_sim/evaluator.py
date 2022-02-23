@@ -4,13 +4,13 @@
 from collections import *
 import csv, datetime, time, logging, sys, os, json, pickle
 import pysam
-from genomic_iterators import Location, get_chrom_dicts_from_bam
+from genomic_iterators import Location, get_chrom_dicts_from_bam, get_chrom_dicts
 from genomic_iterators.bam_iterators import ReadIterator
 from genomic_iterators.grouped_iterators import BlockedIterator, BlockLocationIterator, AnnotationOverlapIterator
 from splice_sim.utils import *
 from splice_sim.model import *
 from splice_sim.iterator import *
-
+import glob
 
 def basename(f):
     return os.path.splitext(os.path.basename(f))[0]
@@ -127,7 +127,7 @@ def evaluate_bam(bam_file, bam_out, m, mapper, cr, out_performance, out_reads):
         else:
             aits = [BlockLocationIterator(iter(chrom2trans[c]))]
             rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=c_len, max_span=None, flag_filter=0) # max_span=m.max_ilen
-            it = AnnotationOverlapIterator(rit, aits)
+            it = AnnotationOverlapIterator(rit, aits, check_read_alignment=False)
             for loc, (read, annos) in it:
                 n_reads+=1
                 overlapping_tids = [t[0] for (_, (_, t)) in annos[0]]
@@ -521,6 +521,22 @@ def supports_splice_site(unal, intron_iv, max_diff=5):
             if diff <= max_diff:
                 return True
         return False
+def aligns_to_iv(alblocks, iv, slop=0):
+        """ Checks overlap of passed interval +/- slop and read blocks.""" 
+        iv=(iv.begin-slop, iv.end+slop)
+        for ss in alblocks:
+            if (ss[0] <= iv[1] and iv[0] <= ss[1]):
+                return True
+        return False
+def aligns_to_SJ(alblocks, intron_iv, slop=10):
+        """ Checks overlap of passed intron interval +/- slop and read blocks. 
+        """ 
+        sj1=(intron_iv.begin-slop, intron_iv.begin+slop)
+        sj2=(intron_iv.end-slop, intron_iv.end+slop)
+        for ss in alblocks:
+            if (ss[0] <= sj1[1] and sj1[0] <= ss[1]) or (ss[0] <= sj2[1] and sj2[0] <= ss[1]):
+                return True
+        return False
     
 def set_compare(truth, found):
     """ Compares two sets """
@@ -553,8 +569,10 @@ def evaluate_splice_site_performance(config, m, bam_file, truth_bam_dir, out_dir
     samout = pysam.AlignmentFile(bam_out_file+'.tmp.bam', "wb", template=bam) if write_intron_bam else None
     # iterate transcripts/introns
     with open(out_file_prefix+'.splice_site_performance.tsv', 'w') as out_performance:
-        print("is_converted_bam\tmapper\tcondition\ttid\tintron_id\tspl_TP\tspl_FP\tspl_FN\tdon_TP\tdon_FP\tdon_FN\tacc_TP\tacc_FP\tacc_FN", file=out_performance)
+        print("is_converted_bam\tmapper\tcondition\ttid\tintron_id\tspl_TP\tspl_FP\tspl_FN\tdon_TP\tdon_FP\tdon_FN\tacc_TP\tacc_FP\tacc_FN\tchromosome\tstart\tend\tstrand", file=out_performance)
         for tid, t in m.transcripts.items():
+            if 'debug_tid' in config and config['debug_tid'] != tid:
+                continue
             for intron in t.introns:
                 intronID = tid + "_" + str(intron['exon_number'])
                 iv = Interval(intron['start'] - 1, intron['end'] + 1)
@@ -564,6 +582,9 @@ def evaluate_splice_site_performance(config, m, bam_file, truth_bam_dir, out_dir
                 true_splicing=set()
                 rit = ReadIterator(truth_bam, dict_chr2idx, reference=t.chromosome, start=intron['start'] - 1, end=intron['end'], max_span=None, flag_filter=0)
                 for _,read in rit:
+                    #  skip reads that do not align to [SJ+/- slop] 
+                    if not aligns_to_SJ(read.get_blocks(), iv):
+                        continue                    
                     true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted_read = read.query_name.split('_')
                     # NOTE: read may also stem from different (overlapping) tid, but we ignore for this analysis
                     # recreate true read
@@ -586,6 +607,9 @@ def evaluate_splice_site_performance(config, m, bam_file, truth_bam_dir, out_dir
                 mapped_splicing=set()
                 rit = ReadIterator(bam, dict_chr2idx, reference=t.chromosome, start=intron['start'] - 1, end=intron['end'], max_span=None, flag_filter=0)
                 for _, read in rit:
+                    # skip reads that do not align to [SJ+/- slop] 
+                    if not aligns_to_SJ(read.get_blocks(), iv):
+                        continue                    
                     true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted_read = read.query_name.split('_')
                     spliced = supports_splice_site(get_unaligned_blocks(read), iv)
                     overlaps_don = read.reference_start <= iv.begin and read.reference_end >= iv.begin and read.reference_end<=iv.end
@@ -613,7 +637,8 @@ def evaluate_splice_site_performance(config, m, bam_file, truth_bam_dir, out_dir
                     intronID,
                     len(spl_TP), len(spl_FP), len(spl_FN),
                     len(don_TP), len(don_FP), len(don_FN),
-                    len(acc_TP), len(acc_FP), len(acc_FN)]]), file=out_performance)
+                    len(acc_TP), len(acc_FP), len(acc_FN),
+                    t.chromosome, intron['start'], intron['end'], t.strand]]), file=out_performance)
                 if samout is not None:
                     # FIXME: slow. can we improve?
                     FPs=spl_FP | don_FP | acc_FP
@@ -747,10 +772,11 @@ def calculate_splice_site_mappability(config, m, bam_file, truth_bam_dir, out_di
                     # calculate genomic mappability
                     don_win_genomic = [intron['start'] - readlen, intron['start'] + readlen] if intron['strand'] == "+" else [intron['end'] - readlen, intron['end'] + readlen]
                     acc_win_genomic = [intron['start'] - readlen, intron['start'] + readlen] if intron['strand'] == "-" else [intron['end'] - readlen, intron['end'] + readlen]
-                    don_win_map = [float(x[3]) for x in genomeMappability.fetch('chr'+t.chromosome, don_win_genomic[0], don_win_genomic[1], parser=pysam.asTuple())]
+                    gmap_prefix=config['gmap_prefix'] if 'gmap_prefix' in config else 'chr'
+                    don_win_map = [float(x[3]) for x in genomeMappability.fetch(gmap_prefix+t.chromosome, don_win_genomic[0], don_win_genomic[1], parser=pysam.asTuple())]
                     don_win_min_map=min(don_win_map) if len(don_win_map)>0 else None
                     don_win_max_map=max(don_win_map) if len(don_win_map)>0 else None
-                    acc_win_map = [float(x[3]) for x in genomeMappability.fetch('chr'+t.chromosome, acc_win_genomic[0], acc_win_genomic[1], parser=pysam.asTuple())]
+                    acc_win_map = [float(x[3]) for x in genomeMappability.fetch(gmap_prefix+t.chromosome, acc_win_genomic[0], acc_win_genomic[1], parser=pysam.asTuple())]
                     acc_win_min_map=min(acc_win_map) if len(acc_win_map)>0 else None  
                     acc_win_max_map=max(acc_win_map) if len(acc_win_map)>0 else None                       
                     # get RNA subseq from transcript seq. NOTE: may be shorter than 2xreadlen
@@ -830,26 +856,23 @@ def calc_feature_overlap(config, m, mismapped_bam_file, out_dir):
     # calculate list of features
     dict_chr2idx, dict_idx2chr, dict_chr2len=get_chrom_dicts_from_bam(mismapped_bam_file)
     chrom2feat=OrderedDict()
-    tid2info={}
-    # build transcript intervaltree
-    tiv = m.build_transcript_iv()
-    for c, c_len in dict_chr2len.items():
-        chrom2feat[c]=[]
-        for tid,t in m.transcripts.items():
-            exon_len=0
-            for exon in t.exons:
-                fid = tid + "_ex" + str(exon['exon_number'])
-                loc=Location(dict_chr2idx[t.chromosome], exon['start'], exon['end'], strand=t.strand)
-                chrom2feat[c].append((loc,(tid, 'exon', fid)))
-                exon_len+=len(loc)
-            intron_len=0
-            for intron in t.introns:
-                loc=Location(dict_chr2idx[t.chromosome], intron['start'], intron['end'], strand=t.strand)
-                fid = tid + "_" + str(intron['exon_number'])
-                chrom2feat[c].append((loc,(tid, 'intron', fid)))
-                intron_len+=len(loc)
-            overlapping=[x.data.tid for x in tiv[t.chromosome].overlap(t.start, t.end) if x.data.tid != tid]
-            tid2info[tid]=(exon_len, intron_len, overlapping)
+    
+    for tid,t in m.transcripts.items():
+        c=t.chromosome
+        if c not in chrom2feat:
+            chrom2feat[c]=[]
+        exon_len=0
+        for exon in t.exons:
+            fid = tid + "_ex" + str(exon['exon_number'])
+            loc=Location(dict_chr2idx[t.chromosome], exon['start'], exon['end'], strand=t.strand)
+            chrom2feat[c].append((loc,(tid, 'exon', fid)))
+            exon_len+=len(loc)
+        intron_len=0
+        for intron in t.introns:
+            loc=Location(dict_chr2idx[t.chromosome], intron['start'], intron['end'], strand=t.strand)
+            fid = tid + "_" + str(intron['exon_number'])
+            chrom2feat[c].append((loc,(tid, 'intron', fid)))
+            intron_len+=len(loc)
     # count FP/FN
     feat_counter_fp=Counter()
     feat_counter_fn=Counter()
@@ -857,11 +880,11 @@ def calc_feature_overlap(config, m, mismapped_bam_file, out_dir):
     for c, c_len in dict_chr2len.items():
         if c not in samin.references:
             continue # no data on this chrom 
-        if len(chrom2feat[c])==0:
+        if c not in chrom2feat or len(chrom2feat[c])==0:
             continue # no annos on this chrom   
         aits = [BlockLocationIterator(iter(sorted(chrom2feat[c], key=lambda x: x[0]) ))]
         rit = ReadIterator(samin, dict_chr2idx, reference=c, start=1, end=c_len, max_span=None, flag_filter=0) # max_span=m.max_ilen
-        it = AnnotationOverlapIterator(rit, aits)
+        it = AnnotationOverlapIterator(rit, aits, check_read_alignment=False)
         for loc, (read, annos) in it:
             true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted_read = read.query_name.split('_')
             #annos [[('ENSMUST00000029124.7', 'exon', 'ENSMUST00000029124.7_ex1'), ('ENSMUST00000029124.7', 'intron', 'ENSMUST00000029124.7_1')]]
@@ -872,31 +895,91 @@ def calc_feature_overlap(config, m, mismapped_bam_file, out_dir):
                 # count FN for true tid annos           
                 for tid, ftype, fid in overlapping_annos[0]:
                     if tid == true_tid:
-                        feat_counter_fn[(tid, ftype, fid)]+=1
+                        feat_counter_fn[(c, tid, ftype, fid)]+=1
             elif read.get_tag("YC")=='255,0,0':
                 # count FP for all overlapping annos            
                 for tid, ftype, fid in overlapping_annos[0]:
-                    feat_counter_fp[(tid, ftype, fid)]+=1
-                
+                    feat_counter_fp[(c, tid, ftype, fid)]+=1
+    # write result table            
     with open(out_file_prefix+'.feature_counts.tsv', 'w') as out:
-        print("tid\tftype\tfid\tchromosome\tstart\tend\tFP\tFN", file=out)
-        for c, c_len in dict_chr2len.items():            
-            for loc, (tid, ftype, fid) in sorted(chrom2feat[c], key=lambda x: x[0]):
-                print('\t'.join([str(x) for x in [tid,ftype,fid,c,loc.start,loc.end,
-                                                  feat_counter_fp[(tid, ftype, fid)],
-                                                  feat_counter_fn[(tid, ftype, fid)]
-                                                  ]]), file=out)        
-    with open(out_file_prefix+'.transcript_info.tsv', 'w') as out:
+        print("mapper\tcondition_id\ttid\tftype\tfid\tchromosome\tstart\tend\tFP\tFN", file=out)
+        for c, c_len in dict_chr2len.items():     
+            if c in chrom2feat:    
+                for loc, (tid, ftype, fid) in sorted(chrom2feat[c], key=lambda x: x[0]):
+                    print('\t'.join([str(x) for x in [mapper, cr, tid,ftype,fid,c,loc.start,loc.end,
+                                                      feat_counter_fp[(c, tid, ftype, fid)],
+                                                      feat_counter_fn[(c, tid, ftype, fid)]
+                                                      ]]), file=out)        
+
+def calc_transcript_info(config, m, out_dir):
+    """ Calculate FP/FN overlap with transcript feature """
+    # calculate list of features
+    dict_chr2idx, dict_idx2chr, dict_chr2len=get_chrom_dicts(config["genome_fa"])
+    tid2info={}
+    # build transcript intervaltree
+    tiv = m.build_transcript_iv()
+    for c, c_len in dict_chr2len.items():
+        for tid,t in m.transcripts.items():
+            exon_len=0
+            for exon in t.exons:
+                exon_len+=len(loc)
+            intron_len=0
+            for intron in t.introns:
+                intron_len+=len(loc)
+            overlapping=[x.data.tid for x in tiv[t.chromosome].overlap(t.start, t.end) if x.data.tid != tid]
+            tid2info[tid]=(exon_len, intron_len, overlapping)
+    # write result table
+    with open(out_dir+'/transcript_info.tsv', 'w') as out:
         print("tid\texon_len\tintron_len\tn_overlapping\toverapping_tids", file=out)
         for tid,(exon_len, intron_len, overlapping) in tid2info.items():
-            print('\t'.join([str(x) for x in [tid,exon_len,intron_len,len(overlapping),','.join(overlapping)
-                                                  ]]), file=out)  
-        
-        # exon length
-        # overlaps_other_transcripts
-        # FP/FN per feature (exon, intron)
-               
-# if __name__ == '__main__':
+            print('\t'.join([str(x) for x in [tid,exon_len,intron_len,len(overlapping),','.join(overlapping)]]), file=out)  
+
+def write_parquet_table(tsv_file, partition_cols, out_dir):
+    """ Convert TSV to parquet """
+    tab = pd.read_csv(tsv_file,
+                          delimiter='\t',
+                          encoding='utf-8',
+                          float_precision='high',
+                          quoting=csv.QUOTE_NONE,
+                          low_memory=False,
+                          error_bad_lines=True,
+                          dtype={'condition':  'object'}
+                          )  
+    
+    tab.to_parquet(out_dir, partition_cols=partition_cols)
+
+# '''import pandas as pd
+# def fix_file(in_file):
+#     out_file=in_file+'.fixed'
+#     tmp = in_file[:-len('.feature_counts.tsv')] 
+#     cr,mapper=tmp[tmp.find('.cr')+3:].rsplit('.', 1)
+#     tab = pd.read_csv(in_file,
+#                           delimiter='\t',
+#                           encoding='utf-8',
+#                           float_precision='high',
+#                           quoting=csv.QUOTE_NONE,
+#                           low_memory=False,
+#                           error_bad_lines=True
+#                           )  
+#     tab.insert(0, "condition_id", [cr] * len(tab['tid']), True)
+#     tab.insert(0, "mapper", [mapper] * len(tab['tid']), True)
+#     tab.to_csv(out_file, sep="\t", index=False)
+#     '''
+def write_parquet_db(config, in_dir, out_dir):  
+    """ Create a result parquet database """
+    for data_file in glob.glob("%s/eva/overall_performance/*.tid_performance.tsv" % in_dir):
+        write_parquet_table(data_file, ['mapper'], out_dir+'/overall_performance')
+    for data_file in glob.glob("%s/eva/splice_site_mappability/*.mappability.tsv" % in_dir):
+        write_parquet_table(data_file, ['mapper'], out_dir+'/splice_site_mappability')
+    for data_file in glob.glob("%s/eva/splice_site_performance/*.splice_site_performance.tsv" % in_dir):
+        write_parquet_table(data_file, ['mapper'], out_dir+'/splice_site_performance')
+    for data_file in glob.glob("%s/eva/feature_overlap/*.feature_counts.tsv" % in_dir):
+        write_parquet_table(data_file, ['mapper', 'chromosome', 'ftype'], out_dir+'/feature_counts')
+    write_parquet_table("%s/eva/transcript_info/transcript_info.tsv" % in_dir, [], out_dir+'/transcript_info')
+    write_parquet_table("%s/sim/reference_model/gene_anno.tsv.gz" % in_dir, [], out_dir+'/gene_anno')
+    
+    print("All done.")
+    
 #     config_file='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/splice_sim.config.json'
 #     model_file='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/sim/reference_model/big3_slamseq_nf.model'
 #     out_dir='/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/sim/reference_model/delme/'

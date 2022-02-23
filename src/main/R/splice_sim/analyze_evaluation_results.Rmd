@@ -14,7 +14,7 @@ geometry: margin=1in
 classoption: a4paper
 params:
     extra_transcript_table:
-       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/data/slamstr/pooled.mm10.all/pooled.mm10.all.Slamstr.stats.trans.final.tsv.gz"  
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/data/slamstr/pooled.mm10.all/pooled.mm10.all.Slamstr.stats.trans.final.tsv.gz"  
     # splice_sim_config:
     #    value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_biseq_nf/splice_sim.config.json"
     # out_dir:
@@ -26,9 +26,9 @@ params:
     # out_dir:
     #     value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/analysis/"
     splice_sim_config:
-       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/splice_sim.config.json"
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/splice_sim.config.json"
     out_dir:
-       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/analysis/"
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/analysis/"
     plot_type:
       value: "by_condition"
 
@@ -60,6 +60,12 @@ require(cowplot)
 require(arrow)
 require(tictoc)
 require(ggpubr)
+
+# NB install arrow with snappy on Rstudio server
+# Sys.setenv(ARROW_WITH_SNAPPY = "ON")
+# Sys.setenv(NOT_CRAN="true")
+# Sys.setenv(LIBARROW_BINARY="FALSE")
+# install.packages("arrow", repos = "https://arrow-r-nightly.s3.amazonaws.com")
 
 # to ensure stripping '\0' (nul) from character vector
 options(arrow.skip_nul = TRUE)
@@ -171,7 +177,7 @@ conf=fromJSON(paste(readLines(params$splice_sim_config), collapse=""))
 
 tic("load evaluation data") # ca. 5-10min.
 d=list()
-d[['tid_performance']]=open_dataset(paste0(home_dir,'/results/overall_performance/')) %>% collect()
+d[['tid_performance']]=open_dataset(paste0(home_dir,'/results/overall_performance/'), format="parquet") %>% collect()
 d[['splice_site_performance']]=open_dataset(paste0(home_dir,'/results/splice_site_performance/')) %>% collect()
 d[['splice_site_mappability']]=open_dataset(paste0(home_dir,'/results/splice_site_mappability/')) %>% collect()
 d[['gene_anno']]=open_dataset(paste0(home_dir,'/results/gene_anno/')) %>% collect()

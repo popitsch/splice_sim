@@ -44,6 +44,7 @@ def build_transcriptome(config, tab, out_dir):
     out_file_chrsize=out_dir+'/'+transcriptome_name+'.fa.chrom.sizes'
     out_file_dict=out_dir+'/'+transcriptome_name+'.fa.dict'
     out_file_gff3=out_dir+'/'+transcriptome_name+'.gff3'
+    out_file_gtf=out_dir+'/'+transcriptome_name+'.gtf'
     out_file_bed=out_dir+'/'+transcriptome_name+'.bed'
     tid2start={}
     # process data
@@ -51,70 +52,85 @@ def build_transcriptome(config, tab, out_dir):
         with open(out_file_chrsize, 'w') as out_chrsize:        
             with open(out_file_dict, 'w') as out_dict:        
                 with open(out_file_gff3, 'w') as out_gff3:
-                    with open(out_file_bed, 'w') as out_bed:
-                        f = pysam.TabixFile(config["gene_gff"], mode="r")
-                        for row in tqdm.tqdm(f.fetch(parser=pysam.asTuple()), desc="Processing features"):
-                            reference, source,ftype,fstart,fend,score,strand,phase,info=row
-                            pinfo=parse_info( info )
-                            tid = pinfo['transcript_id'] if 'transcript_id' in pinfo else None
-                            if tid not in tids:
-                                continue
-                            if ftype != 'transcript':
-                                continue
-                            fstart=int(fstart)-1
-                            fend=int(fend)
-                            ampstart=max(1,fstart-amp_extension)
-                            ampend=fend+amp_extension
-                            offset=padding+(fstart-ampstart)+1
-                            seq='N'*padding+genome.fetch(reference, ampstart, ampend)+'N'*padding
-                            new_chrom=tid
-                            new_chrom_len=ampend-ampstart+1+2*padding # length of new chrom
-                            tid2start[tid]=ampstart
-                            # FASTA                            
-                            print('>%s'% new_chrom, file=out_fasta)
-                            print(format_fasta(seq), file=out_fasta)
-                            # chrom.sizes file
-                            print('%s\t%i'% (new_chrom,new_chrom_len), file=out_chrsize)
-                            # DICT
-                            print('@SQ\tSN:%s\tLN:%i\tM5:%s\tUR:file:%s'% (new_chrom,
-                                                                           new_chrom_len,
-                                                                           hashlib.md5(seq.encode('utf-8')).hexdigest(), # M5 MD5 checksum of the sequence in the uppercase, excluding spaces but including pads (as ‘*’s)
-                                                                           os.path.abspath(out_file_fasta)), file=out_dict)
-                        
-                            # BED
-                            print("\t".join([str(x) for x in [
-                                new_chrom,
-                                offset-1, # start
-                                offset+fend-fstart-1, # end
-                                new_chrom,
-                                '.' if score is None else score,
-                                '.' if strand is None else strand
-                                ]]), file=out_bed)          
-                                          
-                        f = pysam.TabixFile(config["gene_gff"], mode="r")
-                        for row in tqdm.tqdm(f.fetch(parser=pysam.asTuple()), desc="Processing features"):    
-                            reference, source,ftype,fstart,fend,score,strand,phase,info=row
-                            pinfo=parse_info( info )
-                            tid = pinfo['transcript_id'] if 'transcript_id' in pinfo else None
-                            if tid not in tids:
-                                continue
-                            fstart=int(fstart)-1
-                            fend=int(fend)
-                            ampstart=tid2start[tid]
-                            offset=padding+(fstart-ampstart)+1
-                            new_chrom=tid
-                            # GFF
-                            print("\t".join([str(x) for x in [
-                                new_chrom,
-                                source,
-                                ftype,
-                                offset, # start
-                                offset+fend-fstart-1, # end
-                                score,
-                                strand,
-                                phase,
-                                info
-                                ]]), file=out_gff3)
+                    with open(out_file_gtf, 'w') as out_gtf:
+                        with open(out_file_bed, 'w') as out_bed:
+                            f = pysam.TabixFile(config["gene_gff"], mode="r")
+                            for row in tqdm.tqdm(f.fetch(parser=pysam.asTuple()), desc="Processing features"):
+                                reference, source,ftype,fstart,fend,score,strand,phase,info=row
+                                pinfo=parse_info( info )
+                                tid = pinfo['transcript_id'] if 'transcript_id' in pinfo else None
+                                if tid not in tids:
+                                    continue
+                                if ftype != 'transcript':
+                                    continue
+                                fstart=int(fstart)-1
+                                fend=int(fend)
+                                ampstart=max(1,fstart-amp_extension)
+                                ampend=fend+amp_extension
+                                offset=padding+(fstart-ampstart)+1
+                                seq='N'*padding+genome.fetch(reference, ampstart, ampend)+'N'*padding
+                                new_chrom=tid
+                                new_chrom_len=ampend-ampstart+1+2*padding # length of new chrom
+                                tid2start[tid]=ampstart
+                                # FASTA                            
+                                print('>%s'% new_chrom, file=out_fasta)
+                                print(format_fasta(seq), file=out_fasta)
+                                # chrom.sizes file
+                                print('%s\t%i'% (new_chrom,new_chrom_len), file=out_chrsize)
+                                # DICT
+                                print('@SQ\tSN:%s\tLN:%i\tM5:%s\tUR:file:%s'% (new_chrom,
+                                                                               new_chrom_len,
+                                                                               hashlib.md5(seq.encode('utf-8')).hexdigest(), # M5 MD5 checksum of the sequence in the uppercase, excluding spaces but including pads (as ‘*’s)
+                                                                               os.path.abspath(out_file_fasta)), file=out_dict)
+                            
+                                # BED
+                                print("\t".join([str(x) for x in [
+                                    new_chrom,
+                                    offset-1, # start
+                                    offset+fend-fstart-1, # end
+                                    new_chrom,
+                                    '.' if score is None else score,
+                                    '.' if strand is None else strand
+                                    ]]), file=out_bed)          
+                                              
+                            f = pysam.TabixFile(config["gene_gff"], mode="r")
+                            for row in tqdm.tqdm(f.fetch(parser=pysam.asTuple()), desc="Processing features"):    
+                                reference, source,ftype,fstart,fend,score,strand,phase,info=row
+                                pinfo=parse_info( info )
+                                tid = pinfo['transcript_id'] if 'transcript_id' in pinfo else None
+                                if tid not in tids:
+                                    continue
+                                fstart=int(fstart)-1
+                                fend=int(fend)
+                                ampstart=tid2start[tid]
+                                offset=padding+(fstart-ampstart)+1
+                                new_chrom=tid
+                                # GFF
+                                print("\t".join([str(x) for x in [
+                                    new_chrom,
+                                    source,
+                                    ftype,
+                                    offset, # start
+                                    offset+fend-fstart-1, # end
+                                    score,
+                                    strand,
+                                    phase,
+                                    info
+                                    ]]), file=out_gff3)
+                                # GTF
+                                if ftype in ['CDS', 'exon']:
+                                    gtf_info='transcript_id "%s"; gene_id "%s"; gene_name "%s";' % (pinfo['transcript_id'], pinfo['gene_id'], pinfo['gene_name'])
+                                    print("\t".join([str(x) for x in [
+                                        new_chrom,
+                                        source,
+                                        ftype,
+                                        offset, # start
+                                        offset+fend-fstart-1, # end
+                                        score,
+                                        strand,
+                                        phase,
+                                        info
+                                        ]]), file=out_gtf)
 
     # compress + index output files            
     sort_bgzip_and_tabix(out_file_gff3, seq_col=0, start_col=3, end_col=4, line_skip=0, zerobased=False)
@@ -126,8 +142,19 @@ def build_transcriptome(config, tab, out_dir):
     print("CHROMSIZE file:\t"+out_file_chrsize)
     print("DICT file:\t"+out_file_dict)
     print("GFF file + idx:\t"+out_file_gff3)
+    print("GTF file:\t"+out_file_gtf)
     print("BED file + idx:\t"+out_file_bed)
                     
+
+usage = '''                           
+
+  Copyright (C) 2022 XXX.  All rights reserved.
+
+  Distributed on an "AS IS" basis without warranties
+  or conditions of any kind, either express or implied.
+
+USAGE
+'''
 
 if __name__ == '__main__':
     
@@ -194,14 +221,18 @@ echo "Starting splice_sim pipeline with profile $profile"
                 elif cr_mode=='cr_dec':
                     conversion_rates=list(reversed([0.02, 0.025, 0.03, 0.035, 0.04, 0.045, 0.05]))
                 for tp in range(1, config['timepoints']+1):
+                    config_file=tp_dir+config['transcriptome_name']+'.'+cr_mode+'.'+str(tp)+'.config.json'
+                    isoform_data=config['transcriptome_name']+'.'+cr_mode+'.'+str(tp)+'.isoform_data.tsv'
                     tp_config={
-                        "dataset_name": config['transcriptome_name']+'_tp%i'%(tp),
+                        "dataset_name": config['transcriptome_name']+'.'+cr_mode+'.'+str(tp),
+                        "config_file": config_file,
                         "splice_sim_cmd": config['splice_sim_cmd'],
                         "genome_fa": out_dir+'ref/%s.fa' % (config['transcriptome_name']),
                         "genome_chromosome_sizes": out_dir+'ref/%s.fa.chrom.sizes' % (config['transcriptome_name']),
-                        "gene_gff": out_dir+'ref/%s.gff.gz' % (config['transcriptome_name']),
+                        "gene_gff": out_dir+'ref/%s.gff3.gz' % (config['transcriptome_name']),
                         "create_bams": False,
-                        "transcript_ids": "conf/isoform_data.tsv",
+                        "transcript_ids": isoform_data,
+                        "transcript_data": config['transcriptome_name']+'.'+cr_mode+'.'+str(tp)+".data.config.json",
                         "isoform_mode": "from_file",
                         "condition": {
                             "ref": "T",
@@ -214,14 +245,15 @@ echo "Starting splice_sim pipeline with profile $profile"
                         "random_seed": 1234,
                         "readlen": 100,
                         "create_tdf": False,
-                        "write_reads": False
+                        "write_reads": False,
+                        "mappers": {}
                         }
-                    with open(tp_dir+'pulse_experiment.'+cr_mode+'.'+str(tp)+'.config.json', 'w') as out:
+                    with open(config_file, 'w') as out:
                         json.dump(tp_config, out, indent=4)
             
                     # write config per timepoint
-                    with open(tp_dir+'pulse_experiment.'+cr_mode+'.'+str(tp)+'.isoform_data.tsv', 'w') as out:
-                        print('transcript_id\tabundance\tfrac_mature\tfrac_old_mature', file=out)
+                    with open(tp_dir+isoform_data, 'w') as out:
+                        print('transcript_id\tabundance\tfrac_mature\tfrac_old_mature\tconversion_rate', file=out)
                         for tid in tab['mode'].keys():
                             if tab['mode'][tid]==1: # constant (steady-state) abundance; decreasing fraction of unlabeled rnas
                                 abundance=1
@@ -231,8 +263,8 @@ echo "Starting splice_sim pipeline with profile $profile"
                                 abundance=0 if tp <= config['timepoints']/2 else 1
                                 frac_mat=1
                                 frac_old_mat=0
-                            print('\t'.join([str(x) for x in [tid, abundance, frac_mat, frac_old_mat]]), file=out)
+                            print('\t'.join([str(x) for x in [tid, abundance, frac_mat, frac_old_mat, conversion_rates[tp-1]]]), file=out)
         
                     # write run command
-                    print("nextflow -log logs/nextflow.log run ../nf1/splice_sim/splice_sim.nf -params-file %s -resume -profile $profile" % (tp_dir+'pulse_experiment.'+cr_mode+'.'+str(tp)+'.config.json'), file=script_out)    
+                    print("nextflow -log logs/nextflow.log run ../nf1/splice_sim/splice_sim.nf -params-file %s -resume -profile $profile" % (tp_dir+config['transcriptome_name']+'.'+cr_mode+'.'+str(tp)+'.config.json'), file=script_out)    
     

@@ -22,3 +22,7 @@ dependencies:
   - star=2.5.2a
   - biobambam
   - tqdm
+  - rseqc
+  - transdecoder
+  - conda-forge::r-base=4.1.2
+  - multiqc

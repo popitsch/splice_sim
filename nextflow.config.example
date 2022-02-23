@@ -21,7 +21,7 @@ profiles {
     process.executor = 'local'
     process.memory = '62 GB'
     process.cpus = 8
-  }	
+  }
   //SLURM (cbe)
   cbe {
     process {
@@ -39,12 +39,19 @@ profiles {
         time='2.d'
       	queue='c'
       }
+      withLabel: 'highmem' {
+        clusterOptions = '--qos=short'
+        memory='200 GB'
+        cpus=16
+        time='8.h'
+      	queue='m'
+      }
       withLabel: 'long' {
         clusterOptions = '--qos=long'
-        memory='128 GB'
+        memory='200 GB'
         cpus=16
         time='4.d'
-        queue='c'
+        queue='m'
       }
      beforeScript = 'hostname; module purge; ml list; export DISPLAY=""; export R_LIBS_USER=""; export R_LIBS=""; export PYTHONPATH=""; export PERL5LIB="";'
     }

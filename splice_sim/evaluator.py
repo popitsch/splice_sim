@@ -862,7 +862,7 @@ def calc_feature_overlap(config, m, mismapped_bam_file, out_dir):
             continue # no annos on this chrom   
         aits = [BlockLocationIterator(iter(sorted(chrom2feat[c], key=lambda x: x[0]) ))]
         rit = ReadIterator(samin, dict_chr2idx, reference=c, start=1, end=c_len, max_span=None, flag_filter=0) # max_span=m.max_ilen
-        it = AnnotationOverlapIterator(rit, aits, check_read_alignment=False)
+        it = AnnotationOverlapIterator(rit, aits, check_read_alignment=True)
         for loc, (read, annos) in it:
             true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted_read = read.query_name.split('_')
             #annos [[('ENSMUST00000029124.7', 'exon', 'ENSMUST00000029124.7_ex1'), ('ENSMUST00000029124.7', 'intron', 'ENSMUST00000029124.7_1')]]
@@ -873,11 +873,11 @@ def calc_feature_overlap(config, m, mismapped_bam_file, out_dir):
                 # count FN for true tid annos
                 for tid, ftype, fid in overlapping_annos[0]:
                     if tid == true_tid:
-                        feat_counter_fn[(c, tid, ftype, fid)]+=1
+                        feat_counter_fn[(tid, c, ftype, fid)]+=1
             elif read.get_tag("YC")=='255,0,0':
                 # count FP for all overlapping annos
                 for tid, ftype, fid in overlapping_annos[0]:
-                    feat_counter_fp[(tid, ftype, fid)]+=1
+                    feat_counter_fp[(tid, c, ftype, fid)]+=1
     with open(out_file_prefix+'.feature_counts.tsv', 'w') as out:
         print("tid\tftype\tfid\tchromosome\tstart\tend\tFP\tFN", file=out)
         for c, c_len in dict_chr2len.items():
@@ -885,8 +885,8 @@ def calc_feature_overlap(config, m, mismapped_bam_file, out_dir):
                 continue # no annos on this chrom   
             for loc, (tid, ftype, fid) in sorted(chrom2feat[c], key=lambda x: x[0]):
                 print('\t'.join([str(x) for x in [tid,ftype,fid,c,loc.start,loc.end,
-                                                  feat_counter_fp[(tid, ftype, fid)],
-                                                  feat_counter_fn[(tid, ftype, fid)]
+                                                  feat_counter_fp[(tid, c, ftype, fid)],
+                                                  feat_counter_fn[(tid, c, ftype, fid)]
                                                   ]]), file=out)
         # exon length
         # overlaps_other_transcripts

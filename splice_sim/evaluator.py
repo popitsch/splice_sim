@@ -862,7 +862,7 @@ def calc_feature_overlap(config, m, mismapped_bam_file, out_dir):
             continue # no annos on this chrom   
         aits = [BlockLocationIterator(iter(sorted(chrom2feat[c], key=lambda x: x[0]) ))]
         rit = ReadIterator(samin, dict_chr2idx, reference=c, start=1, end=c_len, max_span=None, flag_filter=0) # max_span=m.max_ilen
-        it = AnnotationOverlapIterator(rit, aits, check_read_alignment=False)
+        it = AnnotationOverlapIterator(rit, aits, check_read_alignment=True)
         for loc, (read, annos) in it:
             true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted_read = read.query_name.split('_')
             #annos [[('ENSMUST00000029124.7', 'exon', 'ENSMUST00000029124.7_ex1'), ('ENSMUST00000029124.7', 'intron', 'ENSMUST00000029124.7_1')]]

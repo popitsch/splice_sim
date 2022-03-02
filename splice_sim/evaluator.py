@@ -984,8 +984,8 @@ def extract_transcript_features(config, m, out_dir):
         for tid,(exon_len, intron_len, overlapping) in tid2info.items():
             print('\t'.join([str(x) for x in [tid,exon_len,intron_len,len(overlapping),','.join(overlapping)]]), file=out)
 
-def write_parquet_table(tsv_file, partition_cols, out_dir):
-    """ Convert TSV to parquet """
+def write_parquet_table(tsv_file, partition_cols, out_dir, add_columns=None, add_values=None):
+    """ Convert TSV to parquet. Constant columns can be added by providing a list of column names (add_columns) and values (add_values)"""
     tab = pd.read_csv(tsv_file,
                           delimiter='\t',
                           encoding='utf-8',
@@ -995,26 +995,11 @@ def write_parquet_table(tsv_file, partition_cols, out_dir):
                           error_bad_lines=True,
                           dtype={'condition':  'object'}
                           )  
-    
+    if add_columns is not None:
+        for i,col in enumerate(add_columns):
+            tab.insert(0, col, [add_values[i]] * len(tab.index), True)
     tab.to_parquet(out_dir, partition_cols=partition_cols)
 
-# '''import pandas as pd
-# def fix_file(in_file):
-#     out_file=in_file+'.fixed'
-#     tmp = in_file[:-len('.feature_counts.tsv')] 
-#     cr,mapper=tmp[tmp.find('.cr')+3:].rsplit('.', 1)
-#     tab = pd.read_csv(in_file,
-#                           delimiter='\t',
-#                           encoding='utf-8',
-#                           float_precision='high',
-#                           quoting=csv.QUOTE_NONE,
-#                           low_memory=False,
-#                           error_bad_lines=True
-#                           )  
-#     tab.insert(0, "condition_id", [cr] * len(tab['tid']), True)
-#     tab.insert(0, "mapper", [mapper] * len(tab['tid']), True)
-#     tab.to_csv(out_file, sep="\t", index=False)
-#     '''
 def write_parquet_db(config, in_dir, out_dir):  
     """ Create a result parquet database """
     for data_file in glob.glob("%s/eva/overall_performance/*.tid_performance.tsv" % in_dir):
@@ -1024,8 +1009,11 @@ def write_parquet_db(config, in_dir, out_dir):
     for data_file in glob.glob("%s/eva/splice_site_performance/*.splice_site_performance.tsv" % in_dir):
         write_parquet_table(data_file, ['mapper'], out_dir+'/splice_site_performance')
     for data_file in glob.glob("%s/eva/feature_overlap/*.feature_counts.tsv" % in_dir):
-        write_parquet_table(data_file, ['mapper', 'chromosome', 'ftype'], out_dir+'/feature_counts')
-    write_parquet_table("%s/eva/transcript_info/transcript_info.tsv" % in_dir, [], out_dir+'/transcript_info')
+        tmp=data_file[len(config['dataset_name'])+1:-len('.feature_counts.tsv')]
+        cr,mapper=tmp[tmp.find('.cr')+3:].rsplit('.', 1)
+        write_parquet_table(data_file, ['mapper', 'chromosome', 'ftype'], out_dir+'/feature_counts', add_columns=['condition_id', 'mapper'], add_values=[cr, mapper])
+    write_parquet_table("%s/eva/meta/%s.SJ.metadata.tsv" % (in_dir, config['dataset_name']), [], out_dir+'/sj_metadata')
+    write_parquet_table("%s/eva/meta/%s.transcript.metadata.tsv" % (in_dir, config['dataset_name']), [], out_dir+'/tx_metadata')
     write_parquet_table("%s/sim/reference_model/gene_anno.tsv.gz" % in_dir, [], out_dir+'/gene_anno')
     
     print("All done.")

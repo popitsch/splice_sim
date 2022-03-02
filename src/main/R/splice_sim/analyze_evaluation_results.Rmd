@@ -14,7 +14,7 @@ geometry: margin=1in
 classoption: a4paper
 params:
     extra_transcript_table:
-       value: "/groups/ameres/Niko/projects/Ameres/splicing/data/slamstr/pooled.mm10.all/pooled.mm10.all.Slamstr.stats.trans.final.tsv.gz"  
+       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/data/slamstr/pooled.mm10.all/pooled.mm10.all.Slamstr.stats.trans.final.tsv.gz"  
     # splice_sim_config:
     #    value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_biseq_nf/splice_sim.config.json"
     # out_dir:
@@ -26,9 +26,9 @@ params:
     # out_dir:
     #     value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/analysis/"
     splice_sim_config:
-       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/splice_sim.config.json"
+       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/splice_sim.config.json"
     out_dir:
-       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/analysis/"
+       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/analysis/"
     plot_type:
       value: "by_condition"
 
@@ -64,7 +64,7 @@ require(minpack.lm)
 require(readr)
 require(testthat)
 require(tidylog)
-
+require(RColorBrewer)
 # NB install arrow with snappy on Rstudio server
 # Sys.setenv(ARROW_WITH_SNAPPY = "ON")
 # Sys.setenv(NOT_CRAN="true")
@@ -156,7 +156,8 @@ fc_schema=schema(
   ftype = string()
 )
 d[['feature_counts']]=open_dataset(paste0(home_dir,'/results/feature_counts/'), schema = fc_schema) # too big, do not collect
-d[['transcript_info']]=open_dataset(paste0(home_dir,'/results/transcript_info/')) %>% collect()
+d[['tx_metadata']]=open_dataset(paste0(home_dir,'/results/tx_metadata/')) %>% collect()
+d[['sj_metadata']]=open_dataset(paste0(home_dir,'/results/sj_metadata/')) %>% collect()
 # optional: read info
 if (file.exists(paste0(home_dir,'/results/reads/')) ) {
   d[['reads']]=open_dataset(paste0(home_dir,'/results/reads/')) # too big, do not collect
@@ -199,6 +200,7 @@ d[['tid_performance']]=d[['tid_performance']] %>%
 
 
 d[['splice_site_mappability']] = d[['splice_site_mappability']] %>% 
+  left_join(d[['sj_metadata']], by=c( "tid","intron_id","chromosome","start","end","strand" )) %>% 
   mutate(
          acc_win_min_map=replace(acc_win_min_map, acc_win_min_map == "None", 0), # set mappability to zero if 'None' reported
          acc_win_max_map=replace(acc_win_max_map, acc_win_max_map == "None", 0),
@@ -213,20 +215,20 @@ d[['splice_site_mappability']] = d[['splice_site_mappability']] %>%
   mutate(intron_rnk=ifelse(strand=='-',as.numeric(intron_rnk),as.numeric(intron_rnk)-1)) %>% # NB there is a 'bug' when assigning intron ids: + strand introns start counting at 2...
   mutate(across(where(is.numeric), ~ifelse(is.nan(.), NA, .))) # replace NaN with NA
 
-intron_coords=d[['feature_counts']] %>% 
-  filter(mapper=='HISAT3N', condition_id=='0.01', ftype=='intron') %>% 
-  select(fid, chromosome,start,end) %>% 
-  distinct() %>% 
-  collect() %>% 
-  mutate(intron_len=end-start+1) %>% 
-  rename(intron_id=fid)
+# intron_coords=d[['feature_counts']] %>% 
+#   filter(mapper=='HISAT3N', condition_id=='0.01', ftype=='intron') %>% 
+#   select(fid, chromosome,start,end) %>% 
+#   distinct() %>% 
+#   collect() %>% 
+#   mutate(intron_len=end-start+1) %>% 
+#   rename(intron_id=fid)
 
 d[['splice_site_performance']] = d[['splice_site_performance']] %>% 
-  merge(d[['gene_anno']] %>% select(-c(chromosome,start,end )), by='tid', all.x=T) %>% 
+  merge(d[['gene_anno']] %>% select(-c(chromosome,start,end,strand)), by='tid', all.x=T) %>% 
   merge(d[['extra_transcript_table']], by='tid', all.x=T) %>% 
-  merge(intron_coords, by='intron_id', all.x=T) %>% 
   mutate(mapper=factor(mapper),
          condition_id=factor(condition),
+         intron_len=end-start+1,
          spl_pre=spl_TP/(spl_TP+spl_FP), 
          spl_rec=spl_TP/(spl_TP+spl_FN), 
          spl_F1=2*spl_TP/(2*spl_TP+spl_FP+spl_FN),
@@ -245,7 +247,7 @@ d[['splice_site_performance']] = d[['splice_site_performance']] %>%
   mutate(true_spliced=ifelse(true_pre>0,true_mat/(true_pre+true_mat), NA),
          found_spliced=ifelse(found_pre>0,found_mat/(found_pre+found_mat), NA),
          spliced_diff=abs(true_spliced-found_spliced)) %>% 
-  mutate(spliced_diff_rnk = dense_rank(spliced_diff)) %>% # rank of difference to truee spliced value.
+  mutate(spliced_diff_rnk = dense_rank(spliced_diff)) %>% # rank of difference to true spliced value. Bad introns have higher ranks
   separate(intron_id, c(NA, "intron_rnk"), sep = '_', remove=F) %>%
   mutate(intron_rnk=ifelse(strand=='-',as.numeric(intron_rnk),as.numeric(intron_rnk)-1)) %>% # NB there is a 'bug' when assigning intron ids: + strand introns start counting at 2...
   mutate(across(where(is.numeric), ~ifelse(is.nan(.), NA, .))) # replace NaN with NA
@@ -318,15 +320,15 @@ count_na_per_column = function(d, tables) {
 
 # count non NA values per column in all tables (long!)
 #non_na_counts = count_na_per_column(d, names(d))
-non_na_counts = count_na_per_column(d, c("tid_performance","splice_site_performance","splice_site_mappability","gene_anno","transcript_info","extra_transcript_table"))
+non_na_counts = count_na_per_column(d, c("tid_performance","splice_site_performance","splice_site_mappability","gene_anno","tx_metadata","sj_metadata","extra_transcript_table"))
 ggplot(non_na_counts, aes(x=name, y=frac)) +
   geom_bar(stat='identity') +
   facet_wrap(table~., scales = 'free') +
   ggtitle("Fraction of NA counts per table column") + 
   xlab("") + ylab("") +
   ylim(0,1) +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
-ggsave(paste0(params$out_dir,'/qc_na_counts.pdf'), width = 10, height = 8)
+  coord_flip() 
+ggsave(paste0(params$out_dir,'/qc_na_counts.pdf'), width = 10, height = 12)
 ```
 ## Summary stats
 ```{r}
@@ -362,7 +364,7 @@ print(paste0("We have data for ", length(found_tids), '/', length(all_tids), " t
 # what tids are missing?
 extra_transcript_table2=load_table(params$extra_transcript_table) %>% 
   filter(transcript_id %in% all_tids) %>% 
-  select(transcript_id, chr,start,end,strand,gene_name,transcript_len,rnk, GC_frac, mappability_median, mappability_mean, T_Pos) %>% 
+  select(transcript_id, chr,start,end,strand,gene_name,transcript_len=len,rnk, GC_frac, mappability_median, mappability_mean, T_Pos) %>% 
   mutate(missing=ifelse(transcript_id %in% found_tids, 0,1))
 extra_transcript_table2 %>% ggplot(aes(x=factor(missing), y=transcript_len)) + 
   geom_violin()  +scale_y_log10() + ggtitle("Length distribution of missing transcripts")
@@ -376,7 +378,7 @@ d[['tid_performance']] %>% mutate(all=TP+FN) %>% group_by(mapper, condition_id) 
 ## transcript overlaps
 ```{r}
 
-d[['transcript_info']] %>% count(n_overlapping) %>% 
+d[['tx_metadata']] %>% count(n_overlapping) %>% 
   ggplot(aes(x=n_overlapping, y=n)) + 
   geom_bar(stat='identity') +
   ggtitle("Histogram of number of overlapping annotations per transcript")
@@ -593,9 +595,9 @@ ggsave(paste0(params$out_dir,'/tx_with_tc_influenced_mappability.pdf'), width = 
 
 Only for smaller datasets possible
 
-TODO: calc stats abourt TC conversions from mismapped read BAMs and plot. Are there significantly more T/C conversions in those reads?
+TODO: calc stats about TC conversions from mismapped read BAMs and plot. Are there significantly more T/C conversions in those reads?
 
-```{r mismapped_reads}
+```{r mismapped_reads, include=FALSE, eval=F}
 
 plot_mismapped_reads = function(d, subtitle='') {
   dat = d %>% group_by(mapper, condition_id, iso, is_converted_bam) %>% 
@@ -860,6 +862,7 @@ ggsave(paste0(params$out_dir,'/F1_diff_cr0_cr0.05.pdf'), width = 12, height = 8)
 ```
 
 ## SJ rank per gene_type
+
 ```{r}
 top_gene_type_cat = d[['splice_site_performance']] %>% count(gene_type) %>% arrange(desc(n)) %>% head(4) %>% pull(gene_type)
 d[['splice_site_performance']] %>% 
@@ -879,20 +882,27 @@ d[['splice_site_performance']] %>%
   geom_boxplot() +
   facet_wrap(mapper~level_cat) + 
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  ggtitle("Distribution of intron rank per mapper.", "Rank is calculated from difference between true and found spliced fraction.\nLarger ranks mean higher difference to true value.")
+  ggtitle("Distribution of intron rank per mapper.", 
+          "Rank is calculated from difference between true and found spliced fraction.\nLarger ranks mean higher difference to true value.")
 ggsave(paste0(params$out_dir,'/spliced_diff_rnk.pdf'), width = 12, height = 8)
 
 ```
-## SJ frac mature and correction
+# SJ frac mature and correction
 
 - Measures performance wrt. reconstruction of simulated mature/premature ratios.
-- Defined over spliced transcripts only
+- Intron filtering:
+  + Drop bad introns from each tx if the difference to the true fmat value is>threshold (min_spliced_diff)
+  + Stop if the number of remaining reads is below a minimum tbreshold (min_remaining_readcount)
+  + Calculate for two scenarios: w/o TC conversions (considering only condition==0) and with T/C conversions (filter if it is considered)
+
+NOTES:
+- Defined over spliced (at least 1 intron) transcripts only
+- tx len at least 1000bp
 - NB: A mapper can drop 99% of all mature and premature reads and would still reconstruct the original ratio perfectly.
 
-Can we correct for low SJ mappability? 
-- get tx with at least 1 intron
-- remove tx with too-short exons (e.g., chr13:55,132,787-55,133,731 or chr6:115,227,343-115,259,294) where there are no simulated spliced reads!
-- remove 
+TODO:
+- remove tx with too-short exons (e.g., chr13:55,132,787-55,133,731 or chr6:115,227,343-115,259,294) where there are no simulated spliced reads?
+
 
 ```{r map_corr}
 
@@ -905,33 +915,40 @@ rnk1_tids = d[['gene_anno']] %>%
   filter(rnk>1, transcript_len>1000) %>% 
   pull(tid)
 # ===============================================
-# Calculate 
+# Calculate bad/filtered introns
 # ===============================================
 intron_mappability = d[['splice_site_performance']] %>% 
-    filter(tid %in% rnk1_tids, condition==0.1, mapper!='truth') %>% 
-    group_by(tid, mapper) %>% 
+    filter(tid %in% rnk1_tids, mapper!='truth') %>% 
+    group_by(tid, mapper, condition) %>% 
     arrange(spliced_diff_rnk) %>% 
     mutate(read_sum=cumsum(found_mat+found_pre)) %>% 
-    select(tid, mapper, intron_id, spliced_diff_rnk, spliced_diff,  true_pre, true_mat, found_pre, found_mat, read_sum) %>% 
-    arrange(desc(spliced_diff_rnk)) %>% 
-    mutate(remaining_reads=lead(read_sum, default=0)) %>% 
+    select(tid, mapper, condition, intron_id, spliced_diff_rnk, spliced_diff,  true_pre, true_mat, found_pre, found_mat, read_sum) %>% 
+    arrange(desc(spliced_diff_rnk)) %>% # sort per tx by decreasing intron rnk, i.e.,bad introns first
+    mutate(remaining_reads=lead(read_sum, default=0)) %>% # remaining reads after removing the current intron
     mutate(low_map = (is.na(spliced_diff) | (spliced_diff>!!min_spliced_diff & remaining_reads>!!min_remaining_readcount))) %>% 
-    ungroup()
+    group_by(mapper, tid, intron_id) %>% summarise(
+      filter_tc=sum(low_map)>sum(!low_map), # filter because in most conditions it is filtered
+      filter_notc=low_map[condition==0]     # filter because in cond0 it is filtered
+      ) %>% 
+  ungroup()
 # show data for 1 tid: intron_mappability %>% filter(tid==!!tid)
 
 # plot distribution of low_mappability introns
+levs=c('not filtered','filtered in STAR', 'filtered in HISAT3N', 'filtered in both')
 intron_mappability %>% 
-  pivot_wider(names_from=mapper, values_from = low_map, id_cols = c('intron_id'), names_prefix='low_map_') %>% 
-  count(low_map_HISAT3N, low_map_STAR) %>% 
+  pivot_longer(-c(mapper, tid, intron_id)) %>% 
+  pivot_wider(names_from=mapper, values_from = value, id_cols = c('tid', 'intron_id', 'name')) %>% 
   mutate(lab=case_when(
-    (low_map_HISAT3N) & (low_map_STAR) ~ 'filtered in both',
-    (!low_map_HISAT3N) & (low_map_STAR) ~ 'filtered in STAR',
-    (low_map_HISAT3N) & (!low_map_STAR) ~ 'filtered in HISAT3N',
+    (HISAT3N) & (STAR) ~ 'filtered in both',
+    (!HISAT3N) & (STAR) ~ 'filtered in STAR',
+    (HISAT3N) & (!STAR) ~ 'filtered in HISAT3N',
     T ~ 'not filtered'
     )) %>% 
-  mutate(lab=factor(lab,levels=c('not filtered','filtered in STAR', 'filtered in HISAT3N', 'filtered in both'))) %>% 
-  ggplot(aes(x=lab, y=n)) +
+  count(name, lab) %>% 
+  ggplot(aes(x=lab, y=n, fill=lab)) +
+  scale_fill_manual(name = "lab",values = setNames(brewer.pal(length(levs),"Set1"), levs)) +
   geom_bar(stat='identity') +
+  facet_wrap(name~.) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
   ggtitle('Filter results per intron') 
   
@@ -939,28 +956,39 @@ intron_mappability %>%
 # calculate spliced fraction per mapper/condition/filtered
 sfrac = d[['splice_site_performance']] %>% 
   filter(mapper %in% c('HISAT3N', 'STAR'), tid %in% rnk1_tids) %>% 
-  left_join(intron_mappability %>% select(intron_id, mapper, low_map), by=c('intron_id', 'mapper'), all.x=T) %>% 
+  left_join(intron_mappability, by=c('tid', 'intron_id', 'mapper'), all.x=T) %>% 
   group_by(mapper, condition, tid, rnk, mappability_mean, gene_type, gene_name ) %>% 
   summarise(true_mat=sum(spl_FN)+sum(spl_TP),
             found_mat=sum(spl_FP)+sum(spl_TP),
             true_pre=sum(don_FN)+sum(don_TP)+sum(acc_FN)+sum(acc_TP),
             found_pre=sum(don_FP)+sum(don_TP)+sum(acc_FP)+sum(acc_TP),
-            true_mat_fil=sum(spl_FN[!low_map])+sum(spl_TP[!low_map]),
-            found_mat_fil=sum(spl_FP[!low_map])+sum(spl_TP[!low_map]),
-            true_pre_fil=sum(don_FN[!low_map])+sum(don_TP[!low_map])+sum(acc_FN[!low_map])+sum(acc_TP[!low_map]),
-            found_pre_fil=sum(don_FP[!low_map])+sum(don_TP[!low_map])+sum(acc_FP[!low_map])+sum(acc_TP[!low_map]),
-            n_filtered_introns=sum(low_map, na.rm = T),
+            # --- non-tc filtered ----
+            true_mat_fil_notc=sum(spl_FN[!filter_notc])+sum(spl_TP[!filter_notc]),
+            found_mat_fil_notc=sum(spl_FP[!filter_notc])+sum(spl_TP[!filter_notc]),
+            true_pre_fil_notc=sum(don_FN[!filter_notc])+sum(don_TP[!filter_notc])+sum(acc_FN[!filter_notc])+sum(acc_TP[!filter_notc]),
+            found_pre_fil_notc=sum(don_FP[!filter_notc])+sum(don_TP[!filter_notc])+sum(acc_FP[!filter_notc])+sum(acc_TP[!filter_notc]),
+            n_fil_notc=sum(filter_notc, na.rm = T),
+            # --- tc filtered ----
+            true_mat_fil_tc=sum(spl_FN[!filter_tc])+sum(spl_TP[!filter_tc]),
+            found_mat_fil_tc=sum(spl_FP[!filter_tc])+sum(spl_TP[!filter_tc]),
+            true_pre_fil_tc=sum(don_FN[!filter_tc])+sum(don_TP[!filter_tc])+sum(acc_FN[!filter_tc])+sum(acc_TP[!filter_tc]),
+            found_pre_fil_tc=sum(don_FP[!filter_tc])+sum(don_TP[!filter_tc])+sum(acc_FP[!filter_tc])+sum(acc_TP[!filter_tc]),
+            n_fil_tc=sum(filter_tc, na.rm = T),
             .groups = 'drop'
          ) %>% 
-  filter(found_mat_fil+found_pre_fil>!!min_remaining_readcount) %>% # drop if due to filtering the overall readcount became too low
+  filter( (found_mat_fil_tc+found_pre_fil_tc>!!min_remaining_readcount) | 
+          (found_mat_fil_notc+found_pre_fil_notc>!!min_remaining_readcount) ) %>% # drop if due to filtering the overall readcount became too low
   mutate(
          true_spliced=ifelse(true_pre>0,true_mat/(true_pre+true_mat), NA),
          found_spliced=ifelse(found_pre>0,found_mat/(found_pre+found_mat), NA),
-         found_spliced_fil=ifelse(found_pre_fil>0,found_mat_fil/(found_pre_fil+found_mat_fil), NA)
+         found_spliced_fil_notc=ifelse(found_pre_fil_notc>0,found_mat_fil_notc/(found_pre_fil_notc+found_mat_fil_notc), NA),
+         found_spliced_fil_tc=ifelse(found_pre_fil_tc>0,found_mat_fil_tc/(found_pre_fil_tc+found_mat_fil_tc), NA)
   ) %>% 
   mutate(diff_spliced=true_spliced-found_spliced,
-         diff_spliced_fil=true_spliced-found_spliced_fil) %>% 
-  mutate(improvement=abs(diff_spliced) - abs(diff_spliced_fil)) %>% 
+         diff_spliced_fil_notc=true_spliced-found_spliced_fil_notc,
+         diff_spliced_fil_tc=true_spliced-found_spliced_fil_tc) %>% 
+  mutate(improvement_notc=abs(diff_spliced) - abs(diff_spliced_fil_notc),
+         improvement_tc=abs(diff_spliced) - abs(diff_spliced_fil_tc)) %>% 
   mutate(num_exons=case_when(rnk<=5 ~ as.character(rnk), 
                              rnk>5 ~ '>5',
                              T ~ 'NA'),
@@ -971,79 +999,128 @@ sfrac = d[['splice_site_performance']] %>%
   mutate(num_exons=factor(num_exons, levels=c('1','2','3','4','5','>5')),
          mappability=factor(mappability, levels=c('high', 'medium', 'low'))
   ) %>% 
-  left_join(d[['transcript_info']], by='tid', all.x=T) %>% 
-  select(mapper, tid, condition, n_filtered_introns, true_spliced, found_spliced, found_spliced_fil, 
-         true_mat, found_mat, found_mat_fil,
-         true_pre, found_pre, found_pre_fil,
+  left_join(d[['tx_metadata']], by='tid', all.x=T) %>% 
+  select(mapper, tid, condition, n_fil_notc, n_fil_tc, 
+         true_spliced, found_spliced, found_spliced_fil_notc, found_spliced_fil_tc, 
+         true_mat, found_mat, found_mat_fil_notc, found_mat_fil_tc,
+         true_pre, found_pre, found_pre_fil_notc, found_pre_fil_tc,
          everything())
 
 # sanity ccheck: 
-testthat::expect_that(sfrac %>% filter(n_filtered_introns==0, diff_spliced<diff_spliced_fil) %>% nrow(), equals(0))
+testthat::expect_that(sfrac %>% filter(n_fil_notc==0, diff_spliced<diff_spliced_fil_notc) %>% nrow(), equals(0))
+testthat::expect_that(sfrac %>% filter(n_fil_tc==0, diff_spliced<diff_spliced_fil_tc) %>% nrow(), equals(0))
 
 # number of tids 
 sfrac_ntx = sfrac %>% summarise(n_tids=n_distinct(tid)) %>% pull(n_tids)
-sfrac_ntx2 = sfrac %>% filter(n_filtered_introns>0) %>% summarise(n_tids=n_distinct(tid)) %>% pull(n_tids)
-sfrac_ntx3 = sfrac %>% filter(n_filtered_introns>0, gene_type=='protein_coding') %>% summarise(n_tids=n_distinct(tid)) %>% pull(n_tids)
+sfrac_ntx2 = sfrac %>% filter(n_fil_notc>0|n_fil_tc>0) %>% summarise(n_tids=n_distinct(tid)) %>% pull(n_tids)
 print(paste0("We have data for ", sfrac_ntx, " tx of which ", 
              sfrac_ntx2, " (", prettyNum(sfrac_ntx2/sfrac_ntx, digits=2), ") have at least 1 filtered intron"))
 
 # plot difference to true fractions
 sfrac %>% 
-  filter(n_filtered_introns>0, n_overlapping==0) %>% 
-  select(mapper, tid, condition, n_filtered_introns, n_overlapping, diff_spliced, diff_spliced_fil, mappability) %>% 
+  select(mapper, tid, condition, n_fil_tc, n_fil_notc, 
+         improvement_tc, improvement_notc, 
+         mappability, n_overlapping, gene_type, rnk) %>% 
+  filter(n_fil_tc + n_fil_notc > 0) %>% 
   mutate(is_overlapping=ifelse(n_overlapping>0,'overlapping tx', 'non-overlapping tx')) %>% 
-  pivot_longer(-c(mapper, tid, condition, n_filtered_introns, n_overlapping, mappability, is_overlapping )) %>% 
+  pivot_longer(-c(mapper, tid, condition, n_fil_tc, n_fil_notc, n_overlapping, mappability, is_overlapping, gene_type, rnk )) %>% 
   ggplot(aes(x=condition, y=value, fill=name)) +
     geom_boxplot(outlier.colour = 'grey') +
     facet_grid(mappability~mapper) +
     geom_hline(yintercept = 0, col='black') +
-    ggtitle('Difference to true (simulated) frac_mature', paste0('non-overlapping only' ))
-
-sfrac %>% 
-  filter(n_filtered_introns>0, n_overlapping==0, gene_type=='protein_coding') %>% 
-  select(mapper, tid, condition, n_filtered_introns, n_overlapping, diff_spliced, diff_spliced_fil, mappability) %>% 
-  mutate(is_overlapping=ifelse(n_overlapping>0,'overlapping tx', 'non-overlapping tx')) %>% 
-  pivot_longer(-c(mapper, tid, condition, n_filtered_introns, n_overlapping, mappability, is_overlapping )) %>% 
-  ggplot(aes(x=condition, y=value, fill=name)) +
-    geom_boxplot(outlier.colour = 'grey') +
-    facet_grid(mappability~mapper) +
-    geom_hline(yintercept = 0, col='black') +
-    ggtitle('Difference to true (simulated) frac_mature', paste0('non-overlapping protein_coding only'))  
-
-sfrac %>% 
-  filter(n_filtered_introns>0, n_overlapping==0, gene_type=='protein_coding') %>% 
-  mutate(is_overlapping=ifelse(n_overlapping>0,'overlapping tx', 'non-overlapping tx')) %>% 
-  ggplot(aes(x=condition, y=improvement, fill=mapper)) +
-    geom_boxplot(outlier.colour = 'grey') +
-    facet_grid(mappability~num_exons) +
-    geom_hline(yintercept = 0, col='black') +
-    ggtitle('Improvement of frac_mature due to intron filtering', paste0('non-overlapping protein_coding only'))  
-
-sfrac %>% 
-  filter(n_filtered_introns>0, n_overlapping==0, gene_type=='protein_coding', condition==0.1) %>% 
-  mutate(is_overlapping=ifelse(n_overlapping>0,'overlapping tx', 'non-overlapping tx')) %>% 
-  mutate(frac_filtered=n_filtered_introns/(rnk-1)) %>% 
-  ggplot(aes(x=frac_filtered, y=improvement)) +
-    geom_point() +
-    geom_smooth(method='lm', formula=y~x) +
-    facet_grid(mappability~mapper) +
-    geom_hline(yintercept = 0, col='black') +
-    ggtitle('Improvement of frac_mature estimate due to intron filtering', paste0('non-overlapping protein_coding only, cond=0.1'))  
-
-calc_iqr(sfrac %>% 
-  filter(n_filtered_introns>0, gene_type=='protein_coding') %>% 
-  mutate(is_overlapping=ifelse(n_overlapping>0,'overlapping tx', 'non-overlapping tx')) %>% 
-  mutate(frac_filtered=round(n_filtered_introns/(rnk-1),1)) %>% 
-  group_by(mapper, frac_filtered, mappability, is_overlapping), improvement) %>% 
-  ggplot(aes(x=frac_filtered, y=col.median, col=mapper, group=mapper)) + 
-  geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
-  geom_line() +
-  geom_hline(yintercept = 0, col='black') +
-  facet_grid(mappability~is_overlapping) +
-  ggtitle('Improvement of frac_mature estimate per fraction introns filtered', 
-          paste0('protein_coding only'))
+    ggtitle('Improvement per mapper for tx with at least one filtered intron (TC or non-TC mode)')
+# 
+# sfrac %>% 
+#   filter(n_filtered_introns>0, n_overlapping==0, gene_type=='protein_coding') %>% 
+#   mutate(is_overlapping=ifelse(n_overlapping>0,'overlapping tx', 'non-overlapping tx')) %>% 
+#   ggplot(aes(x=condition, y=improvement, fill=mapper)) +
+#     geom_boxplot(outlier.colour = 'grey') +
+#     facet_grid(mappability~num_exons) +
+#     geom_hline(yintercept = 0, col='black') +
+#     ggtitle('Improvement of frac_mature due to intron filtering', paste0('non-overlapping protein_coding only'))  
+# 
+# sfrac %>% 
+#   filter(n_filtered_introns>0, n_overlapping==0, gene_type=='protein_coding', condition==0.1) %>% 
+#   mutate(is_overlapping=ifelse(n_overlapping>0,'overlapping tx', 'non-overlapping tx')) %>% 
+#   mutate(frac_filtered=n_filtered_introns/(rnk-1)) %>% 
+#   ggplot(aes(x=frac_filtered, y=improvement)) +
+#     geom_point() +
+#     geom_smooth(method='lm', formula=y~x) +
+#     facet_grid(mappability~mapper) +
+#     geom_hline(yintercept = 0, col='black') +
+#     ggtitle('Improvement of frac_mature estimate due to intron filtering', paste0('non-overlapping protein_coding only, cond=0.1'))  
+# 
+# calc_iqr(sfrac %>% 
+#   filter(n_filtered_introns>0, gene_type=='protein_coding') %>% 
+#   mutate(is_overlapping=ifelse(n_overlapping>0,'overlapping tx', 'non-overlapping tx')) %>% 
+#   mutate(frac_filtered=round(n_filtered_introns/(rnk-1),1)) %>% 
+#   group_by(mapper, frac_filtered, mappability, is_overlapping), improvement) %>% 
+#   ggplot(aes(x=frac_filtered, y=col.median, col=mapper, group=mapper)) + 
+#   geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+#   geom_line() +
+#   geom_hline(yintercept = 0, col='black') +
+#   facet_grid(mappability~is_overlapping) +
+#   ggtitle('Improvement of frac_mature estimate per fraction introns filtered', 
+#           paste0('protein_coding only'))
 
 dev.off()
+```
+## SJ correction: best tx per mapper
+- calc for each tx: which mapper has smallest diff to sim truth after correction
+```{r sj_corr_best_tx}
+calc_best_mapper = function(tab, with_tc_conv) {
+  if ( with_tc_conv ) {
+    print("With TC")
+    tab = tab %>% 
+      select(mapper, tid, condition, n_filtered_introns=n_fil_tc, n_overlapping, true_spliced, found_spliced, found_spliced_fil_tc, mappability) %>% 
+      group_by(mapper, tid, n_filtered_introns, n_overlapping, true_spliced,  mappability) %>% 
+      summarise( m_found_spliced=median(found_spliced, na.rm=T), 
+                 m_found_spliced_fil=median(found_spliced_fil_tc, na.rm=T))
+  } else {
+    print("W/O TC")
+    tab = tab %>% 
+      select(mapper, tid, condition, n_filtered_introns=n_fil_notc, n_overlapping, true_spliced, found_spliced, found_spliced_fil_notc, mappability) %>% 
+      group_by(mapper, tid, n_filtered_introns, n_overlapping, true_spliced,  mappability) %>% 
+      summarise( m_found_spliced=median(found_spliced, na.rm=T), 
+                 m_found_spliced_fil=median(found_spliced_fil_notc, na.rm=T))
+  }
+  tab %>% 
+  ungroup() %>% 
+  pivot_wider(names_from=mapper, 
+              values_from=c(m_found_spliced, m_found_spliced_fil, n_filtered_introns), 
+              id_cols=c('tid', 'n_overlapping', 'true_spliced', 'mappability')) %>% 
+  mutate(diff_STAR=abs(true_spliced-m_found_spliced_STAR),
+         diff_STAR_fil=abs(true_spliced-m_found_spliced_fil_STAR),
+         diff_HISAT3N=abs(true_spliced-m_found_spliced_HISAT3N),
+         diff_HISAT3N_fil=abs(true_spliced-m_found_spliced_fil_HISAT3N)
+         ) %>%   
+  mutate(best_HISAT3N=pmin(diff_HISAT3N, diff_HISAT3N_fil),
+         best_STAR=pmin(diff_STAR, diff_STAR_fil )) %>% 
+  mutate(best_diff=pmin(best_HISAT3N, best_STAR)) %>% 
+  mutate(best_mapper=ifelse(best_HISAT3N<best_STAR, 'HISAT3N', ifelse(best_STAR<best_HISAT3N,'STAR','BOTH')),
+         after_fil=(diff_STAR_fil==best_diff | diff_HISAT3N_fil==best_diff) & (diff_HISAT3N!=best_diff) & (diff_STAR!=best_diff),
+         diff_to_other=abs(best_HISAT3N-best_STAR)
+         )
+}
+
+p1 = calc_best_mapper(sfrac, with_tc_conv=F) %>% 
+  group_by(mappability, after_fil) %>% 
+  count(best_mapper) %>% 
+  ggplot(aes(x=best_mapper, y=n, fill=after_fil)) +
+  geom_bar(stat='identity') +
+  facet_wrap(mappability~.) +
+  ggtitle('No TC conversions' )
+
+p2 = calc_best_mapper(sfrac, with_tc_conv=T) %>% 
+  group_by(mappability, after_fil) %>% 
+  count(best_mapper) %>% 
+  ggplot(aes(x=best_mapper, y=n, fill=after_fil)) +
+  geom_bar(stat='identity') +
+  facet_wrap(mappability~.) +
+  ggtitle('With TC conversions' )
+
+my_plot_grid(list(p1,p2), 'Best mapper per tx wrt. fmat', ncol=1)
+
 ```
 
 ### Write BED file of filtered introns per mapper
@@ -1057,37 +1134,83 @@ tab = d[['splice_site_performance']] %>%
   select(intron_id,chromosome,start,end,strand,all_F1,gene_name) %>% 
   left_join(intron_mappability, by='intron_id') %>% 
   arrange(chromosome, start)
+# With tc
 for ( m in c('STAR', 'HISAT3N')) {
   write_bed(
     tab %>% filter(mapper==!!m) %>% 
     mutate(score=ifelse(is.na(all_F1),0,all_F1*1000), 
-           rgb=ifelse(low_map,'255,0,0','0,255,0'),
+           rgb=ifelse(filter_tc,'255,0,0','0,255,0'),
            start1=start,
            end1=end) %>% 
     select(chromosome,start,end,intron_id,score,strand,start1,end1,rgb),
-    paste0(params$out_dir,'/filtered_introns.',m,'.bed'),
-    paste0(m,"_filtered_introns")
+    paste0(params$out_dir,'/filtered_introns_withTC.',m,'.bed'),
+    paste0(m,"_filtered_introns_withTC")
   )
 }
+# W/o tc
+for ( m in c('STAR', 'HISAT3N')) {
+  write_bed(
+    tab %>% filter(mapper==!!m) %>% 
+    mutate(score=ifelse(is.na(all_F1),0,all_F1*1000), 
+           rgb=ifelse(filter_notc,'255,0,0','0,255,0'),
+           start1=start,
+           end1=end) %>% 
+    select(chromosome,start,end,intron_id,score,strand,start1,end1,rgb),
+    paste0(params$out_dir,'/filtered_introns_noTC.',m,'.bed'),
+    paste0(m,"_filtered_introns_noTC")
+  )
+}
+  
+```
+
+### Write BED file of best mapper per tx (wrt. fmat reconstruction)
+```{r}
+# ==============================================
+# write BED file of tx per best mapper
+# ==============================================
+
+
+  
+for ( withtc in c(T,F)) {
+ tab = calc_best_mapper(sfrac, with_tc_conv=withtc) %>% 
+  select(tid, best_mapper, best_diff) %>% 
+  left_join(d[['gene_anno']], by='tid') %>% 
+  arrange(chromosome, start)
+  write_bed(
+    tab %>% 
+    mutate(score=ifelse(is.na(best_diff),0,(1-best_diff)*1000), 
+           rgb=case_when(
+             best_mapper=='STAR'~'255,0,0',
+             best_mapper=='HISAT3N'~'0,255,0',
+             T ~ '0,0,255'),
+           start1=start,
+           end1=end) %>% 
+    select(chromosome,start,end,best_mapper,score,strand,start1,end1,rgb),
+    paste0(params$out_dir,'/best_mapper_fmat',ifelse(withtc,'_withTC','_noTC'), '.bed'),
+    paste0('best_mapper_fmat',ifelse(withtc,'_withTC','_noTC'), '.bed')
+  )
+ 
+}
+
 ```
 
 ### Correction examples
 ```{r}
 
 # for which tx do we have perfect correction
-sfrac %>% filter(diff_spliced>0, diff_spliced_fil==0) %>% View()
+sfrac %>% filter(diff_spliced>0, diff_spliced_fil_tc==0) %>% View()
 
 # get intron data for an example
-tid=(sfrac %>% filter(diff_spliced>0, diff_spliced_fil==0) %>% pull(tid)) [1]
+tid=(sfrac %>% filter(diff_spliced>0, diff_spliced_fil_tc==0) %>% pull(tid)) [1]
 intron_mappability %>% filter(tid==!!tid)
 
 # for which tx do we have the highest correction
-sfrac %>% arrange(desc(improvement)) %>% select(improvement, everything()) %>% head()
+sfrac %>% arrange(desc(improvement_tc)) %>% select(improvement_tc, everything()) %>% head()
 
 summarise_results = function(gene_name) {
   tid=(sfrac %>% filter(gene_name==!!gene_name) %>% pull(tid))[1]
-  sfrac %>% filter(tid==!!tid) %>% select(improvement, everything()) %>% print()
-  intron_mappability %>% filter(tid==!!tid, low_map==T) %>% print()
+  sfrac %>% filter(tid==!!tid) %>% select(improvement_tc, everything()) %>% print()
+  intron_mappability %>% filter(tid==!!tid, filter_tc==T) %>% print()
 }
 summarise_results('Slc2a3')
 summarise_results('Ttn') # (large number of introns)
@@ -1171,6 +1294,7 @@ tab %>% ggplot(aes(x=condition_id, y=f1_diff, fill=iso)) +
 
 # example gene where there are no mapped reads in HISAT3N / cr==0 for some reason
 d[['tid_performance']] %>% filter(tid=='ENSMUST00000179058.1') %>% select(tid, gene_name,TP,FP,FN,F1, everything())
+
 
 ```
 

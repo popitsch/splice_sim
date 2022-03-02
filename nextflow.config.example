@@ -30,7 +30,7 @@ profiles {
       queue='c'
       memory='64 GB'
       cpus='8'
-      time='2.h'
+      time='8.h'
       scratch = false
       withLabel: 'medium' {
         clusterOptions = '--qos=medium'

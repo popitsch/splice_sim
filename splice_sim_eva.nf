@@ -35,6 +35,7 @@ process extract_transcript_features {
     	file(model) from Channel.fromPath("${params.model}")
     output:
     	file("*transcript.metadata.tsv") into transcript_metadata
+			val true into done_trancript_feature_extraction
     script:
 	    """
     		${params.splice_sim_cmd} extract_transcript_features \
@@ -56,6 +57,7 @@ process extract_splice_junction_features {
     	file(model) from Channel.fromPath("${params.model}")
     output:
     	file("*SJ.metadata.tsv") into sj_metadata
+			val true into done_splice_junction_feature_extraction
     script:
 	    """
     		${params.splice_sim_cmd} extract_splice_site_features \
@@ -78,6 +80,7 @@ process evaluate_bam_performance {
     output:
     	file("*") into bam_performance
     	set name, file("*mismapped.bam"),file("*mismapped.bam.bai") optional true into mismapped_bams
+			val true into done_bam_performance
     script:
 	    """
     		${params.splice_sim_cmd} evaluate_bam_performance \
@@ -109,6 +112,7 @@ process evaluate_splice_site_performance {
     	set name, file(bam), file(bai) from all_bams2
     output:
     	file("*") into splice_sites_performance
+			val true into done_splice_site_performance
     script:
 	    """
     		${params.splice_sim_cmd} evaluate_splice_site_performance \
@@ -140,6 +144,7 @@ process calculate_splice_site_mappability {
     	set name, file(bam), file(bai) from final_bams2
     output:
     	file("*") into splice_site_mappability
+			val true into done_splice_site_mappability
     script:
 	    """
     		${params.splice_sim_cmd} calculate_splice_site_mappability \
@@ -176,6 +181,7 @@ process calc_feature_overlap {
     	set name, file(bam), file(bai) from mismapped_bams
     output:
     	file("*") into feature_overlaps
+			val true into done_feature_overlap_mappability
     script:
 	    """
     		${params.splice_sim_cmd} calc_feature_overlap \
@@ -185,6 +191,33 @@ process calc_feature_overlap {
     			--outdir .
 	    """
 	}
+
+	/*
+	 * calc_feature_overlap
+	 */
+	process collect_splice_sim_eva_results {
+		tag "$name"
+	    cpus 1
+	    module 'python/3.7.2-gcccore-8.2.0:sambamba/0.6.6'
+	    publishDir ".", mode: 'copy'
+	    cache false
+	    input:
+				val flag1 from done_trancript_feature_extraction.collect()
+				val flag2 from done_splice_junction_feature_extraction.collect()
+				val flag3 from done_bam_performance.collect()
+			  val flag4 from done_splice_site_performance.collect()
+			  val flag5 from done_splice_site_mappability.collect()
+	    	val flag6 from done_feature_overlap_mappability.collect()
+	    output:
+	    	file("results") into splice_sim_eva_results
+	    script:
+		    """
+	    		${params.splice_sim_cmd} write_parquet_db \
+	    			--config ${params.config_file} \
+	    			--indir $PWD \
+	    			--outdir results
+		    """
+		}
 
 	/*
 	 * Prepare rseqc input bams

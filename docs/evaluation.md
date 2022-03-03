@@ -2,7 +2,7 @@
 
 Metadata table for transcripts that contains additional columns such as gene_type, len, ilen, GC_frac, T-Pos and F_TC_5min
 
-| transcrtip_id        | rnk  | GC_frac | mappability_median | mappability_mean | T_Pos |
+| transcript_id        | rnk  | GC_frac | mappability_median | mappability_mean | T_Pos |
 |----------------------|------|---------|--------------------|------------------|-------|
 | ENSMUST00000193812.1 | NA   | 0.34206 | 1.000              | 0.93119792       | 998   |
 
@@ -10,9 +10,9 @@ Metadata table for transcripts that contains additional columns such as gene_typ
 
 Metadata table for genes
 
-| gene_id              | transcript_id        | gene_type      | gene_name | transcript_type | transcript_name | level | transcript_support_level | tag                           | havana_transcript    | chromosome |     start |       end | strand | rnk |
-|----------------------|----------------------|----------------|-----------|-----------------|-----------------|-------|--------------------------|-------------------------------|----------------------|------------|-----------|-----------|
-| ENSMUSG00000102693.1 | ENSMUST00000000001.4 | protein_coding | Gnai3     | protein_coding  | Gnai3-201       | 2     | 1                        | basic,appris_principal_1,CCDS | OTTMUST00000016610.1 | 2          | 108107280 | 108146146 |     - |   9 |
+| gene_id              | transcript_id        | gene_type      | gene_name | transcript_type | transcript_name | level | transcript_support_level | tag                           | havana_transcript    | chromosome | start     | end       | strand | rnk |
+|----------------------|----------------------|----------------|-----------|-----------------|-----------------|-------|--------------------------|-------------------------------|--------------------|------------|-----------|-----------|--------|-----|
+| ENSMUSG00000102693.1 | ENSMUST00000000001.4 | protein_coding | Gnai3     | protein_coding  | Gnai3-201       | 2     | 1                        | basic,appris_principal_1,CCDS | OTTMUST00000016610.1 | 2          | 108107280 | 108146146 | -      | 9   |
 
 
 # transcript_info (meta/*.transcript.metadata.tsv)

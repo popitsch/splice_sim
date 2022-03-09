@@ -984,10 +984,11 @@ def extract_transcript_features(config, m, out_dir):
         for tid,(exon_len, intron_len, overlapping) in tid2info.items():
             print('\t'.join([str(x) for x in [tid,exon_len,intron_len,len(overlapping),','.join(overlapping)]]), file=out)
 
-def write_parquet_table(tsv_file, partition_cols, out_dir, add_columns=None, add_values=None):
+def write_parquet_table(tsv_file, partition_cols, out_dir, add_columns=None, add_values=None, ren_columns=None, final_columns=None):
     """ Convert TSV to parquet. Constant columns can be added by providing a list of column names (add_columns) and values (add_values)"""
     tab = pd.read_csv(tsv_file,
                           delimiter='\t',
+                          comment='#',
                           encoding='utf-8',
                           float_precision='high',
                           quoting=csv.QUOTE_NONE,
@@ -998,6 +999,10 @@ def write_parquet_table(tsv_file, partition_cols, out_dir, add_columns=None, add
     if add_columns is not None:
         for i,col in enumerate(add_columns):
             tab.insert(0, col, [add_values[i]] * len(tab.index), True)
+    if ren_columns is not None:
+        tab.rename(columns=ren_columns, inplace=True)
+    if final_columns is not None:
+        tab.columns=final_columns
     tab.to_parquet(out_dir, partition_cols=partition_cols)
 
 def write_parquet_db(config, in_dir, out_dir):  
@@ -1011,7 +1016,23 @@ def write_parquet_db(config, in_dir, out_dir):
     for data_file in glob.glob("%s/eva/feature_overlap/*.feature_counts.tsv" % in_dir):
         tmp=data_file[len(config['dataset_name'])+1:-len('.feature_counts.tsv')]
         cr,mapper=tmp[tmp.find('.cr')+3:].rsplit('.', 1)
-        write_parquet_table(data_file, ['mapper', 'chromosome', 'ftype'], out_dir+'/feature_counts', add_columns=['condition_id', 'mapper'], add_values=[cr, mapper])
+        write_parquet_table(data_file, ['mapper', 'chromosome', 'ftype'], out_dir+'/feature_counts_mismapped', add_columns=['condition_id', 'mapper'], add_values=[cr, mapper])
+    # write featureCounts output
+    for data_file in glob.glob("%s/eva/feature_counts/*.featureCounts.txt" % (in_dir)):
+        tmp=data_file[len("%s/eva/feature_counts/"%in_dir + config['dataset_name'])+1:-len('.featureCounts.txt')]
+        tmp,ftype=tmp.rsplit('.', 1)
+        tmp,mapper=tmp.rsplit('.', 1)
+        if mapper=='final':
+            tmp,mapper=tmp.rsplit('.', 1)
+        cr=tmp[len('cr'):]
+        write_parquet_table(data_file, ['mapper', 'ftype'], 
+                            out_dir+'/feature_counts', 
+                            add_columns=['condition_id', 'mapper', 'ftype'], 
+                            add_values=[cr, mapper, ftype],
+                            final_columns=['ftype', 'mapper', 'condition_id', 
+                                           'Geneid', 'Chr', 'Start', 'End',
+                                           'Strand', 'Length','read_count']) # TODO this is ugly, improve!
+        
     write_parquet_table("%s/eva/meta/%s.SJ.metadata.tsv" % (in_dir, config['dataset_name']), [], out_dir+'/sj_metadata')
     write_parquet_table("%s/eva/meta/%s.transcript.metadata.tsv" % (in_dir, config['dataset_name']), [], out_dir+'/tx_metadata')
     write_parquet_table("%s/sim/reference_model/gene_anno.tsv.gz" % in_dir, [], out_dir+'/gene_anno')

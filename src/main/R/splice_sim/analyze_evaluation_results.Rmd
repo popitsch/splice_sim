@@ -112,6 +112,7 @@ calc_ci = function(d, col, min_lower_ci=NA, max_upper_ci=NA) {
 calc_iqr = function(d, col) {
   d %>% summarise(
             col.median = median({{col}}, na.rm = T),
+            col.mean = mean({{col}}, na.rm = T),
             col.upper = quantile({{col}}, .75, na.rm = T),
             col.lower = quantile({{col}}, .25, na.rm = T),
             col.n = n(),
@@ -143,7 +144,7 @@ d[['tid_performance']]=open_dataset(paste0(home_dir,'/results/overall_performanc
 d[['splice_site_performance']]=open_dataset(paste0(home_dir,'/results/splice_site_performance/')) %>% collect()
 d[['splice_site_mappability']]=open_dataset(paste0(home_dir,'/results/splice_site_mappability/')) %>% collect()
 d[['gene_anno']]=open_dataset(paste0(home_dir,'/results/gene_anno/')) %>% collect()
-fc_schema=schema(
+fc_schema_mismapped=schema(
   condition_id = string(), # need to set explicit types as otherwise arrow thinks this is an int
   tid = string(),
   fid = string(),
@@ -155,7 +156,8 @@ fc_schema=schema(
   chromosome = string(),
   ftype = string()
 )
-d[['feature_counts']]=open_dataset(paste0(home_dir,'/results/feature_counts/'), schema = fc_schema) # too big, do not collect
+d[['feature_counts_mismapped']]=open_dataset(paste0(home_dir,'/results/feature_counts_mismapped/'), schema = fc_schema_mismapped) # too big, do not collect
+d[['feature_counts']]=open_dataset(paste0(home_dir,'/results/feature_counts/')) # too big, do not collect
 d[['tx_metadata']]=open_dataset(paste0(home_dir,'/results/tx_metadata/')) %>% collect()
 d[['sj_metadata']]=open_dataset(paste0(home_dir,'/results/sj_metadata/')) %>% collect()
 # optional: read info
@@ -253,6 +255,53 @@ d[['splice_site_performance']] = d[['splice_site_performance']] %>%
   separate(intron_id, c(NA, "intron_rnk"), sep = '_', remove=F) %>%
   mutate(intron_rnk=ifelse(strand=='-',as.numeric(intron_rnk),as.numeric(intron_rnk)-1)) %>% # NB there is a 'bug' when assigning intron ids: + strand introns start counting at 2...
   mutate(across(where(is.numeric), ~ifelse(is.nan(.), NA, .))) # replace NaN with NA
+
+
+# rename columns and match our id schema for exons/introns
+d[['feature_counts']] = d[['feature_counts']] %>% 
+  collect() %>% 
+  rename(chromosome=Chr,
+         start=Start, 
+         end=End,
+         length=Length,
+         strand=Strand) %>% 
+  mutate(fid=case_when(
+    ftype=='exon' ~ str_replace(str_sub(Geneid, start=nchar('exon:')+1), ':', '_ex'),
+    ftype=='intron' ~ str_replace(str_sub(Geneid, start=nchar('intron:')+1), ':', '_'),
+    T ~ NA_character_
+  )) %>% 
+  separate(fid, c('tid', NA), '_', remove=F) %>% 
+  ungroup()
+# exon: ENSMUST00000193812.1_ex1
+# intron: ENSMUST00000161581.1_2
+
+d[['feature_counts_mismapped']] =
+  d[['feature_counts_mismapped']] %>%
+  collect()
+
+# FIXME: some introns in d[['feature_counts_mismapped']] are misnamed (wrong intron #), so merge w/o fid here
+counts_per_feature = d[['feature_counts_mismapped']] %>% 
+  left_join(d[['feature_counts']], by=c('tid', 'chromosome', 'start', 'end', 'ftype', 'mapper', 'condition_id' ) )
+
+counts_per_tx = counts_per_feature%>% 
+  group_by(mapper, condition_id, tid, ftype) %>% 
+  summarise(FP=sum(FP), FN=sum(FN), read_count=sum(read_count), length=sum(length)) %>% 
+  left_join(d[['gene_anno']] %>% select(tid, gene_name, gene_type, chromosome,start,end,strand,rnk,transcript_len), by='tid') %>% 
+  left_join(d[['extra_transcript_table']], by='tid') %>% 
+  mutate(cov=read_count*conf$readlen/length) %>% 
+  mutate(mapper=factor(mapper),
+         condition_id=factor(condition_id)) %>% 
+  mutate(num_exons=case_when(rnk<=5 ~ as.character(rnk), 
+                             rnk>5 ~ '>5',
+                             T ~ 'NA'),
+         mappability=case_when(mappability_mean<0.2 ~ 'low',
+                               mappability_mean>0.9 ~ 'high',
+                               T ~ 'medium')
+  ) %>% mutate(
+    num_exons=factor(num_exons, levels=c('1','2','3','4','5','>5')),
+    mappability=factor(mappability, levels=c('high', 'medium', 'low'))
+  ) %>% mutate(across(where(is.numeric), ~ifelse(is.nan(.), NA, .))) %>% 
+  ungroup()
 
 toc()
 
@@ -889,6 +938,62 @@ d[['splice_site_performance']] %>%
 ggsave(paste0(params$out_dir,'/spliced_diff_rnk.pdf'), width = 12, height = 8)
 
 ```
+# FP/FN per tx
+```{r}
+
+
+counts_per_feature %>% 
+  pivot_longer(c(FP,FN)) %>% 
+  ggplot(aes(x=condition_id, y=value, fill=mapper)) +
+  geom_boxplot() +
+  facet_wrap(ftype~name) +
+  scale_y_log10() +
+  ggtitle("FP and FN reads in exonic/intronic regions per mapper")
+
+
+tab = calc_iqr(counts_per_tx %>% 
+             pivot_longer(c(FP,FN)) %>% 
+             group_by(mapper, condition_id, ftype, name, mappability)
+         , value) 
+
+
+p1 = tab %>% filter(ftype=='exon') %>% 
+  ggplot(aes(x=condition_id, y=col.mean, col=mapper, group=mapper)) +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=3, alpha=0.05) +
+  geom_line() +
+  facet_grid(mappability~name, scales = 'free') +
+  ggtitle("Exons")
+
+p2 = tab %>% filter(ftype=='intron') %>% 
+  ggplot(aes(x=condition_id, y=col.mean, col=mapper, group=mapper)) +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=3, alpha=0.05) +
+  geom_line() +
+  facet_grid(mappability~name, scales = 'free') +
+  ggtitle("Introns")
+
+my_plot_grid(list(p1,p2), 'Mean FP/FN in exonic/intronic regions per mapper (tx level)')
+ggsave(paste0(params$out_dir,'/fpfn_per_feature.pdf'), width = 12, height = 8)
+
+
+p1=counts_per_tx %>% 
+  ggplot(aes(x=condition_id, y=read_count, fill=mapper)) +
+  geom_boxplot() +
+  facet_wrap(ftype~mappability) +
+  scale_y_log10() +
+  ggtitle("Mapped reads")
+
+p2=counts_per_tx %>% 
+  ggplot(aes(x=condition_id, y=cov, fill=mapper)) +
+  geom_boxplot() +
+  facet_wrap(ftype~mappability) +
+  scale_y_log10() +
+  ggtitle("Coverage", "Expected: exons ~100X, introns ~50X") +
+  geom_hline(yintercept = c(100,50), linetype='dotted', col='grey')
+
+my_plot_grid(list(p1,p2), 'Coverage in exonic/intronic regions per mapper (tx level)')
+
+```
+
 # SJ frac mature and correction
 
 - Measures performance wrt. reconstruction of simulated mature/premature ratios.

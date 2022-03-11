@@ -834,7 +834,7 @@ def calc_feature_overlap(config, m, mismapped_bam_file, out_dir):
     # calculate list of features
     dict_chr2idx, dict_idx2chr, dict_chr2len=get_chrom_dicts_from_bam(mismapped_bam_file)
     chrom2feat=OrderedDict()
-    
+    debug_region=Location.from_str(config['debug_region'], dict_chr2idx) if 'debug_region' in config else None
     for tid,t in m.transcripts.items():
         c=t.chromosome
         if c not in chrom2feat:
@@ -860,10 +860,14 @@ def calc_feature_overlap(config, m, mismapped_bam_file, out_dir):
             continue # no data on this chrom 
         if c not in chrom2feat or len(chrom2feat[c])==0:
             continue # no annos on this chrom   
+        if debug_region is not None and dict_idx2chr[debug_region.chr_idx]!=c:
+            continue
         aits = [BlockLocationIterator(iter(sorted(chrom2feat[c], key=lambda x: x[0]) ))]
         rit = ReadIterator(samin, dict_chr2idx, reference=c, start=1, end=c_len, max_span=None, flag_filter=0) # max_span=m.max_ilen
         it = AnnotationOverlapIterator(rit, aits, check_read_alignment=True)
         for loc, (read, annos) in it:
+            if debug_region is not None and not loc.overlaps(debug_region):
+                continue
             true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted_read = read.query_name.split('_')
             #annos [[('ENSMUST00000029124.7', 'exon', 'ENSMUST00000029124.7_ex1'), ('ENSMUST00000029124.7', 'intron', 'ENSMUST00000029124.7_1')]]
             overlapping_annos = [t for (_, (_, t)) in annos[0]]
@@ -871,12 +875,14 @@ def calc_feature_overlap(config, m, mismapped_bam_file, out_dir):
                 continue
             if read.get_tag("YC")=='255,255,255':
                 # count FN for true tid annos
-                for tid, ftype, fid in overlapping_annos[0]:
+                for [(tid, ftype, fid)] in overlapping_annos:
                     if tid == true_tid:
+                        # FIXME: a read is classified as FN+FP if overlap with true read is <80%. 
+                        # It should still not be counted here if is overlaps with at least 1bp with the given annotation
                         feat_counter_fn[(tid, c, ftype, fid)]+=1
             elif read.get_tag("YC")=='255,0,0':
                 # count FP for all overlapping annos
-                for tid, ftype, fid in overlapping_annos[0]:
+                for [(tid, ftype, fid)] in overlapping_annos:
                     feat_counter_fp[(tid, c, ftype, fid)]+=1
     with open(out_file_prefix+'.feature_counts.tsv', 'w') as out:
         print("tid\tftype\tfid\tchromosome\tstart\tend\tFP\tFN", file=out)
@@ -1005,38 +1011,49 @@ def write_parquet_table(tsv_file, partition_cols, out_dir, add_columns=None, add
         tab.columns=final_columns
     tab.to_parquet(out_dir, partition_cols=partition_cols)
 
+def check_outpath(dir):
+    if os.path.exists(dir):
+        print("output dir exists, will no re-create: %s" % dir)
+        return False
+    return True
 def write_parquet_db(config, in_dir, out_dir):  
     """ Create a result parquet database """
-    for data_file in glob.glob("%s/eva/overall_performance/*.tid_performance.tsv" % in_dir):
-        write_parquet_table(data_file, ['mapper'], out_dir+'/overall_performance')
-    for data_file in glob.glob("%s/eva/splice_site_mappability/*.mappability.tsv" % in_dir):
-        write_parquet_table(data_file, ['mapper'], out_dir+'/splice_site_mappability')
-    for data_file in glob.glob("%s/eva/splice_site_performance/*.splice_site_performance.tsv" % in_dir):
-        write_parquet_table(data_file, ['mapper'], out_dir+'/splice_site_performance')
-    for data_file in glob.glob("%s/eva/feature_overlap/*.feature_counts.tsv" % in_dir):
-        tmp=data_file[len(config['dataset_name'])+1:-len('.feature_counts.tsv')]
-        cr,mapper=tmp[tmp.find('.cr')+3:].rsplit('.', 1)
-        write_parquet_table(data_file, ['mapper', 'chromosome', 'ftype'], out_dir+'/feature_counts_mismapped', add_columns=['condition_id', 'mapper'], add_values=[cr, mapper])
+    if check_outpath(out_dir+'/overall_performance'):
+        for data_file in glob.glob("%s/eva/overall_performance/*.tid_performance.tsv" % in_dir):
+            write_parquet_table(data_file, ['mapper'], out_dir+'/overall_performance')
+    if check_outpath(out_dir+'/splice_site_mappability'):
+        for data_file in glob.glob("%s/eva/splice_site_mappability/*.mappability.tsv" % in_dir):
+            write_parquet_table(data_file, ['mapper'], out_dir+'/splice_site_mappability')
+    if check_outpath(out_dir+'/splice_site_performance'):
+        for data_file in glob.glob("%s/eva/splice_site_performance/*.splice_site_performance.tsv" % in_dir):
+            write_parquet_table(data_file, ['mapper'], out_dir+'/splice_site_performance')
+    if check_outpath(out_dir+'/feature_counts_mismapped'):
+        for data_file in glob.glob("%s/eva/feature_overlap/*.feature_counts.tsv" % in_dir):
+            tmp=data_file[len(config['dataset_name'])+1:-len('.feature_counts.tsv')]
+            cr,mapper=tmp[tmp.find('.cr')+3:].rsplit('.', 1)
+            write_parquet_table(data_file, ['mapper', 'chromosome', 'ftype'], out_dir+'/feature_counts_mismapped', add_columns=['condition_id', 'mapper'], add_values=[cr, mapper])
+    if check_outpath(out_dir+'/sj_metadata'):
+        write_parquet_table("%s/eva/meta/%s.SJ.metadata.tsv" % (in_dir, config['dataset_name']), [], out_dir+'/sj_metadata')
+    if check_outpath(out_dir+'/tx_metadata'):
+        write_parquet_table("%s/eva/meta/%s.transcript.metadata.tsv" % (in_dir, config['dataset_name']), [], out_dir+'/tx_metadata')
+    if check_outpath(out_dir+'/gene_anno'):
+        write_parquet_table("%s/sim/reference_model/gene_anno.tsv.gz" % in_dir, [], out_dir+'/gene_anno')
     # write featureCounts output
-    for data_file in glob.glob("%s/eva/feature_counts/*.featureCounts.txt" % (in_dir)):
-        tmp=data_file[len("%s/eva/feature_counts/"%in_dir + config['dataset_name'])+1:-len('.featureCounts.txt')]
-        tmp,ftype=tmp.rsplit('.', 1)
-        tmp,mapper=tmp.rsplit('.', 1)
-        if mapper=='final':
+    if check_outpath(out_dir+'/feature_counts'):
+        for data_file in glob.glob("%s/eva/feature_counts/*.featureCounts.txt" % (in_dir)):
+            tmp=data_file[len("%s/eva/feature_counts/"%in_dir + config['dataset_name'])+1:-len('.featureCounts.txt')]
+            tmp,ftype=tmp.rsplit('.', 1)
             tmp,mapper=tmp.rsplit('.', 1)
-        cr=tmp[len('cr'):]
-        write_parquet_table(data_file, ['mapper', 'ftype'], 
-                            out_dir+'/feature_counts', 
-                            add_columns=['condition_id', 'mapper', 'ftype'], 
-                            add_values=[cr, mapper, ftype],
-                            final_columns=['ftype', 'mapper', 'condition_id', 
-                                           'Geneid', 'Chr', 'Start', 'End',
-                                           'Strand', 'Length','read_count']) # TODO this is ugly, improve!
-        
-    write_parquet_table("%s/eva/meta/%s.SJ.metadata.tsv" % (in_dir, config['dataset_name']), [], out_dir+'/sj_metadata')
-    write_parquet_table("%s/eva/meta/%s.transcript.metadata.tsv" % (in_dir, config['dataset_name']), [], out_dir+'/tx_metadata')
-    write_parquet_table("%s/sim/reference_model/gene_anno.tsv.gz" % in_dir, [], out_dir+'/gene_anno')
-    
+            if mapper=='final':
+                tmp,mapper=tmp.rsplit('.', 1)
+            cr=tmp[len('cr'):]
+            write_parquet_table(data_file, ['mapper', 'ftype'], 
+                                out_dir+'/feature_counts', 
+                                add_columns=['condition_id', 'mapper', 'ftype'], 
+                                add_values=[cr, mapper, ftype],
+                                final_columns=['ftype', 'mapper', 'condition_id', 
+                                               'Geneid', 'Chr', 'Start', 'End',
+                                               'Strand', 'Length','read_count']) # TODO this is ugly, improve!        
     print("All done.")
     
 

@@ -33,11 +33,11 @@ load_table = function(dataF, append="", header=T, nrows=Inf) {
 
 # args
 args = commandArgs(trailingOnly=TRUE)
-if (length(args)==0) {
-  stop("usage: preprocess_results.R <splice_sim_config>", call.=FALSE)
+if (length(args)!=2) {
+  stop("usage: preprocess_results.R <splice_sim_config> <extra_transcript_table>", call.=FALSE)
 } 
 splice_sim_config=args[1]
-
+extra_transcript_table=args[2]
 home_dir=paste0(dirname(splice_sim_config),'/')
 conf=fromJSON(paste(readLines(splice_sim_config), collapse=""))
 data_file=paste0(home_dir,'/results/data.rds')
@@ -72,7 +72,7 @@ if (file.exists(paste0(home_dir,'/results/reads/')) ) {
 } else {
   d[['reads']]=NA
 }
-d[['extra_transcript_table']]=load_table(params$extra_transcript_table) %>% select(transcript_id, rnk, GC_frac, mappability_median, mappability_mean, T_Pos)
+d[['extra_transcript_table']]=load_table(extra_transcript_table) %>% select(transcript_id, rnk, GC_frac, mappability_median, mappability_mean, T_Pos)
 toc()
 
 tic("data cleaning") 
@@ -221,4 +221,4 @@ tic("save data") # about 2min
 saveRDS(d, data_file, compress = FALSE)
 toc()
 
-print("Done. Load data via d=readRDS('",data_file,"')")
+print(paste0("Done. Load data via d=readRDS('",data_file,"')"))

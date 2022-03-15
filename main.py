@@ -16,6 +16,7 @@ from collections import OrderedDict
 from splice_sim.model import Model
 from splice_sim.simulator import create_genome_bam, postfilter_bam
 from splice_sim.evaluator import *
+from splice_sim.evaluator2 import *
 
 VERSION = "0.1"
 LOGO = """
@@ -103,6 +104,18 @@ if __name__ == '__main__':
     parser["extract_transcript_features"].add_argument("-c", "--config", type=str, required=True, dest="config_file", metavar="config_file", help="JSON config file")
     parser["extract_transcript_features"].add_argument("-m", "--model", type=str, required=True, dest="model_file", metavar="model_file", help="model file")
     parser["extract_transcript_features"].add_argument("-o", "--outdir", type=str, required=True, dest="outdir", metavar="outdir", help="output dir")
+
+
+    parser["evaluate"] = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
+    parser["evaluate"].add_argument("-b", "--bam_file", type=str, required=True, dest="bam_file", metavar="bam_file", help="input bam file")
+    parser["evaluate"].add_argument("-c", "--config", type=str, required=True, dest="config_file", metavar="config_file", help="JSON config file")
+    parser["evaluate"].add_argument("-m", "--model", type=str, required=True, dest="model_file", metavar="model_file", help="model file")
+    parser["evaluate"].add_argument("-o", "--outdir", type=str, required=True, dest="outdir", metavar="outdir", help="output dir")
+
+    parser["extract_feature_metadata"] = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
+    parser["extract_feature_metadata"].add_argument("-c", "--config", type=str, required=True, dest="config_file", metavar="config_file", help="JSON config file")
+    parser["extract_feature_metadata"].add_argument("-m", "--model", type=str, required=True, dest="model_file", metavar="model_file", help="model file")
+    parser["extract_feature_metadata"].add_argument("-o", "--outdir", type=str, required=True, dest="outdir", metavar="outdir", help="output dir")
 
     #============================================================================
     if len(sys.argv) <= 1 or sys.argv[1] in ['-h', '--help']:
@@ -217,3 +230,27 @@ if __name__ == '__main__':
         # load config to be able to react to config changes after model was built!
         config=json.load(open(args.config_file), object_pairs_hook=OrderedDict)
         write_parquet_db(config, args.indir, outdir)
+
+    if mod == "evaluate":
+        # load config to be able to react to config changes after model was built!
+        config=json.load(open(args.config_file), object_pairs_hook=OrderedDict)
+        print("load model")
+        m = Model.load_from_file(args.model_file)
+        print("evaluate")
+        # set random seed
+        if "random_seed" in config:
+            random.seed(config["random_seed"])
+            logging.info("setting random seed to %i" % config["random_seed"])
+        evaluate(config, m, args.bam_file, outdir)
+
+    if mod == "extract_feature_metadata":
+        # load config to be able to react to config changes after model was built!
+        config=json.load(open(args.config_file), object_pairs_hook=OrderedDict)
+        print("load model")
+        m = Model.load_from_file(args.model_file)
+        print("extract_feature_metadata")
+        # set random seed
+        if "random_seed" in config:
+            random.seed(config["random_seed"])
+            logging.info("setting random seed to %i" % config["random_seed"])
+        extract_feature_metadata(config, m, outdir)

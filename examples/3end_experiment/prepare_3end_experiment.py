@@ -34,8 +34,7 @@ def parse_info(info):
     """ parse GFF3 info section """
     return {k:v for k,v in [a.split('=') for a in info.split(';') if '=' in a]}
 
-def chop3End(tid ,transcriptMeta, transcriptBuffer):
-    nt = 250
+def chop3End(tid ,transcriptMeta, transcriptBuffer, nt):
     consumedWindow = nt
     ends = list()
     exons = list(transcriptBuffer[tid])
@@ -73,6 +72,9 @@ def extract_transcript_3ends(config, tids, out_dir) :
     transcriptBuffer = dict()
     transcriptMeta = dict()
 
+    if not 'transcript_end_window' in config:
+        config['transcript_end_window'] = 250
+
     # process data
     with open(out_file_gff3, 'w') as out_gff3:
         f = pysam.TabixFile(config["gene_gff"], mode="r")
@@ -99,7 +101,7 @@ def extract_transcript_3ends(config, tids, out_dir) :
             if ftype == "exon":
                 transcriptBuffer[tid].append(row)
                 if fend == transcriptMeta[tid]['end'] :
-                    txstart, txend, ends = chop3End(tid ,transcriptMeta, transcriptBuffer)
+                    txstart, txend, ends = chop3End(tid ,transcriptMeta, transcriptBuffer, config['transcript_end_window'])
                     print("\t".join([str(x) for x in [
                         transcriptMeta[tid]['reference'],
                         transcriptMeta[tid]['source'],

@@ -1,0 +1,180 @@
+---
+title: "splice_sim_paper.Rmd"
+author: "niko.popitsch@imba.oeaw.ac.at"
+documentclass: article
+fontsize: 10pt
+output:
+  html_document:
+    df_print: paged
+  pdf_document:
+    fig_caption: yes
+    fig_height: 10
+    fig_width: 10
+geometry: margin=1in
+classoption: a4paper
+params:
+    splice_sim_config:
+       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/splice_sim.config.json"
+    out_dir:
+       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/analysis/"
+---
+<style type="text/css">
+body, td {
+   font-size: 10px;
+}
+code.r{
+  font-size: 10px;
+}
+pre {
+  font-size: 10px
+}
+</style>
+
+# INIT
+
+```{r setup, include=FALSE}
+require(data.table)
+require(tidyr)
+require(dplyr)
+require(ggplot2)
+require(scales)
+require(rjson)
+require(stringr)
+require(VGAM)
+require(cowplot)
+require(arrow)
+require(tictoc)
+require(ggpubr)
+require(minpack.lm)
+require(readr)
+require(testthat)
+require(tidylog)
+require(RColorBrewer)
+# NB install arrow with snappy on Rstudio server
+# Sys.setenv(ARROW_WITH_SNAPPY = "ON")
+# Sys.setenv(NOT_CRAN="true")
+# Sys.setenv(LIBARROW_BINARY="FALSE")
+# install.packages("arrow", repos = "https://arrow-r-nightly.s3.amazonaws.com")
+
+# to ensure stripping '\0' (nul) from character vector
+options(arrow.skip_nul = TRUE)
+
+# load data from TSV
+load_table = function(dataF, append="", header=T, nrows=Inf) {
+  dataF = as.character(paste0(dataF, append))
+  print(paste("Loading", dataF))
+  if ( endsWith(dataF, ".gz") ) {
+    return(fread(cmd=paste('gunzip -c', dataF), header=header, sep="\t", na.strings=c("na","NA",".", "None"), nrows=nrows))
+  } else {
+    return(fread(dataF, header=header, sep="\t", na.strings=c("na","NA",".", "None"), nrows=nrows))
+  }
+}
+
+# multiple plots with single title
+my_plot_grid = function(plots, main, ncol=NULL, nrow=NULL) {
+  plot_row=plot_grid(plotlist=plots, ncol=ncol, nrow=nrow)
+  title <- ggdraw() + draw_label( main, fontface = 'bold', x = 0, hjust = 0 ) + theme(plot.margin = margin(0, 0, 0, 7))
+  return (plot_grid(title, plot_row, ncol = 1, rel_heights = c(0.1, 1)))
+}
+
+# calculate confidence interval
+# call with calc_ci( mtcars, mpg)
+calc_ci = function(d, col, min_lower_ci=NA, max_upper_ci=NA) {
+  ret = d %>% summarise(
+            col.mean := mean({{col}}, na.rm = TRUE),
+            col.sd = sd({{col}}, na.rm = TRUE),
+            col.n = n(),
+            .groups = 'drop') %>%
+  mutate(stderr = col.sd / sqrt(col.n),
+         lower.ci = col.mean - qt(1 - (0.05 / 2), col.n - 1) * stderr,
+         upper.ci = col.mean + qt(1 - (0.05 / 2), col.n - 1) * stderr) %>% 
+  ungroup() %>% 
+  mutate(lower.ci = pmax(min_lower_ci, lower.ci, na.rm=T),
+         upper.ci = pmin(max_upper_ci, upper.ci, na.rm=T))
+  return (ret)
+}
+
+calc_iqr = function(d, col) {
+  d %>% summarise(
+            col.median = median({{col}}, na.rm = T),
+            col.mean = mean({{col}}, na.rm = T),
+            col.upper = quantile({{col}}, .75, na.rm = T),
+            col.lower = quantile({{col}}, .25, na.rm = T),
+            col.n = n(),
+            .groups = 'drop')
+}
+
+#
+# write result tibble to BED file
+#
+write_bed = function(dat, bed_file, title, header=F) {
+  sink(bed_file)
+  cat(paste0("track name=",title," description=\"",title,"\" useScore=1 itemRgb=\"On\"\n"))
+  sink()
+  dat %>% write_tsv( bed_file, col_names = F, append = T ) 
+}
+
+# groups data and calculates performance and coverage
+calc_performance=function(tab, grp) {
+  tab %>% 
+    group_by_at(vars(one_of(grp))) %>% 
+    summarise(count=sum(count)) %>% 
+    pivot_wider(names_from=classification, values_from=count, names_sort=T) %>% 
+    mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>% 
+    mutate(
+      read_count=TP+FN,
+      cov=read_count*!!readlen/len,
+      precision=ifelse(TP+FP>0, TP/(TP+FP), NA),
+      recall=ifelse(TP+FN>0,TP/(TP+FN), NA),
+      F1=ifelse((2*TP+FP+FN)>0,2*TP/(2*TP+FP+FN),NA)
+  ) 
+}
+
+```
+
+
+# data
+```{r data, include=FALSE}
+
+home_dir=paste0(dirname(params$splice_sim_config),'/')
+conf=fromJSON(paste(readLines(params$splice_sim_config), collapse=""))
+
+home_dir='/Users/niko.popitsch/Desktop/data/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/'
+
+
+# results files
+data_file=paste0(home_dir,'/results/data.rds')
+meta_file=paste0(home_dir,'/results/meta.rds')
+
+if (file.exists(data_file)) {
+  tic("load data")
+  d=readRDS(data_file)
+  toc()
+} else {
+  stop("Could not find data_file")
+}
+if (file.exists(meta_file)) {
+  tic("load metadata")
+  m=readRDS(meta_file)
+  toc()
+} else {
+  stop("Could not find meta_file")
+}
+
+
+```
+
+
+## Coverage
+```{r}
+fx = calc_performance(d[['fx']], c('fid', 'mapper', 'conversion_rate', 'classification', 'len', 'gene_name', 'num_exons', 'ftype')) 
+
+# plot coverage per fx
+fx %>% 
+  ggplot(aes(mapper, cov)) + geom_boxplot() +
+  facet_grid(.~ftype) +
+  scale_y_sqrt() +
+  geom_hline(yintercept = c(50,100), linetype='dotted', col='grey') + 
+  ggtitle('Coverage per feature/isoform')
+
+```

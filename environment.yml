@@ -28,3 +28,4 @@ dependencies:
   - multiqc
   - pyarrow
   - fastparquet
+  - gff3sort

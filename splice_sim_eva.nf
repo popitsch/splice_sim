@@ -26,7 +26,7 @@ log.info "\n"
 /*
  * extract transcript features
  */
-process extract_transcript_features {
+/*process extract_transcript_features {
 	tag "${params.dataset_name}"
     module 'python/3.7.2-gcccore-8.2.0'
     publishDir "eva/meta", mode: 'copy'
@@ -43,12 +43,12 @@ process extract_transcript_features {
     			--model $model \
     			--outdir .
 	    """
-}
+}*/
 
 /*
  * extract splice-junction features
  */
-process extract_splice_junction_features {
+/*process extract_splice_junction_features {
 	tag "${params.dataset_name}"
     module 'python/3.7.2-gcccore-8.2.0'
     publishDir "eva/meta", mode: 'copy'
@@ -65,12 +65,12 @@ process extract_splice_junction_features {
     			--model $model \
     			--outdir .
 	    """
-}
+}*/
 
 /*
  * evaluate_overall_performance
  */
-process evaluate_bam_performance {
+/*process evaluate_bam_performance {
 	tag "$name"
 	label "medium"
     module 'python/3.7.2-gcccore-8.2.0:sambamba/0.6.6'
@@ -98,12 +98,12 @@ process evaluate_bam_performance {
 	    	done
 
 	    """
-	}
+	}*/
 
 /*
  * evaluate_splice_site_performance
  */
-process evaluate_splice_site_performance {
+/*process evaluate_splice_site_performance {
 	tag "$name"
     module 'python/3.7.2-gcccore-8.2.0:sambamba/0.6.6'
     publishDir "eva/splice_site_performance", mode: 'copy'
@@ -131,12 +131,12 @@ process evaluate_splice_site_performance {
 	    	done
 
 	    """
-	}
+	}*/
 
 /*
  * calculate_splice_site_mappability
  */
-process calculate_splice_site_mappability {
+/*process calculate_splice_site_mappability {
 	tag "$name"
     module 'python/3.7.2-gcccore-8.2.0:bedtools/2.27.1-foss-2018b:htslib/1.10.2-gcccore-7.3.0'
     publishDir "eva/splice_site_mappability", mode: 'copy'
@@ -165,7 +165,10 @@ process calculate_splice_site_mappability {
 	    	done
 
 	    """
-	}
+	}*/
+
+Channel.fromFilePairs("${workflow.launchDir}/eva/overall_performance/*.{bam,bai}", flat:true) { file -> file.name.replaceAll(/.bam|.bai$/,'') }.
+set { mismapped_bams }
 
 
 /*
@@ -193,7 +196,7 @@ process calc_feature_overlap {
 	}
 
 
-process run_featureCounts {
+/*process run_featureCounts {
 	tag "${params.dataset_name}"
 	cpus 4
 	module 'subread/2.0.1-gcc-7.3.0-2.30'
@@ -210,30 +213,34 @@ process run_featureCounts {
 	"""
 	featureCounts -T ${task.cpus} \
 		-a ${params.gene_gff} \
+		-O \
+		-M \
 		--primary \
 		-t exon \
 		-f \
 		-g ID \
 		-o ${name}.exon.featureCounts.txt \
-		-s 1 \
+		-s 0 \
 		${bam}
 	featureCounts -T ${task.cpus} \
 		-a ${params.intron_gff} \
+		-O \
+		-M \
 		--primary \
 		-t intron \
 		-f \
 		-g ID \
 		-o ${name}.intron.featureCounts.txt \
-		-s 1 \
+		-s 0 \
 		${bam}
 	cp .command.log ${name}.featureCounts.log
 	"""
 }
-
+*/
 /*
  * collect_splice_sim_eva_results and build parquet db
  */
-process collect_splice_sim_eva_results {
+/*process collect_splice_sim_eva_results {
 	tag "$name"
     cpus 1
     module 'python/3.7.2-gcccore-8.2.0:sambamba/0.6.6'
@@ -256,4 +263,4 @@ process collect_splice_sim_eva_results {
 	    			--indir $PWD \
 	    			--outdir results
 		"""
-	}
+	}*/

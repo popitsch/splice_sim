@@ -20,7 +20,7 @@ Channel.fromFilePairs("${params.final_bam_dir}*.{bam,bai}", flat:true) { file ->
 /*
  * evaluate
  */
-process evaluate {
+process evaluate_bams {
 	tag "$name"
 	label "medium"
     module 'python/3.7.2-gcccore-8.2.0:htslib/1.10.2-gcccore-7.3.0'
@@ -44,10 +44,6 @@ process evaluate {
 	    	do
 	    		bgzip \${tsv}
 	    	done
-	    	# move all bams
-	    	mkdir bams
-	    	mv *bam bams
-	    	mv *bai bams
 	    """
 	}
 
@@ -58,7 +54,7 @@ process evaluate {
 process extract_feature_metadata {
 	tag "$name"
     cpus 1
-    module 'python/3.7.2-gcccore-8.2.0:sambamba/0.6.6'
+    module 'python/3.7.2-gcccore-8.2.0:htslib/1.10.2-gcccore-7.3.0'
     publishDir "eva/meta", mode: 'copy'
     cache false
     input:
@@ -71,5 +67,11 @@ process extract_feature_metadata {
 				--config ${params.config_file} \
 				--model ${params.model} \
 				--outdir .
+    		# bgzip TSV tables
+    		shopt -s nullglob
+    		for tsv in *.tsv
+	    	do
+	    		bgzip \${tsv}
+	    	done
 		"""
 	}

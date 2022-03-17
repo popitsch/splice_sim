@@ -14,9 +14,9 @@ geometry: margin=1in
 classoption: a4paper
 params:
     splice_sim_config:
-       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/splice_sim.config.json"
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/splice_sim.config.json"
     out_dir:
-       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/analysis/"
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/analysis/"
 ---
 <style type="text/css">
 body, td {
@@ -28,6 +28,8 @@ code.r{
 pre {
   font-size: 10px
 }
+div.blue pre { background-color:lightblue; }
+div.blue pre.r { background-color:blue; }
 </style>
 
 # INIT
@@ -71,7 +73,10 @@ load_table = function(dataF, append="", header=T, nrows=Inf) {
 }
 
 # multiple plots with single title
-my_plot_grid = function(plots, main, ncol=NULL, nrow=NULL) {
+my_plot_grid = function(plots, main, ncol=NULL, nrow=NULL, labels=NULL) {
+  if (!is.null(labels) & labels==T) {
+    labels=LETTERS[1:len(plots)]
+  }
   plot_row=plot_grid(plotlist=plots, ncol=ncol, nrow=nrow)
   title <- ggdraw() + draw_label( main, fontface = 'bold', x = 0, hjust = 0 ) + theme(plot.margin = margin(0, 0, 0, 7))
   return (plot_grid(title, plot_row, ncol = 1, rel_heights = c(0.1, 1)))
@@ -115,7 +120,7 @@ write_bed = function(dat, bed_file, title, header=F) {
 }
 
 # groups data and calculates performance and coverage
-calc_performance=function(tab, grp) {
+calc_performance=function(tab, grp, readlen) {
   tab %>% 
     group_by_at(vars(one_of(grp))) %>% 
     summarise(count=sum(count)) %>% 
@@ -134,12 +139,16 @@ calc_performance=function(tab, grp) {
 
 
 # data
+
+
+
+
 ```{r data, include=FALSE}
 
 home_dir=paste0(dirname(params$splice_sim_config),'/')
 conf=fromJSON(paste(readLines(params$splice_sim_config), collapse=""))
 
-home_dir='/Users/niko.popitsch/Desktop/data/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/'
+#home_dir='/Users/niko.popitsch/Desktop/data/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/'
 
 
 # results files
@@ -162,19 +171,77 @@ if (file.exists(meta_file)) {
 }
 
 
+# to calc performance data
+# calc_performance(d[['fx']], 
+                      # c('fid', 'mapper', 'conversion_rate', 'classification', 'len', 'gene_name', 'num_exons', 'ftype'),
+                      # conf$readlen) 
+
+# to add meta data
+# %>% 
+#   left_join(m[['tx']], by=c('fid'='tid')) %>% # NB too-short tx are lost
+#   left_join(m[['ga']], by=c('fid'='tid')) 
+
 ```
 
 
 ## Coverage
-```{r}
-fx = calc_performance(d[['fx']], c('fid', 'mapper', 'conversion_rate', 'classification', 'len', 'gene_name', 'num_exons', 'ftype')) 
 
-# plot coverage per fx
-fx %>% 
+- The target coverage is ~100X per isoform
+- Show the distribution per isoform/feature/whole-tx
+
+<div class = "blue">
+<b>Coverage of simulated reads.</b>
+- per transcript, feature and isoform.
+
+</div>
+
+```{r}
+p1 = d[['tx']] %>% 
+      group_by(mapper, conversion_rate, fid, len, classification ) %>% 
+      summarise(count=sum(count)) %>% 
+      pivot_wider(names_from=classification, values_from=count, names_sort=T) %>% 
+      mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>% 
+      mutate(
+        true_cov=(TP+FN)*!!conf$readlen/len,
+        found_cov=(TP+FP)*!!conf$readlen/len
+    ) %>% 
   ggplot(aes(mapper, cov)) + geom_boxplot() +
-  facet_grid(.~ftype) +
   scale_y_sqrt() +
-  geom_hline(yintercept = c(50,100), linetype='dotted', col='grey') + 
-  ggtitle('Coverage per feature/isoform')
+  geom_hline(yintercept = c(0,50,100), linetype='dotted', col='grey') + 
+  ggtitle('Coverage over tx interval')
+
+
+p2 = d[['fx']] %>% 
+  group_by(mapper, conversion_rate, fid, true_isoform, ftype, len, classification ) %>% 
+      summarise(count=sum(count)) %>% 
+      pivot_wider(names_from=classification, values_from=count, names_sort=T) %>% 
+      mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>% 
+      mutate(
+        read_count=TP+FN,
+        cov=read_count*!!conf$readlen/len
+    ) %>% 
+  ggplot(aes(mapper, cov)) + geom_boxplot() +
+  facet_grid(true_isoform~ftype) +
+  scale_y_sqrt() +
+  geom_hline(yintercept = c(0,50,100), linetype='dotted', col='grey') + 
+  ggtitle('Coverage per feature type')
+
+p3 = d[['tx']] %>% 
+      group_by(mapper, conversion_rate, fid, true_isoform, len, classification ) %>% 
+      summarise(count=sum(count)) %>% 
+      pivot_wider(names_from=classification, values_from=count, names_sort=T) %>% 
+      mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>% 
+      mutate(
+        read_count=TP+FN,
+        cov=read_count*!!conf$readlen/len
+    ) %>% 
+  ggplot(aes(mapper, cov)) + geom_boxplot() +
+  facet_grid(.~true_isoform) +
+  scale_y_sqrt() +
+  geom_hline(yintercept = c(0,50,100), linetype='dotted', col='grey') + 
+  ggtitle('Coverage per isoform')
+
+
+my_plot_grid(list(p1,p2,p3), labels=T, 'Coverage', nrow = 1)
 
 ```

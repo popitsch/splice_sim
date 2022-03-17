@@ -43,12 +43,12 @@ ref_base=conf$condition$ref
 readlen=conf$readlen
 
 # create results dir?
-if (!dir.exists(paste0(home_dir,'/results/')){
-  dir.create(paste0(home_dir,'/results/')
+if (!dir.exists(paste0(home_dir,'/results/'))) {
+  dir.create(paste0(home_dir,'/results/'))
 } 
 # results files
 data_file=paste0(home_dir,'/results/data.rds')
-meta_file=paste0(home_dir,'/results/data.rds')
+meta_file=paste0(home_dir,'/results/meta.rds')
   
 tic("load evaluation data") # ca. 5-10min.
 

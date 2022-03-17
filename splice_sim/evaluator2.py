@@ -101,7 +101,6 @@ def classify_read(found_read, found_overlapping_raw, tid2feat, performance, dict
     cv2=1 if int(n_converted)>1 else 0
     se1=1 if int(n_seqerr)>0 else 0
     se2=1 if int(n_seqerr)>1 else 0
-
     # which features does the true read overlap with and whats the true iclass   
     true_features=set(tid2feat[true_tid]) 
     true_class=get_class(true_read, true_features)
@@ -314,7 +313,7 @@ def extract_feature_metadata(config, m, out_dir):
                         rnk=exon['exon_number']
                         fid = tid + "_ex" + str(rnk)
                         ex_map = calc_mappability(genomeMappability, t.chromosome, exon['start'], exon['end'])
-                        ex_rna = rna_seq[exon['start']-t.start:exon['end']-t.start]
+                        ex_rna = rna_seq[exon['start']-t.start:exon['end']-t.start+1]
                         exon_len+=exon['end']-exon['start']+1
                         print("\t".join([str(x) for x in [
                             tid,
@@ -337,7 +336,7 @@ def extract_feature_metadata(config, m, out_dir):
                         fid = tid + "_in" + str(rnk)
                         # tx
                         in_map = calc_mappability(genomeMappability, t.chromosome, intron['start'], intron['end'])
-                        in_rna = rna_seq[intron['start']-t.start:intron['end']-t.start]
+                        in_rna = rna_seq[intron['start']-t.start:intron['end']-t.start+1]
                         intron_len+=intron['end']-intron['start']+1
                         print("\t".join([str(x) for x in [
                             tid,

@@ -66,6 +66,7 @@ m[['tx']]=load_table(paste0(home_dir, 'eva/meta/big3_slamseq_nf.tx.metadata.tsv.
 m[['fx']]=load_table(paste0(home_dir, 'eva/meta/big3_slamseq_nf.fx.metadata.tsv.gz'))
 m[['sj']]=load_table(paste0(home_dir, 'eva/meta/big3_slamseq_nf.sj.metadata.tsv.gz'))
 m[['ga']]=load_table(paste0(home_dir, 'sim/reference_model/gene_anno.tsv.gz')) 
+m[['all_tids']]=load_table(paste0(home_dir, 'tids.tsv')) %>% pull(transcript_id)
 toc()
 
 tic("data cleaning")  # data cleaning 
@@ -100,11 +101,9 @@ m[['tx']] = m[['tx']] %>%
 # ===================================================================
 
 m[['fx']] = m[['fx']] %>% 
+  left_join(m[['tx']] %>% select(tid, tx_rnk=rnk, num_exons, tx_mappability=mappability), by='tid') %>% # get cols from tx data
   mutate(chromosome=factor(chromosome),
          len=end-start+1,
-         num_exons=case_when(rnk<=5 ~ as.character(rnk), 
-                             rnk>5  ~ '>5',
-                             TRUE   ~ NA_character_),
          mappability=case_when(mean_map<0.2 ~ 'low',
                                mean_map>0.9 ~ 'high',
                                TRUE ~ 'medium'),
@@ -126,11 +125,9 @@ m[['fx']] = m[['fx']] %>%
 # ===================================================================
 
 m[['sj']] = m[['sj']] %>% 
+  left_join(m[['tx']] %>% select(tid, tx_rnk=rnk, num_exons, tx_mappability=mappability), by='tid') %>% # get cols from tx data
   mutate(chromosome=factor(chromosome),
          len=end-start+1,
-         num_exons=case_when(rnk<=5 ~ as.character(rnk), 
-                             rnk>5  ~ '>5',
-                             TRUE   ~ NA_character_),
          mappability_acc = case_when(acc_win_map<0.2 ~ 'low',
                                      acc_win_map>0.9 ~ 'high',
                                      TRUE ~ 'medium'),
@@ -155,7 +152,6 @@ m[['sj']] = m[['sj']] %>%
                              acc_in_fc<0.2 ~ 'low',
                              TRUE ~ 'medium')
   ) %>% mutate(
-    num_exons=factor(num_exons, levels=c('1','2','3','4','5','>5')),
     mappability_don=factor(mappability_don, levels=c('high', 'medium', 'low')),
     mappability_acc=factor(mappability_acc, levels=c('high', 'medium', 'low')),
     don_ex_fc=factor(don_ex_fc, levels=c('high', 'medium', 'low')),
@@ -196,22 +192,22 @@ all_data = all_data %>%
 d=list()
 d[['tx']] = all_data %>% 
   filter(class_type=='tx') %>% 
-  select(-class_type) %>% 
-  left_join(m[['tx']], by=c('fid'='tid')) %>% # NB too-short tx are lost
-  left_join(m[['ga']], by=c('fid'='tid')) 
+  select(-class_type) # %>% 
+#   left_join(m[['tx']], by=c('fid'='tid')) %>% # NB too-short tx are lost
+#   left_join(m[['ga']], by=c('fid'='tid')) 
 
 
 d[['fx']] = all_data %>% 
   filter(class_type=='fx') %>% 
-  select(-class_type) %>% 
-  left_join(m[['fx']], by='fid') %>% # NB too-short tx are lost
-  left_join(m[['ga']], by='tid')
+  select(-class_type) #%>% 
+#  left_join(m[['fx']], by='fid') %>% # NB too-short tx are lost
+#  left_join(m[['ga']], by='tid')
 
 
 d[['sj']] = all_data %>% 
-  filter(class_type %in% c('spl', 'don', 'acc')) %>% 
-  left_join(m[['sj']], by='fid') %>% # NB too-short tx are lost
-  left_join(m[['ga']], by='tid')
+  filter(class_type %in% c('spl', 'don', 'acc')) #%>% 
+#  left_join(m[['sj']], by='fid') %>% # NB too-short tx are lost
+#  left_join(m[['ga']], by='tid')
 
 toc()
 

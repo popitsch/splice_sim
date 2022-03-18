@@ -61,6 +61,10 @@ require(RColorBrewer)
 # to ensure stripping '\0' (nul) from character vector
 options(arrow.skip_nul = TRUE)
 
+# global theme
+theme_set(theme_light())
+
+
 # load data from TSV
 load_table = function(dataF, append="", header=T, nrows=Inf) {
   dataF = as.character(paste0(dataF, append))
@@ -75,9 +79,9 @@ load_table = function(dataF, append="", header=T, nrows=Inf) {
 # multiple plots with single title
 my_plot_grid = function(plots, main, ncol=NULL, nrow=NULL, labels=NULL) {
   if (!is.null(labels) & labels==T) {
-    labels=LETTERS[1:len(plots)]
+    labels=LETTERS[1:length(plots)]
   }
-  plot_row=plot_grid(plotlist=plots, ncol=ncol, nrow=nrow)
+  plot_row=plot_grid(plotlist=plots, ncol=ncol, nrow=nrow, labels=labels)
   title <- ggdraw() + draw_label( main, fontface = 'bold', x = 0, hjust = 0 ) + theme(plot.margin = margin(0, 0, 0, 7))
   return (plot_grid(title, plot_row, ncol = 1, rel_heights = c(0.1, 1)))
 }
@@ -87,6 +91,7 @@ my_plot_grid = function(plots, main, ncol=NULL, nrow=NULL, labels=NULL) {
 calc_ci = function(d, col, min_lower_ci=NA, max_upper_ci=NA) {
   ret = d %>% summarise(
             col.mean := mean({{col}}, na.rm = TRUE),
+            col.median := median({{col}}, na.rm = TRUE),
             col.sd = sd({{col}}, na.rm = TRUE),
             col.n = n(),
             .groups = 'drop') %>%
@@ -140,9 +145,6 @@ calc_performance=function(tab, grp, readlen) {
 
 # data
 
-
-
-
 ```{r data, include=FALSE}
 
 home_dir=paste0(dirname(params$splice_sim_config),'/')
@@ -184,64 +186,156 @@ if (file.exists(meta_file)) {
 ```
 
 
+## QC
+
+### NA counts
+Calculate and plot the fraction of NA counts per table/column
+```{r}
+# count non-NA values per column for all passed tables
+count_na_per_column = function(tables) {
+ counts=tibble()
+ for (name in names(tables)) {
+    tab=tables[[name]]
+    nr=nrow(tab)
+    print(nr)
+    if (nr>0) {
+      counts=counts %>% rbind(
+        tab %>% select(everything()) %>% summarise_all(funs(sum(is.na(.)))) %>% mutate(table=!!name) %>% collect() %>% pivot_longer(-table) %>% mutate(nr=!!nr, frac=value/nr)
+      )
+    }
+  }
+  return (counts)
+}
+
+non_na_counts = count_na_per_column(c(setNames(d, paste0('d_',names(d))),setNames(m, paste0('m_',names(m)))) )
+ggplot(non_na_counts, aes(x=name, y=frac)) +
+  geom_bar(stat='identity') +
+  facet_wrap(table~., scales = 'free') +
+  ggtitle("Fraction of NA counts per table column") + 
+  xlab("") + ylab("") +
+  ylim(0,1) +
+  coord_flip() 
+
+```
+
+### Missing tids
+
+Some of the originally configured transcript ids are missing from result data. 
+This is either because 
+- there were no reads simulated as the annotation is smaller than read-size and there are no (longer) overlapping transcripts
+- annotations are very long (e.g., Kcnip1 or Cmss1)
+```{r}
+found_tids=unique(d[['tx']] %>% pull(fid))
+print(paste0("We have data for ", length(found_tids), '/', length(d[['tx']]), " transcripts"))
+
+```
+
+
 ## Coverage
 
-- The target coverage is ~100X per isoform
-- Show the distribution per isoform/feature/whole-tx
+- The target coverage is ~50X per isoform, i.e., 100X overall
+- There is an edge effect as reads that overlap with 1bp are counted for their full length when coverage is calculated.
+  This could explain the increased mean coverage for exons and introns. 
+  For exons this effect is a bit reduced as the 1st/last exon also has an edge effect as we don't simulate reads that overlap the tx edges.
 
 <div class = "blue">
-<b>Coverage of simulated reads.</b>
-- per transcript, feature and isoform.
-
+<b>Coverage of simulated/mapped reads per isoform/genomic feature.</b>
+A) Coverage distributions calculated from unconverted reads only (conversion rate = 0). 
+   Both mappers have problems with spliced read mapping indicated by reduced coverage of spliced reads (panel mat/exon)
+   and increased coverage of mature isoform reads that were false-positively mapped to introns (panel mat/intron). 
+   Presumably, most of these reads are overlapping the splice junctions.
+B) Mean coverage per conversion rate. 
+   STAR shows decreased coverage of spliced reads with increasing conversion rates while HISAT3N is unaffected by this.
+Note that deviations of the configured ~100X coverage for this 1:1 mix of premature/mature isoforms presumably stems from edge effects of the coverage
+calculation that does not take partial read overlap into account. Coverage thresholds 0,50,100 are indicated by grey horizontal lines.
 </div>
 
+
 ```{r}
-p1 = d[['tx']] %>% 
-      group_by(mapper, conversion_rate, fid, len, classification ) %>% 
+calc_coverage = function(grp_tab) {
+  grp_tab %>% 
       summarise(count=sum(count)) %>% 
-      pivot_wider(names_from=classification, values_from=count, names_sort=T) %>% 
+      pivot_wider(names_from=c(mapper,classification), values_from=count, names_sort=T) %>% 
       mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>% 
+      filter(len>conf$readlen) %>% # filter too-short introns as this will lead to wrong coverage calc. Example: ENSMUST00000116560.2_in5
       mutate(
-        true_cov=(TP+FN)*!!conf$readlen/len,
-        found_cov=(TP+FP)*!!conf$readlen/len
-    ) %>% 
-  ggplot(aes(mapper, cov)) + geom_boxplot() +
+        simulated=(HISAT3N_TP+HISAT3N_FN)*!!conf$readlen/len, # same as simulated_star!
+        HISAT3N=(HISAT3N_TP+HISAT3N_FP)*!!conf$readlen/len,
+        STAR=(STAR_TP+STAR_FP)*!!conf$readlen/len,
+    ) %>% pivot_longer(c(simulated, HISAT3N, STAR), names_to='mapper') %>% 
+    mutate(mapper=factor(mapper, levels=c('simulated', 'HISAT3N', 'STAR')),
+           is_converted=ifelse(conversion_rate==0,'no conversions', 'converted reads')) %>% 
+    ungroup()
+}
+
+hlines=tribble(
+  ~y,  ~cat,
+  0,   1,
+  50,  2,
+  100, 3
+)
+tx = d[['tx']] %>% left_join(m[['tx']], by=c('fid'='tid')) 
+fx = d[['fx']] %>% left_join(m[['fx']], by='fid') 
+
+p1 = calc_coverage(tx %>% group_by(mapper, conversion_rate, fid, len, classification ) ) %>% 
+  ggplot(aes(x=mapper, y=value, fill=mapper)) + geom_boxplot() +
   scale_y_sqrt() +
-  geom_hline(yintercept = c(0,50,100), linetype='dotted', col='grey') + 
-  ggtitle('Coverage over tx interval')
+  facet_grid(is_converted~., scales = 'free') +
+  geom_hline(data = hlines, aes(yintercept = y, linetype=factor(cat)), color = 'grey', show.legend=FALSE ) +
+  ggtitle('Coverage over tx interval') + theme(legend.position="none") + xlab('') + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 
-
-p2 = d[['fx']] %>% 
-  group_by(mapper, conversion_rate, fid, true_isoform, ftype, len, classification ) %>% 
-      summarise(count=sum(count)) %>% 
-      pivot_wider(names_from=classification, values_from=count, names_sort=T) %>% 
-      mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>% 
-      mutate(
-        read_count=TP+FN,
-        cov=read_count*!!conf$readlen/len
-    ) %>% 
-  ggplot(aes(mapper, cov)) + geom_boxplot() +
-  facet_grid(true_isoform~ftype) +
+p2 = calc_coverage(fx %>% group_by(mapper, conversion_rate, fid, true_isoform, ftype, len, classification )) %>% 
+  ggplot(aes(x=mapper, y=value, fill=mapper)) + geom_boxplot() +
   scale_y_sqrt() +
-  geom_hline(yintercept = c(0,50,100), linetype='dotted', col='grey') + 
-  ggtitle('Coverage per feature type')
+  geom_hline(data = hlines, aes(yintercept = y, linetype=factor(cat)), color = 'grey', show.legend=FALSE ) +
+  ggtitle('Coverage per genomic feature') +
+  facet_grid(is_converted~true_isoform+ftype, scales = 'free') + theme(legend.position="none") + xlab('') + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 
-p3 = d[['tx']] %>% 
-      group_by(mapper, conversion_rate, fid, true_isoform, len, classification ) %>% 
-      summarise(count=sum(count)) %>% 
-      pivot_wider(names_from=classification, values_from=count, names_sort=T) %>% 
-      mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>% 
-      mutate(
-        read_count=TP+FN,
-        cov=read_count*!!conf$readlen/len
-    ) %>% 
-  ggplot(aes(mapper, cov)) + geom_boxplot() +
-  facet_grid(.~true_isoform) +
+p3 = calc_coverage(fx %>% group_by(mapper, conversion_rate, fid, ftype, len, classification )) %>% 
+  ggplot(aes(x=mapper, y=value, fill=mapper)) + geom_boxplot() +
   scale_y_sqrt() +
-  geom_hline(yintercept = c(0,50,100), linetype='dotted', col='grey') + 
-  ggtitle('Coverage per isoform')
+  geom_hline(data = hlines, aes(yintercept = y, linetype=factor(cat)), color = 'grey', show.legend=FALSE ) +
+  ggtitle('Coverage per genomic feature') +
+  facet_grid(is_converted~ftype, scales = 'free') + theme(legend.position="none") + xlab('') + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+p4 = calc_coverage(tx %>% group_by(mapper, conversion_rate, fid, true_isoform, len, classification ) ) %>% 
+  ggplot(aes(x=mapper, y=value, fill=mapper)) + geom_boxplot() +
+  scale_y_sqrt() +
+  geom_hline(data = hlines, aes(yintercept = y, linetype=factor(cat)), color = 'grey', show.legend=FALSE ) +
+  ggtitle('Coverage per isoform') +
+  facet_grid(is_converted~true_isoform, scales = 'free') + theme(legend.position="none") + xlab('') + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+my_plot_grid(list(p1,p2,p3,p4), labels=T, 'QC: Coverage for converted and unconverted reads', nrow = 1)
+
+# final
+
+tab = calc_coverage(fx %>% group_by(mapper, conversion_rate, fid, true_isoform, ftype, len, classification ))
+p1 = tab %>% 
+  filter(is_converted=='no conversions') %>% 
+  ggplot(aes(x=mapper, y=value, fill=mapper)) + geom_boxplot() +
+  scale_y_sqrt() +
+  geom_hline(data = hlines, aes(yintercept = y, linetype=factor(cat)), color = 'grey', show.legend=FALSE ) +
+  ggtitle('Coverage per genomic feature') +
+  facet_grid(is_converted~true_isoform+ftype, scales = 'free') + theme(legend.position="none") + xlab('') + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+p2 = calc_ci(tab %>% group_by(conversion_rate, ftype, true_isoform, mapper), value) %>% 
+  ggplot(aes(x=conversion_rate, y=col.mean, col=mapper, group=mapper)) + 
+  geom_ribbon(aes(ymin=lower.ci, ymax=upper.ci), linetype=2, alpha=0.2) +
+  geom_line() +
+  ggtitle('Mean coverage per condition') +
+  facet_grid(.~true_isoform+ftype)
+
+my_plot_grid(list(p1,p2), labels=T, 'Coverage per mapper', nrow = 1)
 
 
-my_plot_grid(list(p1,p2,p3), labels=T, 'Coverage', nrow = 1)
+# calc_coverage(d[['tx']] %>% group_by(mapper, conversion_rate, fid, len, classification ) ) %>% group_by(conversion_rate,mapper) %>% summarise(m=mean(value)) %>% ggplot(aes(conversion_rate,m,fill=mapper)) + geom_bar(stat='identity', position = 'dodge') + ggtitle('Mean tx coverage per mapper and condition')
+
+# NOTE: why is intron/pre coverage so high?
+# I think this is because of an edge effect at intron/exon boundaries. Reads that overlap only 1 bp with intron are counted for their full rl. 
+# The longer the intron, the less this influence gets:
+# tab %>% filter(conversion_rate==0, mapper=='simulated') %>% ggplot(aes(len, value)) + geom_point() + facet_wrap(ftype~true_isoform, scales='free') + geom_vline(xintercept = 100, col='red')
+# for exons, this effect is reduced by the edge effect on the 1st and last exon:
+#tab %>% filter(conversion_rate==0, mapper=='simulated', ftype=='exon') %>% left_join(m[['fx']]) %>% mutate(is_edge=(rnk==1 | rnk==tx_rnk)) %>% 
+#  ggplot(aes(x=is_edge, y=value)) + geom_boxplot() + facet_wrap(ftype~true_isoform, scales='free') 
 
 ```

@@ -141,6 +141,7 @@ def build_transcriptome(config, tids, out_dir):
     out_file_chrsize=out_dir+'/'+transcriptome_name+'.fa.chrom.sizes'
     out_file_dict=out_dir+'/'+transcriptome_name+'.fa.dict'
     out_file_gff3=out_dir+'/'+transcriptome_name+'.gff3'
+    out_file_gtf=out_dir+'/'+transcriptome_name+'.gtf'
     out_file_bed=out_dir+'/'+transcriptome_name+'.bed'
     tid2start={}
     # process data
@@ -148,70 +149,85 @@ def build_transcriptome(config, tids, out_dir):
         with open(out_file_chrsize, 'w') as out_chrsize:        
             with open(out_file_dict, 'w') as out_dict:        
                 with open(out_file_gff3, 'w') as out_gff3:
-                    with open(out_file_bed, 'w') as out_bed:
-                        f = pysam.TabixFile(config["gene_gff"], mode="r")
-                        for row in tqdm.tqdm(f.fetch(parser=pysam.asTuple()), desc="Processing features"):
-                            reference, source,ftype,fstart,fend,score,strand,phase,info=row
-                            pinfo=parse_info( info )
-                            tid = pinfo['transcript_id'] if 'transcript_id' in pinfo else None
-                            if tid not in tids:
-                                continue
-                            if ftype != 'transcript':
-                                continue
-                            fstart=int(fstart)-1
-                            fend=int(fend)
-                            ampstart=max(1,fstart-amp_extension)
-                            ampend=fend+amp_extension
-                            offset=padding+(fstart-ampstart)+1
-                            seq='N'*padding+genome.fetch(reference, ampstart, ampend)+'N'*padding
-                            new_chrom=tid
-                            new_chrom_len=ampend-ampstart+1+2*padding # length of new chrom
-                            tid2start[tid]=ampstart
-                            # FASTA                            
-                            print('>%s'% new_chrom, file=out_fasta)
-                            print(format_fasta(seq), file=out_fasta)
-                            # chrom.sizes file
-                            print('%s\t%i'% (new_chrom,new_chrom_len), file=out_chrsize)
-                            # DICT
-                            print('@SQ\tSN:%s\tLN:%i\tM5:%s\tUR:file:%s'% (new_chrom,
-                                                                           new_chrom_len,
-                                                                           hashlib.md5(seq.encode('utf-8')).hexdigest(), # M5 MD5 checksum of the sequence in the uppercase, excluding spaces but including pads (as ‘*’s)
-                                                                           os.path.abspath(out_file_fasta)), file=out_dict)
-                        
-                            # BED
-                            print("\t".join([str(x) for x in [
-                                new_chrom,
-                                offset-1, # start
-                                offset+fend-fstart-1, # end
-                                new_chrom,
-                                '.' if score is None else score,
-                                '.' if strand is None else strand
-                                ]]), file=out_bed)          
-                                          
-                        f = pysam.TabixFile(config["gene_gff"], mode="r")
-                        for row in tqdm.tqdm(f.fetch(parser=pysam.asTuple()), desc="Processing features"):    
-                            reference, source,ftype,fstart,fend,score,strand,phase,info=row
-                            pinfo=parse_info( info )
-                            tid = pinfo['transcript_id'] if 'transcript_id' in pinfo else None
-                            if tid not in tids:
-                                continue
-                            fstart=int(fstart)-1
-                            fend=int(fend)
-                            ampstart=tid2start[tid]
-                            offset=padding+(fstart-ampstart)+1
-                            new_chrom=tid
-                            # GFF
-                            print("\t".join([str(x) for x in [
-                                new_chrom,
-                                source,
-                                ftype,
-                                offset, # start
-                                offset+fend-fstart-1, # end
-                                score,
-                                strand,
-                                phase,
-                                info
-                                ]]), file=out_gff3)
+                    with open(out_file_gtf, 'w') as out_gtf:
+                        with open(out_file_bed, 'w') as out_bed:
+                            f = pysam.TabixFile(config["gene_gff"], mode="r")
+                            for row in tqdm.tqdm(f.fetch(parser=pysam.asTuple()), desc="Processing features"):
+                                reference, source,ftype,fstart,fend,score,strand,phase,info=row
+                                pinfo=parse_info( info )
+                                tid = pinfo['transcript_id'] if 'transcript_id' in pinfo else None
+                                if tid not in tids:
+                                    continue
+                                if ftype != 'transcript':
+                                    continue
+                                fstart=int(fstart)-1
+                                fend=int(fend)
+                                ampstart=max(1,fstart-amp_extension)
+                                ampend=fend+amp_extension
+                                offset=padding+(fstart-ampstart)+1
+                                seq='N'*padding+genome.fetch(reference, ampstart, ampend)+'N'*padding
+                                new_chrom=tid
+                                new_chrom_len=ampend-ampstart+1+2*padding # length of new chrom
+                                tid2start[tid]=ampstart
+                                # FASTA
+                                print('>%s'% new_chrom, file=out_fasta)
+                                print(format_fasta(seq), file=out_fasta)
+                                # chrom.sizes file
+                                print('%s\t%i'% (new_chrom,new_chrom_len), file=out_chrsize)
+                                # DICT
+                                print('@SQ\tSN:%s\tLN:%i\tM5:%s\tUR:file:%s'% (new_chrom,
+                                                                               new_chrom_len,
+                                                                               hashlib.md5(seq.encode('utf-8')).hexdigest(), # M5 MD5 checksum of the sequence in the uppercase, excluding spaces but including pads (as ‘*’s)
+                                                                               os.path.abspath(out_file_fasta)), file=out_dict)
+
+                                # BED
+                                print("\t".join([str(x) for x in [
+                                    new_chrom,
+                                    offset-1, # start
+                                    offset+fend-fstart-1, # end
+                                    new_chrom,
+                                    '.' if score is None else score,
+                                    '.' if strand is None else strand
+                                    ]]), file=out_bed)
+
+                            f = pysam.TabixFile(config["gene_gff"], mode="r")
+                            for row in tqdm.tqdm(f.fetch(parser=pysam.asTuple()), desc="Processing features"):
+                                reference, source,ftype,fstart,fend,score,strand,phase,info=row
+                                pinfo=parse_info( info )
+                                tid = pinfo['transcript_id'] if 'transcript_id' in pinfo else None
+                                if tid not in tids:
+                                    continue
+                                fstart=int(fstart)-1
+                                fend=int(fend)
+                                ampstart=tid2start[tid]
+                                offset=padding+(fstart-ampstart)+1
+                                new_chrom=tid
+                                # GFF
+                                print("\t".join([str(x) for x in [
+                                    new_chrom,
+                                    source,
+                                    ftype,
+                                    offset, # start
+                                    offset+fend-fstart-1, # end
+                                    score,
+                                    strand,
+                                    phase,
+                                    info
+                                    ]]), file=out_gff3)
+                                # GTF
+                                if ftype in ['transcript', 'exon']:
+                                    gtf_info = 'transcript_id "%s"; gene_id "%s"; gene_name "%s";' % (pinfo['transcript_id'], pinfo['gene_id'], pinfo['gene_name'])
+                                    print("\t".join([str(x) for x in [
+                                        new_chrom,
+                                        source,
+                                        ftype,
+                                        offset,  # start
+                                        offset + fend - fstart - 1,  # end
+                                        score,
+                                        strand,
+                                        phase,
+                                        gtf_info
+                                    ]]), file=out_gtf)
 
     # compress + index output files            
     sort_bgzip_and_tabix(out_file_gff3, seq_col=0, start_col=3, end_col=4, line_skip=0, zerobased=False)
@@ -223,6 +239,7 @@ def build_transcriptome(config, tids, out_dir):
     print("CHROMSIZE file:\t"+out_file_chrsize)
     print("DICT file:\t"+out_file_dict)
     print("GFF file + idx:\t"+out_file_gff3)
+    print("GTF file:\t"+out_file_gtf)
     print("BED file + idx:\t"+out_file_bed)
                     
 usage = '''                           
@@ -314,7 +331,7 @@ echo "Starting splice_sim pipeline with profile $profile"
                         "splice_sim_cmd": config['splice_sim_cmd'],
                         "genome_fa": out_dir+'ref/%s.fa' % (config['transcriptome_name']),
                         "genome_chromosome_sizes": out_dir+'ref/%s.fa.chrom.sizes' % (config['transcriptome_name']),
-                        "gene_gff": out_dir+'ref/%s.sorted.gff3.gz' % (config['transcriptome_name']),
+                        "gene_gff": out_dir+'ref/%s.gff3.gz' % (config['transcriptome_name']),
                         "create_bams": True,
                         "transcript_ids": tp_dir+'3end_experiment.'+str(tp)+'.isoform_data.tsv',
                         "transcript_data": tp_dir+'3end_experiment.'+str(tp)+'.transcript_data.json',
@@ -331,12 +348,12 @@ echo "Starting splice_sim pipeline with profile $profile"
                             "STAR": {
                                 "star_cmd": "STAR",
                                 "star_genome_idx": out_dir+'ref/star_2.7.1_index/', # NB must be built externally
-                                "star_splice_gtf": out_dir+'ref/%s.sorted.gtf' % (config['transcriptome_name']),
+                                "star_splice_gtf": out_dir+'ref/%s.gtf' % (config['transcriptome_name']),
                                 },
                             "HISAT3N": {
                                 "hisat3n_cmd": "singularity exec /groups/ameres/Niko/software/SIF/hisat-3n.sif /hisat-3n/hisat-3n",
                                 "hisat3n_idx": out_dir+'ref/hisat2-3n_index/%s' % (config['transcriptome_name']), # NB must be built externally
-                                "hisat3n_kss": out_dir+'ref/%s.sorted.gtf.hisat2_splice_sites.txt' % (config['transcriptome_name'])
+                                "hisat3n_kss": out_dir+'ref/%s.gtf.hisat2_splice_sites.txt' % (config['transcriptome_name'])
                                 }
                             },
                         "max_ilen": 100000,

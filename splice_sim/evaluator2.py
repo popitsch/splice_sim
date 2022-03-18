@@ -11,6 +11,7 @@ from genomic_iterators.grouped_iterators import BlockedIterator, BlockLocationIt
 from splice_sim.utils import *
 from splice_sim.model import *
 from functools import reduce
+import concurrent.futures   
 
 read_colors={
     'fn': '200,200,200',
@@ -20,46 +21,6 @@ read_colors={
     }
 
 
-def merge_bam_files(out_file, bam_files, sort_output=False, del_in_files=False):
-    """ merge multiple BAM files and sort + index results """
-    if bam_files is None or len(bam_files) == 0:
-        print("no input BAM file provided")
-        return None
-    samfile = pysam.AlignmentFile(bam_files[0], "rb")  # @UndefinedVariable
-    out = pysam.AlignmentFile(out_file + '.unsorted.bam', "wb", template=samfile)  # @UndefinedVariable
-    for f in bam_files:
-        samfile = None
-        try:
-            samfile = pysam.AlignmentFile(f, "rb")  # @UndefinedVariable
-            for read in samfile.fetch(until_eof=True):
-                out.write(read)  
-        except Exception as e:
-            print("error opening bam %s: %s" % (f, e))            
-        finally:
-            if samfile:
-                samfile.close()
-    out.close()
-    if sort_output:
-        try:
-            pysam.sort("-o", out_file, out_file + '.unsorted.bam')  # @UndefinedVariable
-            os.remove(out_file + '.unsorted.bam')
-            if del_in_files:
-                for f in bam_files + [b + '.bai' for b in bam_files]:
-                    if os.path.exists(f):
-                        os.remove(f)
-        except Exception as e:
-            print("error sorting this bam: %s" % e)
-    else:
-        os.rename(out_file + '.unsorted.bam', out_file)
-        if del_in_files:
-            for f in bam_files + [b + '.bai' for b in bam_files]:
-                os.remove(f)
-    # index
-    try:
-        pysam.index(out_file)  # @UndefinedVariable
-    except Exception as e:
-        print("error indexing bam: %s" % e)
-    return out_file
 
 def read_aligns_to_loc(loc, read):
     """ Tests whether a read aligns to the passed location """
@@ -200,18 +161,19 @@ def classify_read(found_read, found_overlapping_raw, tid2feat, performance, dict
     return performance
 
 
-def classify_region(target_region, config, bam_file, chrom2feat, tid2feat):
+def classify_region(target_region, config, bam_file, chrom2feat, tid2feat, out_file_prefix):
     """ Classify all reads in the passed target region """
     min_mapq=config['min_mapq'] if 'min_mapq' in config else 20
     write_bam=config['write_bam'] if 'write_bam' in config else True
     samin = pysam.AlignmentFile(bam_file, "rb")
     dict_chr2idx, dict_idx2chr, dict_chr2len=get_chrom_dicts_from_bam(bam_file)
     dict_samout = {
-        'tx': pysam.AlignmentFile(out_file_prefix+'.tx.eval.%s.bam' % str(target_region), "wb", template=samin),
-        'fx': pysam.AlignmentFile(out_file_prefix+'.fx.eval.%s.bam' % str(target_region), "wb", template=samin),
-        'sj': pysam.AlignmentFile(out_file_prefix+'.sj.eval.%s.bam' % str(target_region), "wb", template=samin)
+        'tx': pysam.AlignmentFile(out_file_prefix+'.tx.eval.%s.bam' % slugify(str(target_region)), "wb", template=samin),
+        'fx': pysam.AlignmentFile(out_file_prefix+'.fx.eval.%s.bam' % slugify(str(target_region)), "wb", template=samin),
+        'sj': pysam.AlignmentFile(out_file_prefix+'.sj.eval.%s.bam' % slugify(str(target_region)), "wb", template=samin)
         } if write_bam else None
     performance=Counter()
+    wr=0
     if target_region=='unmapped':
         for unmapped_read in samin.fetch(contig=None, until_eof=True):
             if not unmapped_read.is_unmapped:
@@ -220,7 +182,6 @@ def classify_region(target_region, config, bam_file, chrom2feat, tid2feat):
     else:
         chrom = dict_idx2chr[target_region.chr_idx]
         if chrom in samin.references: # there are reads on this chrom
-            return performance, dict_samout
             aits = [BlockLocationIterator(iter(sorted(chrom2feat[chrom] if chrom in chrom2feat else [], key=lambda x: x[0]) ))]
             rit = ReadIterator(samin, dict_chr2idx, reference=chrom, start=target_region.start, end=target_region.end, max_span=None, flag_filter=0) # max_span=m.max_ilen
             it = AnnotationOverlapIterator(rit, aits, check_read_alignment=False)
@@ -233,7 +194,7 @@ def classify_region(target_region, config, bam_file, chrom2feat, tid2feat):
     if dict_samout is not None:
         for cat,samout in dict_samout.items():
             samout.close() 
-            dict_samout[cat]=out_file_prefix+'.%s.eval.%s.bam' % str(cat,target_region)
+            dict_samout[cat]=out_file_prefix+'.%s.eval.%s.bam' % (cat, slugify(str(target_region)))
     return performance, dict_samout, wr
 
 # evaluate
@@ -242,7 +203,7 @@ def classify_region(target_region, config, bam_file, chrom2feat, tid2feat):
 # --model /Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/sim/reference_model/big3_slamseq_nf.model
 # --outdir /Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/eva/debug/
 
-def evaluate(config, m, bam_file, out_dir): 
+def evaluate(config, m, bam_file, threads, out_dir): 
     """ evaluate the passed BAM file """
     logging.info("Evaluating %s" % bam_file)
     assert os.path.exists(bam_file) and os.path.exists(bam_file+'.bai'), "Could not find bam file (or idx) for %s" % (bam_file)
@@ -252,13 +213,10 @@ def evaluate(config, m, bam_file, out_dir):
     cr,mapper=tmp[tmp.find('.cr')+3:].rsplit('.', 1)
     out_file_prefix=out_dir+'/'+config['dataset_name']+'.cr'+cr+'.'+mapper
     cr=float(cr)
+    min_mapq=config['min_mapq'] if 'min_mapq' in config else 20
+    
     # get config params
     dict_chr2idx, dict_idx2chr, dict_chr2len=get_chrom_dicts_from_bam(bam_file)
-    # target regions
-    if 'target_region' in config:
-        target_regions=[Location.from_str(config['debug_region'], dict_chr2idx)]
-    else:
-        target_regions=[Location(dict_chr2idx[c], 1, c_len) for c, c_len in dict_chr2len.items()] + ['unmapped'] # unmapped reads    
     # collect= features for chrom
     chrom2feat=OrderedDict()
     tid2feat=OrderedDict()
@@ -282,12 +240,19 @@ def evaluate(config, m, bam_file, out_dir):
             chrom2feat[c].append((loc,(tid, 'intron', fid)))
             tid2feat[tid].append((loc,(tid, 'intron', fid)))
             intron_len+=len(loc)
+    # target regions
+    if 'target_region' in config:
+        target_regions=[Location.from_str(config['debug_region'], dict_chr2idx)]
+    else:
+        target_regions=[Location(dict_chr2idx[c], 1, c_len) for c, c_len in dict_chr2len.items()] + ['unmapped'] # unmapped reads    
+            
     # run parallel
     performance=Counter()
     dict_samout=None
     wr=0
+    print("Start")
     with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
-        future_param = {executor.submit(classify_region, reg, bam_file, chrom2feat, tid2feat): (reg) for reg in target_regions }
+        future_param = {executor.submit(classify_region, reg, config, bam_file, chrom2feat, tid2feat, out_file_prefix): (reg) for reg in target_regions }
         pbar = tqdm.tqdm(total=len(target_regions), desc="Annotated regions")
         for future in concurrent.futures.as_completed(future_param):
             para = future_param[future]
@@ -298,8 +263,8 @@ def evaluate(config, m, bam_file, out_dir):
                 if dict_samout is None:
                     dict_samout={'tx':[], 'fx':[], 'sj':[]}
                 for k in dict_samout.keys():
-                    dict_samout[k]+=region_dict_samout[k]
-            pbar.set_description('%s: wrote %i reads' % (c, wr))
+                    dict_samout[k]+=[region_dict_samout[k]]
+            pbar.set_description('Classified reads: %i' % (wr))
             pbar.update(1)
         pbar.close()             
     # write performance data
@@ -322,9 +287,6 @@ def evaluate(config, m, bam_file, out_dir):
             merge_bam_files(out_file, bam_files, sort_output=True, del_in_files=True)
     print("All done. Considered %i reads" % wr)
 
-def flatten(t):
-    """ Flatten nested list """
-    return [i for s in t for i in s]
 
 def calc_mappability(genomeMappability, chrom, start, end):
     """ Calculate genomic mappability for giveen window """ 

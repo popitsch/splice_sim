@@ -1,6 +1,7 @@
 import pysam
 import os, sys
-
+import unicodedata
+import re
 # Table of reverse complement bases
 COMP_TABLE = {
     "A": 'T', "C": 'G', "T": 'A', "G": 'C'
@@ -55,3 +56,64 @@ def localize_config(config):
         elif isinstance(v, list):
             config[k]=['/Volumes'+x if str(x).startswith('/groups') else x for x in v]
     return config
+
+def slugify(value, allow_unicode=False):
+    """
+    Taken from https://github.com/django/django/blob/master/django/utils/text.py
+    Convert to ASCII if 'allow_unicode' is False. Convert spaces or repeated
+    dashes to single dashes. Remove characters that aren't alphanumerics,
+    underscores, or hyphens. Convert to lowercase. Also strip leading and
+    trailing whitespace, dashes, and underscores.
+    """
+    value = str(value)
+    if allow_unicode:
+        value = unicodedata.normalize('NFKC', value)
+    else:
+        value = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore').decode('ascii')
+    value = re.sub(r'[^\w\s-]', '', value.lower())
+    return re.sub(r'[-\s]+', '-', value).strip('-')
+
+def merge_bam_files(out_file, bam_files, sort_output=False, del_in_files=False):
+    """ merge multiple BAM files and sort + index results """
+    if bam_files is None or len(bam_files) == 0:
+        print("no input BAM file provided")
+        return None
+    samfile = pysam.AlignmentFile(bam_files[0], "rb")  # @UndefinedVariable
+    out = pysam.AlignmentFile(out_file + '.unsorted.bam', "wb", template=samfile)  # @UndefinedVariable
+    for f in bam_files:
+        samfile = None
+        try:
+            samfile = pysam.AlignmentFile(f, "rb")  # @UndefinedVariable
+            for read in samfile.fetch(until_eof=True):
+                out.write(read)  
+        except Exception as e:
+            print("error opening bam %s: %s" % (f, e))            
+        finally:
+            if samfile:
+                samfile.close()
+    out.close()
+    if sort_output:
+        try:
+            pysam.sort("-o", out_file, out_file + '.unsorted.bam')  # @UndefinedVariable
+            os.remove(out_file + '.unsorted.bam')
+            if del_in_files:
+                for f in bam_files + [b + '.bai' for b in bam_files]:
+                    if os.path.exists(f):
+                        os.remove(f)
+        except Exception as e:
+            print("error sorting this bam: %s" % e)
+    else:
+        os.rename(out_file + '.unsorted.bam', out_file)
+        if del_in_files:
+            for f in bam_files + [b + '.bai' for b in bam_files]:
+                os.remove(f)
+    # index
+    try:
+        pysam.index(out_file)  # @UndefinedVariable
+    except Exception as e:
+        print("error indexing bam: %s" % e)
+    return out_file
+
+def flatten(t):
+    """ Flatten nested list """
+    return [i for s in t for i in s]

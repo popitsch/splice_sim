@@ -35,6 +35,12 @@ def check_config(config):
     if 'transcripts' not in config:
         assert "transcript_data" in config, "Transcript data needs to be configured either in config file ('transcripts' section) or in an external file referenced via 'transcript_data'"
 
+def init_logging(config, outdir):
+    fn=outdir+'splice_sim.%s.log' % config['dataset_name']
+    print("Logging to %s" % fn)
+    logging.basicConfig(filename=fn, level=logging.DEBUG)
+    logging.info(LOGO)
+
 
 usage = '''
 
@@ -110,6 +116,7 @@ if __name__ == '__main__':
     parser["evaluate"].add_argument("-b", "--bam_file", type=str, required=True, dest="bam_file", metavar="bam_file", help="input bam file")
     parser["evaluate"].add_argument("-c", "--config", type=str, required=True, dest="config_file", metavar="config_file", help="JSON config file")
     parser["evaluate"].add_argument("-m", "--model", type=str, required=True, dest="model_file", metavar="model_file", help="model file")
+    parser["evaluate"].add_argument("-t", "--threads", type=int, required=False, dest="threads", default=1, help="used threads")
     parser["evaluate"].add_argument("-o", "--outdir", type=str, required=True, dest="outdir", metavar="outdir", help="output dir")
 
     parser["extract_feature_metadata"] = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
@@ -134,16 +141,12 @@ if __name__ == '__main__':
     if not os.path.exists(outdir):
         os.makedirs(outdir)
 
-    # logging
-    print("Logging to %s" % outdir+'splice_sim.log')
-    logging.basicConfig(filename=outdir+'splice_sim.log', level=logging.DEBUG)
-
-    logging.info(LOGO)
 
 
     if mod == "build_model":
         # load and check onfig
         config=json.load(open(args.config_file), object_pairs_hook=OrderedDict)
+        init_logging(config, outdir)
         check_config(config)
         Model.build_model(args.config_file, outdir)
 
@@ -151,6 +154,7 @@ if __name__ == '__main__':
         # load model
         m = Model.load_from_file(args.model_file)
         config = m.config
+        init_logging(config, outdir)
         # set random seed
         if "random_seed" in config:
             random.seed(config["random_seed"])
@@ -158,11 +162,14 @@ if __name__ == '__main__':
         create_genome_bam(m, args.art_sam_file, args.threads, outdir)
 
     if mod == "postfilter_bam":
-        postfilter_bam(args.config_file, args.bam_file, args.outdir)
+        config=json.load(open(args.config_file), object_pairs_hook=OrderedDict)
+        init_logging(config, outdir)
+        postfilter_bam(config, args.bam_file, outdir)
 
     if mod == "evaluate_bam_performance":
         # load config to be able to react to config changes after model was built!
         config=json.load(open(args.config_file), object_pairs_hook=OrderedDict)
+        init_logging(config, outdir)
         # load model
         m = Model.load_from_file(args.model_file)
         # set random seed
@@ -174,6 +181,7 @@ if __name__ == '__main__':
     if mod == "evaluate_splice_site_performance":
         # load config to be able to react to config changes after model was built!
         config=json.load(open(args.config_file), object_pairs_hook=OrderedDict)
+        init_logging(config, outdir)
         # load model
         m = Model.load_from_file(args.model_file)
         # set random seed
@@ -185,6 +193,7 @@ if __name__ == '__main__':
     if mod == "calculate_splice_site_mappability":
         # load config to be able to react to config changes after model was built!
         config=json.load(open(args.config_file), object_pairs_hook=OrderedDict)
+        init_logging(config, outdir)
         # load model
         m = Model.load_from_file(args.model_file)
         # set random seed
@@ -196,6 +205,7 @@ if __name__ == '__main__':
     if mod == "calc_feature_overlap":
         # load config to be able to react to config changes after model was built!
         config=json.load(open(args.config_file), object_pairs_hook=OrderedDict)
+        init_logging(config, outdir)
         # load model
         m = Model.load_from_file(args.model_file)
         # set random seed
@@ -207,6 +217,7 @@ if __name__ == '__main__':
     if mod == "extract_splice_site_features":
         # load config to be able to react to config changes after model was built!
         config=json.load(open(args.config_file), object_pairs_hook=OrderedDict)
+        init_logging(config, outdir)
         # load model
         m = Model.load_from_file(args.model_file)
         # set random seed
@@ -218,6 +229,7 @@ if __name__ == '__main__':
     if mod == "extract_transcript_features":
         # load config to be able to react to config changes after model was built!
         config=json.load(open(args.config_file), object_pairs_hook=OrderedDict)
+        init_logging(config, outdir)
         # load model
         m = Model.load_from_file(args.model_file)
         # set random seed
@@ -229,11 +241,13 @@ if __name__ == '__main__':
     if mod == "write_parquet_db":
         # load config to be able to react to config changes after model was built!
         config=json.load(open(args.config_file), object_pairs_hook=OrderedDict)
+        init_logging(config, outdir)
         write_parquet_db(config, args.indir, outdir)
 
     if mod == "evaluate":
         # load config to be able to react to config changes after model was built!
         config=json.load(open(args.config_file), object_pairs_hook=OrderedDict)
+        init_logging(config, outdir)
         print("load model")
         m = Model.load_from_file(args.model_file)
         print("evaluate")
@@ -241,11 +255,12 @@ if __name__ == '__main__':
         if "random_seed" in config:
             random.seed(config["random_seed"])
             logging.info("setting random seed to %i" % config["random_seed"])
-        evaluate(config, m, args.bam_file, outdir)
+        evaluate(config, m, args.bam_file, args.threads, outdir)
 
     if mod == "extract_feature_metadata":
         # load config to be able to react to config changes after model was built!
         config=json.load(open(args.config_file), object_pairs_hook=OrderedDict)
+        init_logging(config, outdir)
         print("load model")
         m = Model.load_from_file(args.model_file)
         print("extract_feature_metadata")

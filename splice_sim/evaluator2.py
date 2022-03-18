@@ -19,6 +19,48 @@ read_colors={
     'fp': '200,0,0'
     }
 
+
+def merge_bam_files(out_file, bam_files, sort_output=False, del_in_files=False):
+    """ merge multiple BAM files and sort + index results """
+    if bam_files is None or len(bam_files) == 0:
+        print("no input BAM file provided")
+        return None
+    samfile = pysam.AlignmentFile(bam_files[0], "rb")  # @UndefinedVariable
+    out = pysam.AlignmentFile(out_file + '.unsorted.bam', "wb", template=samfile)  # @UndefinedVariable
+    for f in bam_files:
+        samfile = None
+        try:
+            samfile = pysam.AlignmentFile(f, "rb")  # @UndefinedVariable
+            for read in samfile.fetch(until_eof=True):
+                out.write(read)  
+        except Exception as e:
+            print("error opening bam %s: %s" % (f, e))            
+        finally:
+            if samfile:
+                samfile.close()
+    out.close()
+    if sort_output:
+        try:
+            pysam.sort("-o", out_file, out_file + '.unsorted.bam')  # @UndefinedVariable
+            os.remove(out_file + '.unsorted.bam')
+            if del_in_files:
+                for f in bam_files + [b + '.bai' for b in bam_files]:
+                    if os.path.exists(f):
+                        os.remove(f)
+        except Exception as e:
+            print("error sorting this bam: %s" % e)
+    else:
+        os.rename(out_file + '.unsorted.bam', out_file)
+        if del_in_files:
+            for f in bam_files + [b + '.bai' for b in bam_files]:
+                os.remove(f)
+    # index
+    try:
+        pysam.index(out_file)  # @UndefinedVariable
+    except Exception as e:
+        print("error indexing bam: %s" % e)
+    return out_file
+
 def read_aligns_to_loc(loc, read):
     """ Tests whether a read aligns to the passed location """
     # chr is not checked
@@ -26,6 +68,10 @@ def read_aligns_to_loc(loc, read):
         if loc.start <= read_end and read_start < loc.end:
             return True
     return False
+
+def calc_overlap(a, b):
+    """ overlap between two intervals """
+    return max(0, min(a[1], b[1]) - max(a[0], b[0]))
 
 def read_envelops_loc(iloc, read):
     """ Tests whether a spliced read covers the passed (intronic) location """
@@ -153,6 +199,43 @@ def classify_read(found_read, found_overlapping_raw, tid2feat, performance, dict
                     samout.write(found_read)
     return performance
 
+
+def classify_region(target_region, config, bam_file, chrom2feat, tid2feat):
+    """ Classify all reads in the passed target region """
+    min_mapq=config['min_mapq'] if 'min_mapq' in config else 20
+    write_bam=config['write_bam'] if 'write_bam' in config else True
+    samin = pysam.AlignmentFile(bam_file, "rb")
+    dict_chr2idx, dict_idx2chr, dict_chr2len=get_chrom_dicts_from_bam(bam_file)
+    dict_samout = {
+        'tx': pysam.AlignmentFile(out_file_prefix+'.tx.eval.%s.bam' % str(target_region), "wb", template=samin),
+        'fx': pysam.AlignmentFile(out_file_prefix+'.fx.eval.%s.bam' % str(target_region), "wb", template=samin),
+        'sj': pysam.AlignmentFile(out_file_prefix+'.sj.eval.%s.bam' % str(target_region), "wb", template=samin)
+        } if write_bam else None
+    performance=Counter()
+    if target_region=='unmapped':
+        for unmapped_read in samin.fetch(contig=None, until_eof=True):
+            if not unmapped_read.is_unmapped:
+                continue
+            performance=classify_read(unmapped_read, [], tid2feat, performance, dict_samout, dict_chr2idx, min_mapq)        
+    else:
+        chrom = dict_idx2chr[target_region.chr_idx]
+        if chrom in samin.references: # there are reads on this chrom
+            return performance, dict_samout
+            aits = [BlockLocationIterator(iter(sorted(chrom2feat[chrom] if chrom in chrom2feat else [], key=lambda x: x[0]) ))]
+            rit = ReadIterator(samin, dict_chr2idx, reference=chrom, start=target_region.start, end=target_region.end, max_span=None, flag_filter=0) # max_span=m.max_ilen
+            it = AnnotationOverlapIterator(rit, aits, check_read_alignment=False)
+            for loc, (read, annos) in it:
+                wr+=1
+                overlapping_annos = annos[0] # select 1st entry as theree is only one ait
+                performance=classify_read(read, overlapping_annos, tid2feat, performance, dict_samout, dict_chr2idx, min_mapq)
+    # close SAM files    
+    samin.close()   
+    if dict_samout is not None:
+        for cat,samout in dict_samout.items():
+            samout.close() 
+            dict_samout[cat]=out_file_prefix+'.%s.eval.%s.bam' % str(cat,target_region)
+    return performance, dict_samout, wr
+
 # evaluate
 # --bam_file /Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/sim/final_bams/big3_slamseq_nf.cr0.1.STAR.final.bam
 # --config /Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/eva/debug/config.json
@@ -171,10 +254,12 @@ def evaluate(config, m, bam_file, out_dir):
     cr=float(cr)
     # get config params
     dict_chr2idx, dict_idx2chr, dict_chr2len=get_chrom_dicts_from_bam(bam_file)
-    debug_region=Location.from_str(config['debug_region'], dict_chr2idx) if 'debug_region' in config else None
-    min_mapq=config['min_mapq'] if 'min_mapq' in config else 20
-    write_bam=config['write_bam'] if 'write_bam' in config else True
-    # prepare eval run
+    # target regions
+    if 'target_region' in config:
+        target_regions=[Location.from_str(config['debug_region'], dict_chr2idx)]
+    else:
+        target_regions=[Location(dict_chr2idx[c], 1, c_len) for c, c_len in dict_chr2len.items()] + ['unmapped'] # unmapped reads    
+    # collect= features for chrom
     chrom2feat=OrderedDict()
     tid2feat=OrderedDict()
     for tid,t in m.transcripts.items():
@@ -197,45 +282,26 @@ def evaluate(config, m, bam_file, out_dir):
             chrom2feat[c].append((loc,(tid, 'intron', fid)))
             tid2feat[tid].append((loc,(tid, 'intron', fid)))
             intron_len+=len(loc)
-    samin = pysam.AlignmentFile(bam_file, "rb")
-    dict_samout = {
-        'tx': pysam.AlignmentFile(out_file_prefix+'.tx.eval.bam'+'.tmp.bam', "wb", template=samin),
-        'fx': pysam.AlignmentFile(out_file_prefix+'.fx.eval.bam'+'.tmp.bam', "wb", template=samin),
-        'sj': pysam.AlignmentFile(out_file_prefix+'.sj.eval.bam'+'.tmp.bam', "wb", template=samin)
-        } if write_bam else None
+    # run parallel
     performance=Counter()
-    #stats=Counter()
-    for c, c_len in dict_chr2len.items():
-        if c not in samin.references:
-            continue # no reads on this chrom
-        if debug_region is not None and dict_idx2chr[debug_region.chr_idx]!=c:
-            continue
-        print(">", c)
-        start,end=(debug_region.start, debug_region.end) if debug_region is not None else (1,c_len) 
-        aits = [BlockLocationIterator(iter(sorted(chrom2feat[c] if c in chrom2feat else [], key=lambda x: x[0]) ))]
-        rit = ReadIterator(samin, dict_chr2idx, reference=c, start=start, end=end, max_span=None, flag_filter=0) # max_span=m.max_ilen
-        it = AnnotationOverlapIterator(rit, aits, check_read_alignment=False)
-        for loc, (read, annos) in it:
-            if debug_region is not None and not loc.overlaps(debug_region):
-                continue    
-            overlapping_annos = annos[0] # select 1st entry as theree is only one ait
-            performance=classify_read(read, overlapping_annos, tid2feat, performance, dict_samout, dict_chr2idx, min_mapq)
-            #stats['reads', c]+=1
-    # add unmapped reads
-    if debug_region is None:
-        print("> *")
-        for unmapped_read in samin.fetch(contig=None, until_eof=True):
-            if not unmapped_read.is_unmapped:
-                continue
-            performance=classify_read(unmapped_read, [], tid2feat, performance, dict_samout, dict_chr2idx, min_mapq)
-            #stats['reads', 'None']+=1
-    # write stats
-    # stats_out_file=out_file_prefix+'.stats.tsv'
-    # with open(stats_out_file, 'w') as out:
-    #     print('\t'.join(str(x) for x in ['key', 'count']), file=out)
-    #     for k in stats:
-    #         print('\t'.join(str(x) for x in [k, stats[k]]), file=out)
-    
+    dict_samout=None
+    wr=0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
+        future_param = {executor.submit(classify_region, reg, bam_file, chrom2feat, tid2feat): (reg) for reg in target_regions }
+        pbar = tqdm.tqdm(total=len(target_regions), desc="Annotated regions")
+        for future in concurrent.futures.as_completed(future_param):
+            para = future_param[future]
+            region_performance, region_dict_samout, region_wr = future.result()
+            wr+=region_wr
+            performance.update(region_performance)
+            if region_dict_samout is not None:
+                if dict_samout is None:
+                    dict_samout={'tx':[], 'fx':[], 'sj':[]}
+                for k in dict_samout.keys():
+                    dict_samout[k]+=region_dict_samout[k]
+            pbar.set_description('%s: wrote %i reads' % (c, wr))
+            pbar.update(1)
+        pbar.close()             
     # write performance data
     with open(out_file_prefix+'.counts.tsv', 'w') as out_raw:
         with open(out_file_prefix+'.counts.mq%i.tsv' % min_mapq, 'w') as out_fil:
@@ -249,19 +315,12 @@ def evaluate(config, m, bam_file, out_dir):
                 print('\t'.join(str(x) for x in [
                     mapper, cr, mq_fil, class_type, fid, true_isoform, cv1, cv2, se1, se2, classification, count
                     ]), file=out)
-    # close SAM files    
-    samin.close()   
+    # merge, sort and index BAM files    
     if dict_samout is not None:
-        for cat,samout in dict_samout.items():
-            samout.close()    
-            bam_out_file=out_file_prefix+'.'+cat+'.eval.bam'
-            pysam.sort("-o", bam_out_file, bam_out_file+'.tmp.bam') # @UndefinedVariable
-            os.remove(bam_out_file+'.tmp.bam')
-            try:
-                pysam.index(bam_out_file) # @UndefinedVariable
-            except Exception as e:
-                print("error indexing bam: %s" % e)
-    print("All done.")
+        for cat,bam_files in dict_samout.items():
+            out_file = out_file_prefix+'.%s.eval.bam' % str(cat)
+            merge_bam_files(out_file, bam_files, sort_output=True, del_in_files=True)
+    print("All done. Considered %i reads" % wr)
 
 def flatten(t):
     """ Flatten nested list """
@@ -390,7 +449,7 @@ def extract_feature_metadata(config, m, out_dir):
                             acc_seq_rna_in.count("A"),
                             acc_seq_rna_in.count("C"),
                             acc_seq_rna_in.count("T"),
-                            acc_seq_rna_in.count("G"),
+                            acc_seq_rna_in.count("G"),  
                             acc_win_map
                         ]]), file=out_sj)
                     # tx info

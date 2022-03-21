@@ -17,11 +17,10 @@ default_isoform_colors = {
     ("pre","-"):"100,100,200"
     }
     
-def postfilter_bam( config_file, bam_in, out_dir):
+def postfilter_bam( config, bam_in, out_dir):
     """ Filter secondary+supplementary reads and highlight isoforms """  
     
     # update isoform_colors from config
-    config=json.load(open(config_file), object_pairs_hook=OrderedDict)
     isoform_colors=default_isoform_colors
     if 'isoform_colors' in config:
         for k in config['isoform_colors'].keys():

@@ -63,9 +63,9 @@ def chop3End(tid ,transcriptMeta, transcriptBuffer, nt):
     return txstart, txend, ends
 
 def extract_transcript_3ends(config, tids, out_dir) :
-    transcriptome_name = config.get('transcriptome_name', 'test')
+    dataset_name = config.get('dataset_name', 'test')
     print('subsetting transcripts to 3\'ends for ', len(tids), ' tids.')
-    out_file_gff3 = out_dir + '/' + transcriptome_name + '.3ends.gff3'
+    out_file_gff3 = out_dir + '/' + dataset_name + '.3ends.gff3'
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
     # Collect exons per transcript for 3'end subsetting
@@ -296,11 +296,6 @@ if __name__ == '__main__':
         # build a reference transcriptome
         build_transcriptome(config, tab['k'].keys(), out_dir+'ref/')
         
-        # create timepoint configs
-        tp_dir=out_dir+'/conf/'
-        if not os.path.exists(tp_dir):
-            os.makedirs(tp_dir)
-        
         header="""
 #!/usr/bin/bash
 ml purge &> /dev/null
@@ -324,61 +319,57 @@ echo "Starting splice_sim pipeline with profile $profile"
             with open(out_dir+'run_splice_sim_eva.sh', 'w') as script_out2:
                 print(header, file=script_out)
                 print(header, file=script_out2)
-                for tp in config['timepoints']:
-                    tp_config={
-                        "config_file": tp_dir+'3end_experiment.'+str(tp)+'.config.json',
-                        "dataset_name": config['transcriptome_name']+'_tp%i'%(tp),
-                        "splice_sim_cmd": config['splice_sim_cmd'],
-                        "genome_fa": out_dir+'ref/%s.fa' % (config['transcriptome_name']),
-                        "genome_chromosome_sizes": out_dir+'ref/%s.fa.chrom.sizes' % (config['transcriptome_name']),
-                        "gene_gff": out_dir+'ref/%s.gff3.gz' % (config['transcriptome_name']),
-                        "create_bams": True,
-                        "transcript_ids": tp_dir+'3end_experiment.'+str(tp)+'.isoform_data.tsv',
-                        "transcript_data": tp_dir+'3end_experiment.'+str(tp)+'.transcript_data.json',
-                        "isoform_mode": "from_file",
-                        "genome_mappability": out_dir+'ref/%s.genmap.bedgraph.gz' % (config['transcriptome_name']),
-                        #"gmap_prefix": "",
-                        "condition": {
-                            "ref": "T",
-                            "alt": "C",
-                            "conversion_rates": [ config['conversion_rate'] ],
-                            "base_coverage": 10
-                        },
-                        "mappers": {
-                            "STAR": {
-                                "star_cmd": "STAR",
-                                "star_genome_idx": out_dir+'ref/star_2.7.1_index/', # NB must be built externally
-                                "star_splice_gtf": out_dir+'ref/%s.gtf' % (config['transcriptome_name']),
-                                },
-                            "HISAT3N": {
-                                "hisat3n_cmd": "singularity exec /groups/ameres/Niko/software/SIF/hisat-3n.sif /hisat-3n/hisat-3n",
-                                "hisat3n_idx": out_dir+'ref/hisat2-3n_index/%s' % (config['transcriptome_name']), # NB must be built externally
-                                "hisat3n_kss": out_dir+'ref/%s.gtf.hisat2_splice_sites.txt' % (config['transcriptome_name'])
-                                }
+                splice_sim_config={
+                    "dataset_name": config['transcriptome_name'],
+                    "splice_sim_cmd": config['splice_sim_cmd'],
+                    "genome_fa": out_dir+'ref/%s.fa' % (config['transcriptome_name']),
+                    "genome_chromosome_sizes": out_dir+'ref/%s.fa.chrom.sizes' % (config['transcriptome_name']),
+                    "gene_gff": out_dir+'ref/%s.gff3.gz' % (config['transcriptome_name']),
+                    "create_bams": True,
+                    "transcript_ids": out_dir+'ref/%s.tids.tsv' % (config['transcriptome_name']),
+                    "transcript_data": out_dir + 'ref/%s.data.config.json' % (config['transcriptome_name']),
+                    "isoform_mode": "1:1",
+                    "frac_old_mature": 0,
+                    "genome_mappability": out_dir+'ref/%s.genmap.bedgraph.gz' % (config['transcriptome_name']),
+                    "condition": {
+                        "ref": "T",
+                        "alt": "C",
+                        "conversion_rates": config['conversion_rates'],
+                        "base_coverage": 10
+                    },
+                    "mappers": {
+                        "STAR": {
+                            "star_cmd": "STAR",
+                            "star_genome_idx": out_dir+'ref/star_2.7.1_index/', # NB must be built externally
+                            "star_splice_gtf": out_dir+'ref/%s.gtf' % (config['transcriptome_name']),
                             },
-                        "max_ilen": 100000,
-                        "min_abundance": 1,
-                        "random_seed": 1234,
-                        "readlen": 100,
-                        "create_tdf": False,
-                        "write_reads": False
-                        }
-                    with open(tp_dir+'3end_experiment.'+str(tp)+'.config.json', 'w') as out:
-                        json.dump(tp_config, out, indent=4)
-            
-                    # write config per timepoint
-                    with open(tp_dir+'3end_experiment.'+str(tp)+'.isoform_data.tsv', 'w') as out:
-                        print('transcript_id\tabundance\tfrac_mature\tfrac_old_mature', file=out)
-                        for tid in tab['k'].keys():
-                            abundance=1
-                            frac_mat=1
-                            k=tab['k'][tid]
-                            frac_old_mat=1-math.exp(tp * -k)
-                            print('\t'.join([str(x) for x in [tid, abundance, frac_mat, frac_old_mat]]), file=out)
-        
-                    # write run commands
-                    print("nextflow -log logs/nextflow.log run "+config["splice_sim_nf"]+" -params-file %s -resume -profile $profile" % (tp_dir+'3end_experiment.'+str(tp)+'.config.json'), file=script_out)
-                    print("nextflow -log logs/nextflow.log run "+config["splice_sim_eva_nf"]+" -params-file %s -resume -profile $profile" % (tp_dir+'3end_experiment.'+str(tp)+'.config.json'), file=script_out2)
+                        "HISAT3N": {
+                            "hisat3n_cmd": "singularity exec /groups/ameres/Niko/software/SIF/hisat-3n.sif /hisat-3n/hisat-3n",
+                            "hisat3n_idx": out_dir+'ref/hisat2-3n_index/%s' % (config['transcriptome_name']), # NB must be built externally
+                            "hisat3n_kss": out_dir+'ref/%s.gtf.hisat2_splice_sites.txt' % (config['transcriptome_name'])
+                            }
+                        },
+                    "max_ilen": 100000,
+                    "min_abundance": 1,
+                    "random_seed": 1234,
+                    "readlen": 100,
+                    "create_tdf": True,
+                    "write_reads": False,
+                    "write_intron_bam": False,
+                    "rseqc": False
+                    }
+                with open(out_dir+'splice_sim.config.json', 'w') as out:
+                    json.dump(splice_sim_config, out, indent=4)
+
+                # write config per timepoint
+                with open(out_dir+'ref/%s.tids.tsv' % (config['transcriptome_name']), 'w') as out:
+                    print('transcript_id', file=out)
+                    for tid in tab['k'].keys():
+                        print(tid, file = out)
+
+                # write run commands
+                print("nextflow -log logs/nextflow.log run "+config["splice_sim_nf"]+" -params-file %s -resume -profile $profile" % (out_dir+'splice_sim.config.json'), file=script_out)
+                print("nextflow -log logs/nextflow.log run "+config["splice_sim_eva_nf"]+" -params-file %s -resume -profile $profile" % (out_dir+'splice_sim.config.json'), file=script_out2)
 #============================================================================
     if mod == "prepare_3end_experiment_genome":
         # load and check onfig
@@ -410,70 +401,60 @@ if [ -n "$1" ]; then
 fi
 echo "Starting splice_sim pipeline with profile $profile"
             """
-                
-        # create timepoint configs            
-        for tp in config['timepoints']:
-            tp_dir=out_dir+'/tp%i/'%(tp)
-            if not os.path.exists(tp_dir):
-                os.makedirs(tp_dir)
-            tp_config={
-                "dataset_name": config['dataset_name']+'_tp%i'%(tp),
-                "config_file": tp_dir+'3end_experiment.'+str(tp)+'.config.json',
-                "splice_sim_cmd": config['splice_sim_cmd'],
-                "genome_fa": config['genome_fa'],
-                "genome_chromosome_sizes": config['genome_chromosome_sizes'],
-                "gene_gff": config['gene_gff'],
-                "create_bams": True,
-                "transcript_ids": tp_dir+'3end_experiment.'+str(tp)+'.isoform_data.tsv', # created by this script
-                "transcript_data":  tp_dir+'3end_experiment.'+str(tp)+'.transcript_data.json',
-                "isoform_mode": "from_file",
-                "genome_mappability": config['genome_mappability'],
-                "gmap_prefix": "chr",
-                "condition": {
-                    "ref": "T",
-                    "alt": "C",
-                    "conversion_rates": [ config['conversion_rate'] ],
-                    "base_coverage": 10
+        # 3'end files
+        endsGff = out_dir + 'ref/' + config['dataset_name'] + '.3ends.gff3.gz'
+
+        # create config
+        splice_sim_config={
+            "dataset_name": config['dataset_name'],
+            "splice_sim_cmd": config['splice_sim_cmd'],
+            "genome_fa": config['genome_fa'],
+            "genome_chromosome_sizes": config['genome_chromosome_sizes'],
+            "gene_gff": endsGff,
+            "create_bams": True,
+            "frac_old_mature": 0,
+            "transcript_ids": config['isoform_config'],
+            "transcript_data": out_dir + '/' + config['dataset_name'] + '.data.config.json',
+            "isoform_mode": "1:1",
+            "genome_mappability": config['genome_mappability'],
+            "condition": {
+                "ref": "T",
+                "alt": "C",
+                "conversion_rates": config['conversion_rates'],
+                "base_coverage": 10
+            },
+            "mappers": {
+                "STAR": {
+                    "star_cmd": "STAR",
+                    "star_genome_idx": "/groups/ameres/Niko/ref/genomes/mm10/indices/star_2.7.1",
+                    "star_splice_gtf": "/groups/ameres/Niko/ref/genomes/mm10/annotation/GRCm38.p6.annotation.gtf"
                 },
-                "mappers": {
-                    "STAR": {
-                        "star_cmd": "STAR",
-                        "star_genome_idx": "/groups/ameres/Niko/ref/genomes/mm10/indices/star_2.7.1",
-                        "star_splice_gtf": "/groups/ameres/Niko/ref/genomes/mm10/annotation/GRCm38.p6.annotation.gtf"
-                    },
-                    "HISAT3N": {
-                        "hisat3n_cmd": "singularity exec /groups/ameres/Niko/software/SIF/hisat-3n.sif /hisat-3n/hisat-3n",
-                        "hisat3n_idx": "/groups/ameres/Niko/ref/genomes/mm10/indices/hisat2-3n/Mus_musculus.GRCm38.dna.primary_assembly",
-                        "hisat3n_kss": "/groups/ameres/Niko/ref/genomes/mm10/annotation/GRCm38.p6.annotation.gtf.hisat2_splice_sites.txt"
-                        }
-                    },
-                "max_ilen": 100000,
-                "min_abundance": 1,
-                "random_seed": 1234,
-                "readlen": 100,
-                "create_tdf": False,
-                "write_reads": False
-                }
-            with open(tp_dir+'3end_experiment.'+str(tp)+'.config.json', 'w') as out:
-                json.dump(tp_config, out, indent=4)
-    
-            # write config per timepoint
-            with open(tp_dir+'3end_experiment.'+str(tp)+'.isoform_data.tsv', 'w') as out:
-                print('transcript_id\tabundance\tfrac_mature\tfrac_old_mature', file=out)
-                for tid in tab['k'].keys():
-                    abundance=1
-                    frac_mat=1
-                    k=tab['k'][tid]
-                    frac_old_mat=1-math.exp(tp * -k)
-                    print('\t'.join([str(x) for x in [tid, abundance, frac_mat, frac_old_mat]]), file=out)
-    
-            # write run commands
-            with open(tp_dir+'run_splice_sim.sh', 'w') as script_out:
-                print(header, file=script_out)
-                print("nextflow -log logs/nextflow.log run "+config["splice_sim_nf"]+" -params-file %s -resume -profile $profile" % (tp_dir+'3end_experiment.'+str(tp)+'.config.json'), file=script_out)
-            with open(tp_dir+'run_splice_sim_eva.sh', 'w') as script_out:
-                print(header, file=script_out)
-                print("nextflow -log logs/nextflow.log run "+config["splice_sim_eva_nf"]+" -params-file %s -resume -profile $profile" % (tp_dir+'3end_experiment.'+str(tp)+'.config.json'), file=script_out)
-            with open(tp_dir+'run_splice_sim_count.sh', 'w') as script_out:
-                print(header, file=script_out)
-                print("nextflow -log logs/nextflow.log run "+config["splice_sim_count_nf"]+" -params-file %s -resume -profile $profile" % (tp_dir+'3end_experiment.'+str(tp)+'.config.json'), file=script_out)
+                "HISAT3N": {
+                    "hisat3n_cmd": "singularity exec /groups/ameres/Niko/software/SIF/hisat-3n.sif /hisat-3n/hisat-3n",
+                    "hisat3n_idx": "/groups/ameres/Niko/ref/genomes/mm10/indices/hisat2-3n/Mus_musculus.GRCm38.dna.primary_assembly",
+                    "hisat3n_kss": "/groups/ameres/Niko/ref/genomes/mm10/annotation/GRCm38.p6.annotation.gtf.hisat2_splice_sites.txt"
+                    }
+                },
+            "max_ilen": 100000,
+            "min_abundance": 1,
+            "random_seed": 1234,
+            "readlen": 100,
+            "create_tdf": True,
+            "write_reads": False,
+            "write_intron_bam": False,
+            "rseqc": False
+        }
+
+        with open(out_dir + 'splice_sim.config.json', 'w') as out:
+            json.dump(splice_sim_config, out, indent=4)
+
+        # write run commands
+        with open(out_dir+'run_splice_sim.sh', 'w') as script_out:
+            print(header, file=script_out)
+            print("nextflow -log logs/nextflow.log run "+config["splice_sim_nf"]+" -params-file %s -resume -profile $profile" % (out_dir + 'splice_sim.config.json'), file=script_out)
+        with open(out_dir+'run_splice_sim_eva.sh', 'w') as script_out:
+            print(header, file=script_out)
+            print("nextflow -log logs/nextflow.log run "+config["splice_sim_eva_nf"]+" -params-file %s -resume -profile $profile" % (out_dir + 'splice_sim.config.json'), file=script_out)
+        with open(out_dir+'run_splice_sim_count.sh', 'w') as script_out:
+            print(header, file=script_out)
+            print("nextflow -log logs/nextflow.log run "+config["splice_sim_count_nf"]+" -params-file %s -resume -profile $profile" % (out_dir + 'splice_sim.config.json'), file=script_out)

@@ -29,3 +29,4 @@ dependencies:
   - pyarrow
   - fastparquet
   - gff3sort
+  - genmap

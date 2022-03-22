@@ -31,3 +31,4 @@ dependencies:
   - gff3sort
   - genmap
   - vcfpy
+  - guppy3

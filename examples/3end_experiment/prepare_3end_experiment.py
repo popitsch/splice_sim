@@ -287,14 +287,14 @@ if __name__ == '__main__':
     
         # read a list of tids and metadata:
         # headers: transcript_id, k
-        tab=pd.read_csv(config['isoform_config'],delimiter='\t',encoding='utf-8').set_index('transcript_id').to_dict()
+        tab=pd.read_csv(config['isoform_config'],delimiter='\t',encoding='utf-8')
         print(tab)
 
         # build a 3'end reference
-        extract_transcript_3ends(config, tab['k'].keys(), out_dir + 'ref/')
+        extract_transcript_3ends(config, tab['transcript_id'].tolist(), out_dir + 'ref/')
 
         # build a reference transcriptome
-        build_transcriptome(config, tab['k'].keys(), out_dir+'ref/')
+        build_transcriptome(config, tab['transcript_id'].tolist(), out_dir+'ref/')
         
         header="""
 #!/usr/bin/bash
@@ -377,11 +377,10 @@ echo "Starting splice_sim pipeline with profile $profile"
     
         # read a list of tids and metadata:
         # headers: transcript_id, k
-        tab=pd.read_csv(config['isoform_config'],delimiter='\t',encoding='utf-8').set_index('transcript_id').to_dict()
+        tab=pd.read_csv(config['isoform_config'],delimiter='\t',encoding='utf-8')
         print(tab)
-
         # build a 3'end reference
-        extract_transcript_3ends(config, tab['k'].keys(), out_dir + 'ref/')
+        extract_transcript_3ends(config, tab['transcript_id'].tolist(), out_dir + 'ref/')
     
         header="""
 #!/usr/bin/bash

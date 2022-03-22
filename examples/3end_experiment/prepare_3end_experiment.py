@@ -364,7 +364,7 @@ echo "Starting splice_sim pipeline with profile $profile"
                 # write config per timepoint
                 with open(out_dir+'ref/%s.tids.tsv' % (config['transcriptome_name']), 'w') as out:
                     print('transcript_id', file=out)
-                    for tid in tab['k'].keys():
+                    for tid in tab['transcript_id'].tolist():
                         print(tid, file = out)
 
                 # write run commands

@@ -217,6 +217,7 @@ def evaluate(config, m, bam_file, threads, out_dir):
     
     # get config params
     dict_chr2idx, dict_idx2chr, dict_chr2len=get_chrom_dicts_from_bam(bam_file)
+    chromosomes = config['chromosomes'] if 'chromosomes' in config else dict_chr2len.keys()
     # collect= features for chrom
     chrom2feat=OrderedDict()
     tid2feat=OrderedDict()
@@ -244,8 +245,8 @@ def evaluate(config, m, bam_file, threads, out_dir):
     if 'target_region' in config:
         target_regions=[Location.from_str(config['debug_region'], dict_chr2idx)]
     else:
-        target_regions=[Location(dict_chr2idx[c], 1, c_len) for c, c_len in dict_chr2len.items()] + ['unmapped'] # unmapped reads    
-            
+        target_regions=[Location(dict_chr2idx[c], 1, c_len) for c, c_len in dict_chr2len.items() if c in chromosomes] + ['unmapped'] # unmapped reads    
+    print("Target regions: ", target_regions)        
     # run parallel
     performance=Counter()
     dict_samout=None

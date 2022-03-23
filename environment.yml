@@ -29,3 +29,6 @@ dependencies:
   - pyarrow
   - fastparquet
   - gff3sort
+  - genmap
+  - vcfpy
+  - guppy3

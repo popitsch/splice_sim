@@ -19,7 +19,7 @@ default_isoform_colors = {
     
 def postfilter_bam( config, bam_in, out_dir):
     """ Filter secondary+supplementary reads and highlight isoforms """  
-        # update isoform_colors from config
+    # update isoform_colors from config
     isoform_colors=default_isoform_colors
     if 'isoform_colors' in config:
         for k in config['isoform_colors'].keys():

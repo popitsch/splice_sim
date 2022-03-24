@@ -62,9 +62,9 @@ for ( m in names(conf$mappers) ) {
 }
 
 m=list()
-m[['tx']]=load_table(paste0(home_dir, 'eva/meta/big3_slamseq_nf.tx.metadata.tsv.gz'))
-m[['fx']]=load_table(paste0(home_dir, 'eva/meta/big3_slamseq_nf.fx.metadata.tsv.gz'))
-m[['sj']]=load_table(paste0(home_dir, 'eva/meta/big3_slamseq_nf.sj.metadata.tsv.gz'))
+m[['tx']]=load_table(paste0(home_dir, 'eva/meta/', conf$dataset_name, '.tx.metadata.tsv.gz'))
+m[['fx']]=load_table(paste0(home_dir, 'eva/meta/', conf$dataset_name, '.fx.metadata.tsv.gz'))
+m[['sj']]=load_table(paste0(home_dir, 'eva/meta/', conf$dataset_name, '.sj.metadata.tsv.gz'))
 m[['ga']]=load_table(paste0(home_dir, 'sim/reference_model/gene_anno.tsv.gz')) 
 m[['all_tids']]=load_table(paste0(home_dir, 'tids.tsv')) %>% pull(transcript_id)
 toc()

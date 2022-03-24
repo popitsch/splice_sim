@@ -23,6 +23,7 @@ Channel.fromFilePairs("${params.final_bam_dir}*.{bam,bai}", flat:true) { file ->
 process evaluate_bams {
 	tag "$name"
 	label "medium"
+	cpus 16
     module 'python/3.7.2-gcccore-8.2.0:htslib/1.10.2-gcccore-7.3.0'
     publishDir "eva/counts", mode: 'copy'
     input:
@@ -36,6 +37,7 @@ process evaluate_bams {
     			--config ${params.config_file} \
     			--model ${params.model} \
     			--bam_file ${bam} \
+    			--threads ${task.cpus} \
     			--outdir .
 
     		# bgzip TSV tables
@@ -56,9 +58,7 @@ process extract_feature_metadata {
     cpus 1
     module 'python/3.7.2-gcccore-8.2.0:htslib/1.10.2-gcccore-7.3.0'
     publishDir "eva/meta", mode: 'copy'
-    cache false
-    input:
-    	val flag1 from done_evaluate.collect()
+    cache true
     output:
     	file("*") into extract_feature_metadata_results
     script:

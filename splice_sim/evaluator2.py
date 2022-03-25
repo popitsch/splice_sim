@@ -283,7 +283,7 @@ def calc_mappability(genomeMappability, chrom, start, end):
         mea_map=np.mean(map) if len(map)>0 else 0
     except ValueError as ve:
         #print(ve)
-        mea_map = np.NA
+        mea_map = np.nan
     return mea_map
 
 

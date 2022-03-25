@@ -44,9 +44,9 @@ if (!dir.exists(outdir)) {
 tic("preprocess metadata tables") 
 
 m=list()
-m[['tx']]=load_table(paste0(home_dir, 'eva/meta/',conf$dataset_name,'.tx.metadata.tsv.gz'))
-m[['fx']]=load_table(paste0(home_dir, 'eva/meta/',conf$dataset_name,'.fx.metadata.tsv.gz'))
-m[['sj']]=load_table(paste0(home_dir, 'eva/meta/',conf$dataset_name,'.sj.metadata.tsv.gz'))
+m[['tx']]=load_table(paste0(home_dir, 'eva/meta/', conf$dataset_name, '.tx.metadata.tsv.gz'))
+m[['fx']]=load_table(paste0(home_dir, 'eva/meta/', conf$dataset_name, '.fx.metadata.tsv.gz'))
+m[['sj']]=load_table(paste0(home_dir, 'eva/meta/', conf$dataset_name, '.sj.metadata.tsv.gz'))
 m[['ga']]=load_table(paste0(home_dir, 'sim/reference_model/gene_anno.tsv.gz')) 
 if (file.exists(paste0(home_dir, 'tids.tsv'))) {
   m[['all_tids']]=load_table(paste0(home_dir, 'tids.tsv')) %>% pull(transcript_id)  

@@ -22,8 +22,8 @@ Channel.fromFilePairs("${params.final_bam_dir}*.{bam,bai}", flat:true) { file ->
  */
 process evaluate_bams {
 	tag "$name"
-	label "medium"
-	cpus 16
+	label "long"
+	cpus 22
     module 'python/3.7.2-gcccore-8.2.0:htslib/1.10.2-gcccore-7.3.0'
     publishDir "eva/counts", mode: 'copy'
     input:
@@ -61,6 +61,7 @@ process extract_feature_metadata {
     cache true
     output:
     	file("*") into extract_feature_metadata_results
+    	val true into done_extract_feature_metadata
     script:
 	    """
 	    	${params.splice_sim_cmd} extract_feature_metadata \
@@ -75,3 +76,22 @@ process extract_feature_metadata {
 	    	done
 		"""
 	}
+
+/*
+ * preprocess results
+ */
+process preprocess_results {
+    cpus 1
+    module 'r/4.0.2-foss-2018b'
+    publishDir "eva/results", mode: 'copy'
+    cache true
+    input:
+    	val flag1 from done_evaluate.collect()
+    	val flag2 from done_extract_feature_metadata.collect()
+    output:
+    	file("*") into preprocess_results_results
+    script:
+	    """
+	    	${params.splice_eva_preprocess_cmd} ${params.config_file} . 
+		"""
+}

@@ -2,20 +2,9 @@
 require(data.table)
 require(tidyr)
 require(dplyr)
-require(ggplot2)
-require(scales)
 require(rjson)
-require(stringr)
-require(VGAM)
-require(cowplot)
-require(arrow)
 require(tictoc)
-require(ggpubr)
-require(minpack.lm)
 require(readr)
-require(testthat)
-require(tidylog)
-require(RColorBrewer)
 
 # to ensure stripping '\0' (nul) from character vector
 options(arrow.skip_nul = TRUE)
@@ -33,43 +22,38 @@ load_table = function(dataF, append="", header=T, nrows=Inf) {
 
 # args
 args = commandArgs(trailingOnly=TRUE)
-if (length(args)!=1) {
-  stop("usage: preprocess_results.R <splice_sim_config>", call.=FALSE)
+if (length(args)<1 | length(args)>2) {
+  stop("usage: preprocess_results.R <splice_sim_config> [<outdir>]", call.=FALSE)
 } 
 splice_sim_config=args[1]
 home_dir=paste0(dirname(splice_sim_config),'/')
+if (length(args)<2) {
+  outdir=paste0(home_dir,'/results/')
+} else {
+  outdir=args[2]
+}
 conf=fromJSON(paste(readLines(splice_sim_config), collapse=""))
 ref_base=conf$condition$ref
 readlen=conf$readlen
 
 # create results dir?
-if (!dir.exists(paste0(home_dir,'/results/'))) {
-  dir.create(paste0(home_dir,'/results/'))
+if (!dir.exists(outdir)) {
+  dir.create(outdir)
 } 
-# results files
-data_file=paste0(home_dir,'/results/data.rds')
-meta_file=paste0(home_dir,'/results/meta.rds')
-  
-tic("load evaluation data") # ca. 5-10min.
 
-all_data=tibble()
-for ( m in names(conf$mappers) ) {
-  for (cr in c(0, conf$condition$conversion_rates)) {
-    all_data = all_data %>% bind_rows(
-      load_table(paste0(home_dir, 'eva/counts/',conf$dataset_name,'.cr',cr,'.',m,'.counts.tsv.gz'))
-    )
-  }
-}
+tic("preprocess metadata tables") 
 
 m=list()
-m[['tx']]=load_table(paste0(home_dir, 'eva/meta/big3_slamseq_nf.tx.metadata.tsv.gz'))
-m[['fx']]=load_table(paste0(home_dir, 'eva/meta/big3_slamseq_nf.fx.metadata.tsv.gz'))
-m[['sj']]=load_table(paste0(home_dir, 'eva/meta/big3_slamseq_nf.sj.metadata.tsv.gz'))
+m[['tx']]=load_table(paste0(home_dir, 'eva/meta/',conf$dataset_name,'.tx.metadata.tsv.gz'))
+m[['fx']]=load_table(paste0(home_dir, 'eva/meta/',conf$dataset_name,'.fx.metadata.tsv.gz'))
+m[['sj']]=load_table(paste0(home_dir, 'eva/meta/',conf$dataset_name,'.sj.metadata.tsv.gz'))
 m[['ga']]=load_table(paste0(home_dir, 'sim/reference_model/gene_anno.tsv.gz')) 
-m[['all_tids']]=load_table(paste0(home_dir, 'tids.tsv')) %>% pull(transcript_id)
+if (file.exists(paste0(home_dir, 'tids.tsv'))) {
+  m[['all_tids']]=load_table(paste0(home_dir, 'tids.tsv')) %>% pull(transcript_id)  
+} else {
+  m[['all_tids']]=NA
+}
 toc()
-
-tic("data cleaning")  # data cleaning 
 
 # ===================================================================
 # tx metadata
@@ -177,37 +161,58 @@ m[['ga']] = m[['ga']] %>%
          gene_type=factor(gene_type)) %>% 
   mutate(across(where(is.numeric), ~ifelse(is.nan(.), NA, .))) 
 
+meta_file=paste0(outdir,'/meta.rds')
+saveRDS(m, meta_file, compress = FALSE)
+
+toc()
+
 # ===================================================================
 # counts
 # ===================================================================
+tic("preprocess count tables") 
 
-all_data = all_data %>% 
-  select(-mq_fil) %>% 
-  mutate(mapper=factor(mapper),
-         conversion_rate=factor(conversion_rate),
-         classification=factor(classification),
-         class_type=factor(class_type)
-  )
-
-d=list()
-d[['tx']] = all_data %>% 
-  filter(class_type=='tx') %>% 
-  select(-class_type) # %>% 
-#   left_join(m[['tx']], by=c('fid'='tid')) %>% # NB too-short tx are lost
-#   left_join(m[['ga']], by=c('fid'='tid')) 
-
-
-d[['fx']] = all_data %>% 
-  filter(class_type=='fx') %>% 
-  select(-class_type) #%>% 
-#  left_join(m[['fx']], by='fid') %>% # NB too-short tx are lost
-#  left_join(m[['ga']], by='tid')
-
-
-d[['sj']] = all_data %>% 
-  filter(class_type %in% c('spl', 'don', 'acc')) #%>% 
-#  left_join(m[['sj']], by='fid') %>% # NB too-short tx are lost
-#  left_join(m[['ga']], by='tid')
+for (mq in c('','.mq20')) {
+  
+  all_data=tibble()
+  for ( m in names(conf$mappers) ) {
+    for (cr in c(0, conf$condition$conversion_rates)) {
+      all_data = all_data %>% bind_rows(
+        load_table(paste0(home_dir, 'eva/counts/',conf$dataset_name,'.cr',cr,'.',m,'.counts',mq,'.tsv.gz'))
+      )
+    }
+  }
+  
+  all_data = all_data %>% 
+    select(-mq_fil) %>% 
+    mutate(mapper=factor(mapper),
+           conversion_rate=factor(conversion_rate),
+           classification=factor(classification),
+           class_type=factor(class_type)
+    )
+  
+  d=list()
+  d[['tx']] = all_data %>% 
+    filter(class_type=='tx') %>% 
+    select(-class_type) # %>% 
+  #   left_join(m[['tx']], by=c('fid'='tid')) %>% # NB too-short tx are lost
+  #   left_join(m[['ga']], by=c('fid'='tid')) 
+  
+  
+  d[['fx']] = all_data %>% 
+    filter(class_type=='fx') %>% 
+    select(-class_type) #%>% 
+  #  left_join(m[['fx']], by='fid') %>% # NB too-short tx are lost
+  #  left_join(m[['ga']], by='tid')
+  
+  
+  d[['sj']] = all_data %>% 
+    filter(class_type %in% c('spl', 'don', 'acc')) #%>% 
+  #  left_join(m[['sj']], by='fid') %>% # NB too-short tx are lost
+  #  left_join(m[['ga']], by='tid')
+  
+  data_file=paste0(outdir,'/data',mq,'.rds')
+  saveRDS(d, data_file, compress = FALSE)
+}
 
 toc()
 
@@ -215,8 +220,6 @@ toc()
 # Save data
 # ===================================================================
 tic("save data") # about 2min
-saveRDS(d, data_file, compress = FALSE)
-saveRDS(m, meta_file, compress = FALSE)
 toc()
 
-print(paste0("Done. Load data via d=readRDS('",data_file,"')"))
+print(paste0("Done. Load data via d=readRDS(data_file.rds)"))

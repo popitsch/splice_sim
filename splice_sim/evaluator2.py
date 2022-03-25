@@ -276,10 +276,14 @@ def evaluate(config, m, bam_file, threads, out_dir):
 
 
 def calc_mappability(genomeMappability, chrom, start, end):
-    """ Calculate genomic mappability for giveen window """ 
-    map = flatten([[float(x[3])]*(min(end+1,int(x[2]))-max(start,int(x[1]))) for x in genomeMappability.fetch('chr'+chrom, start, end, parser=pysam.asTuple())])
-    map=map+[0]*(end-start+1-len(map)) # pad with missing zeros
-    mea_map=np.mean(map) if len(map)>0 else 0 
+    """ Calculate genomic mappability for giveen window """
+    try:
+        map = flatten([[float(x[3])]*(min(end+1,int(x[2]))-max(start,int(x[1]))) for x in genomeMappability.fetch('chr'+chrom, start, end, parser=pysam.asTuple())])
+        map=map+[0]*(end-start+1-len(map)) # pad with missing zeros
+        mea_map=np.mean(map) if len(map)>0 else 0
+    except ValueError as ve:
+        #print(ve)
+        mea_map = np.NA
     return mea_map
 
 

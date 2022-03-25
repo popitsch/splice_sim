@@ -22,7 +22,7 @@ Channel.fromFilePairs("${params.final_bam_dir}*.{bam,bai}", flat:true) { file ->
  */
 process evaluate_bams {
 	tag "$name"
-	label "medium"
+	label "long"
 	cpus 16
     module 'python/3.7.2-gcccore-8.2.0:htslib/1.10.2-gcccore-7.3.0'
     publishDir "eva/counts", mode: 'copy'

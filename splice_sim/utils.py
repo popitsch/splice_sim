@@ -2,10 +2,11 @@ import pysam
 import os, sys
 import unicodedata
 import re
-# Table of reverse complement bases
-COMP_TABLE = {
-    "A": 'T', "C": 'G', "T": 'A', "G": 'C'
-    }
+
+rcmap=bytes.maketrans(b'ATCGatcgNn', b'TAGCTAGCNN')
+def reverse_complement(seq):
+    """ Calculate reverse complement DNA sequence """
+    return seq[::-1].translate(rcmap)
 
 # Colors for read classifications
 colors = {"exonexonfalse" : "228,26,28",
@@ -18,14 +19,6 @@ colors = {"exonexonfalse" : "228,26,28",
 def parse_info(info):
     """ parse GFF3 info section """
     return {k:v for k,v in [a.split('=') for a in info.split(';') if '=' in a]}
-
-def reverse_complement(seq):
-    """ Calculate reverse complement DNA sequence """
-    rev=[]
-    for c in seq[::-1]:
-        c=c.upper()
-        rev+=[COMP_TABLE.get(c, 'N')]
-    return ''.join(rev)
 
 def pad_n(seq, minlen):
     """ Add up-/downstream padding with N's to ensure a given minimum length of the passed sequence """ 

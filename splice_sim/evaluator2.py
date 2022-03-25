@@ -127,20 +127,6 @@ def classify_read(found_read, found_overlapping_raw, tid2feat, performance, dict
             for fid in FP:
                 performance[class_type, mq_fil, fid, true_isoform, cv1, cv2, se1, se2, 'FP']+=1.0/len(FP)
                 performance[class_type, mq_fil, fid, true_isoform, cv1, cv2, se1, se2, 'FP_raw']+=1.0
-                
-            # if class_type=='spl' and mq_fil==0 and found_read.query_name=='ENSMUST00000162558.7_+_mat_4-92_1_161036013_1=193N37=304N31=240N31=_0_0_1':
-            #     print(true_class[class_type])  
-            #     print(true_class_ext[class_type])  
-            #     print(found_class[mq_fil][class_type])  
-            #     print(TP, FP, FN)
-            #     print(found_overlapping_raw)
-            #     print(found_read.get_blocks())
-            #     for feat_loc, (tid, ftype, fid) in found_overlapping_raw:
-            #         if ftype=='intron':
-            #             print(fid, read_envelops_loc(feat_loc, found_read), read_splices_intron(feat_loc, found_read), feat_loc)
-                    
-                    
-                
             # write reads (no mq filtering!)  if mismapped
             if (mq_fil==0) and (dict_samout is not None) and (len(FN)+len(FP)>0):
                 samout=dict_samout[classtype2cat[class_type]]
@@ -148,7 +134,7 @@ def classify_read(found_read, found_overlapping_raw, tid2feat, performance, dict
                 if len(FN)>0:
                     is_correct_strand = ( found_read.is_reverse and true_strand=='-' ) or ((not found_read.is_reverse) and true_strand=='+')
                     true_read.query_sequence = found_read.query_sequence if is_correct_strand else reverse_complement(found_read.query_sequence)
-                    true_read.query_qualities = found_read.query_qualities
+                    true_read.query_qualities = found_read.query_qualities # fixme also rev?
                     true_read.reference_id = dict_chr2idx[true_chr]
                     true_read.tags = (("NM", n_seqerr + n_converted ),)
                     true_read.flag = 0 if true_strand=='+' else 16
@@ -435,4 +421,3 @@ def extract_feature_metadata(config, m, out_dir):
                                 ','.join(overlapping)
                             ]]), file=out_tx)
     print("All done.")
-

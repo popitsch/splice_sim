@@ -18,9 +18,11 @@ output:
     fig_caption: true
 params:
     splice_sim_config:
-       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/splice_sim.config.json"
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/splice_sim.config.json"
+    decay_config:
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/decay_sim_nf3/config.json"
     out_dir:
-       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/analysis/"
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/analysis/"
 ---
 <style type="text/css">
 body, td {
@@ -154,6 +156,82 @@ calc_performance=function(tab, readlen) {
   ) 
 }
 
+# calculate coverage for a grouped table
+calc_coverage = function(grp_tab) {
+  grp_tab %>% 
+      summarise(count=sum(count)) %>% 
+      pivot_wider(names_from=c(mapper,classification), values_from=count, names_sort=T) %>% 
+      mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>% 
+      filter(len>conf$readlen) %>% # filter too-short introns as this will lead to wrong coverage calc. Example: ENSMUST00000116560.2_in5
+      mutate(
+        simulated=(HISAT3N_TP+HISAT3N_FN)*!!conf$readlen/len, # same as simulated_star!
+        HISAT3N=(HISAT3N_TP+HISAT3N_FP)*!!conf$readlen/len,
+        STAR=(STAR_TP+STAR_FP)*!!conf$readlen/len,
+    ) %>% pivot_longer(c(simulated, HISAT3N, STAR), names_to='mapper') %>% 
+    mutate(mapper=factor(mapper, levels=c('simulated', 'HISAT3N', 'STAR')),
+           is_converted=ifelse(conversion_rate==0,'no conversions', 'converted reads')) %>% 
+    ungroup()
+}
+
+# simple exponential decay model
+decay_model= function(t, k) {
+  return( exp(t * -k) )
+}
+# fit decay model and calculate halflife
+fit_halflife = function(TP, dat) {
+  if (any(is.na(dat))) {
+    return (list(mod=NA,k=NA,hl=NA,pseudoR2=NA, bic=NA))
+  }
+  mod = tryCatch({
+        nlsLM(dat~decay_model(TP, k),
+              start=list(
+                k=0),
+              lower = c(0),                 
+              upper = c(Inf),
+              control = nls.lm.control(maxiter = 1000),
+              na.action = na.omit)
+      }, error=function(e){
+        print(e)
+      })
+  if ( inherits(mod, "simpleError")) {return (list(mod=NA,k=NA,hl=NA,pseudoR2=NA, bic=NA)) }
+  k=coef(mod)[length(coef(mod))]
+  hl=log(2)/k
+  rss = sum(residuals(mod)^2)
+  tss = sum((dat - mean(dat ,na.rm = TRUE))^2 ,na.rm = TRUE)  # Total sum of squares
+  pseudoR2 = 1 - (rss/tss)  # R-squared measure
+  bic = BIC(mod)
+  return (list(mod=mod,k=k,hl=hl,pseudoR2=pseudoR2, bic=bic))
+}
+
+# simple correlation plot
+plot_corr = function(d, a, b, col_, main_title=NA, xlog=F, draw_diag=T, max_x=NA, show_legend=T) {
+  thecor = paste("r_pearson = ", round(cor(d[[a]], d[[b]], use = "complete.obs"), 4), 
+                 "\nr_spearman = ", round(cor(d[[a]], d[[b]], use = "complete.obs", method="spearman"), 4),
+                 "\nn =",nrow(d)  )
+  if (is.na(main_title)) {
+    main_title=paste0("Correlation between ",a," and ",b)
+  }
+  p = ggplot( d, aes_string(x=a, y=b, col=col_) ) +
+    geom_point(aes(alpha=0.2))  +
+    ggtitle(main_title, thecor) 
+  if ( !is.na(max_x) ) {
+    p=p+xlim(0,max_x)+ylim(0, max_x)
+  }
+  if (draw_diag) {
+    p=p+geom_abline(intercept = 0, slope = 1, col="black",linetype="dotted") 
+  }
+  if ( xlog ) {
+    p=p+scale_x_log10()+scale_y_log10()
+  }
+  if ( ! show_legend ) {
+    p=p+theme(legend.position="none")
+  }
+  return(p)
+}
+
+gn2tid = function(gn) {
+  return(unique( m[['ga']] %>% filter(gene_name == gn) %>% pull(tid) ))
+}
 
 ```
 
@@ -169,12 +247,14 @@ conf=fromJSON(paste(readLines(params$splice_sim_config), collapse=""))
 
 
 # results files
-data_file=paste0(home_dir,'/results/data.rds')
-meta_file=paste0(home_dir,'/results/meta.rds')
+data_file=paste0(home_dir,'/eva/results/data.rds')
+data_file_mq20=paste0(home_dir,'/eva/results/data.mq20.rds')
+meta_file=paste0(home_dir,'/eva/results/meta.rds')
 
 if (file.exists(data_file)) {
   tic("load data")
   d=readRDS(data_file)
+  d_mq20=readRDS(data_file_mq20)
   toc()
 } else {
   stop("Could not find data_file")
@@ -198,6 +278,26 @@ if (file.exists(meta_file)) {
 #   left_join(m[['tx']], by=c('fid'='tid')) %>% # NB too-short tx are lost
 #   left_join(m[['ga']], by=c('fid'='tid')) 
 
+
+# shortcuts
+tx = d[['tx']] %>% left_join(m[['tx']], by=c('fid'='tid')) 
+tx20 = d_mq20[['tx']] %>% left_join(m[['tx']], by=c('fid'='tid')) 
+fx = d[['fx']] %>% left_join(m[['fx']], by='fid') 
+fx20 = d_mq20[['fx']] %>% left_join(m[['fx']], by='fid') 
+
+
+# ===========================================================
+# decay experiment
+# ===========================================================
+decay_conf=fromJSON(paste(readLines(params$decay_config), collapse=""))
+decay_home_dir=paste0(dirname(params$decay_config),'/')
+decay_d=list()
+decay_m=list()
+for ( tp in decay_conf$timepoints) {
+  decay_d[[paste0('tp', tp)]] = readRDS(paste0(decay_home_dir,'tp',tp,'/eva/results/data.rds'))
+  decay_m[[paste0('tp', tp)]] = readRDS(paste0(decay_home_dir,'tp',tp,'/eva/results/meta.rds'))
+}
+decay_isoform_truth = load_table(paste0(decay_home_dir,decay_conf$isoform_config)) %>% rename(tid=transcript_id)
 ```
 
 
@@ -325,21 +425,6 @@ calculation that does not take partial read overlap into account. Coverage thres
 
 
 ```{r coverage, include=T, echo=F, cache=T}
-calc_coverage = function(grp_tab) {
-  grp_tab %>% 
-      summarise(count=sum(count)) %>% 
-      pivot_wider(names_from=c(mapper,classification), values_from=count, names_sort=T) %>% 
-      mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>% 
-      filter(len>conf$readlen) %>% # filter too-short introns as this will lead to wrong coverage calc. Example: ENSMUST00000116560.2_in5
-      mutate(
-        simulated=(HISAT3N_TP+HISAT3N_FN)*!!conf$readlen/len, # same as simulated_star!
-        HISAT3N=(HISAT3N_TP+HISAT3N_FP)*!!conf$readlen/len,
-        STAR=(STAR_TP+STAR_FP)*!!conf$readlen/len,
-    ) %>% pivot_longer(c(simulated, HISAT3N, STAR), names_to='mapper') %>% 
-    mutate(mapper=factor(mapper, levels=c('simulated', 'HISAT3N', 'STAR')),
-           is_converted=ifelse(conversion_rate==0,'no conversions', 'converted reads')) %>% 
-    ungroup()
-}
 
 hlines=tribble(
   ~y,  ~cat,
@@ -347,8 +432,7 @@ hlines=tribble(
   50,  2,
   100, 3
 )
-tx = d[['tx']] %>% left_join(m[['tx']], by=c('fid'='tid')) 
-fx = d[['fx']] %>% left_join(m[['fx']], by='fid') 
+
 
 p1 = calc_coverage(tx %>% group_by(mapper, conversion_rate, fid, len, classification ) ) %>% 
   ggplot(aes(x=mapper, y=value, fill=mapper)) + geom_boxplot() +
@@ -537,7 +621,17 @@ fcr = tx %>%
       true_fcr1 = ifelse(all_true>0,tc1_true/all_true,0),
       found_fcr1 = ifelse(all_found>0,tc1_found/all_found,0),
       true_fcr2 = ifelse(all_true>0,tc2_true/all_true,0),
-      found_fcr2 = ifelse(all_found>0,tc2_found/all_found,0)
+      found_fcr2 = ifelse(all_found>0,tc2_found/all_found,0),
+      # performance
+      all_precision=ifelse(all_TP+all_FP>0, all_TP/(all_TP+all_FP), NA),
+      all_recall=ifelse(all_TP+all_FN>0,all_TP/(all_TP+all_FN), NA),
+      all_F1=ifelse((2*all_TP+all_FP+all_FN)>0,2*all_TP/(2*all_TP+all_FP+all_FN),NA),
+      tc1_precision=ifelse(tc1_TP+tc1_FP>0, tc1_TP/(tc1_TP+tc1_FP), NA),
+      tc1_recall=ifelse(tc1_TP+tc1_FN>0,tc1_TP/(tc1_TP+tc1_FN), NA),
+      tc1_F1=ifelse((2*tc1_TP+tc1_FP+tc1_FN)>0,2*tc1_TP/(2*tc1_TP+tc1_FP+tc1_FN),NA),
+      tc2_precision=ifelse(tc2_TP+tc2_FP>0, tc2_TP/(tc2_TP+tc2_FP), NA),
+      tc2_recall=ifelse(tc2_TP+tc2_FN>0,tc2_TP/(tc2_TP+tc2_FN), NA),
+      tc2_F1=ifelse((2*tc2_TP+tc2_FP+tc2_FN)>0,2*tc2_TP/(2*tc2_TP+tc2_FP+tc2_FN),NA)
   ) %>% 
   mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron')))
 
@@ -557,9 +651,11 @@ fcr_perf = fcr %>%
   select(-true_fcr1_STAR) %>% 
   mutate(diff_HISAT3N=HISAT3N-simulated, 
          diff_STAR=STAR-simulated,
-         best_mapper=ifelse(diff_HISAT3N<diff_STAR, 'HISAT3N', ifelse(diff_STAR<diff_HISAT3N,'STAR','BOTH'))
+         best_mapper=ifelse(abs(diff_HISAT3N)<0.01 & abs(diff_STAR)<0.01,'BOTH',ifelse(abs(diff_HISAT3N)<abs(diff_STAR), 'HISAT3N', 'STAR'))
          )
 ```
+
+### FCR per condition
 
 <div class = "blue">
 <b>Fraction of converted reads.</b>
@@ -573,7 +669,7 @@ The non-zero FCR for mature introns results from false-positive intronic reads.
 
 fcr_perf %>%
   pivot_longer(c(simulated,HISAT3N, STAR)) %>% 
-  mutate(name=factor(name, levels=c('simulated', 'STAR', 'HISAT3N')))
+  mutate(name=factor(name, levels=c('simulated', 'STAR', 'HISAT3N'))) %>% 
   group_by(conversion_rate,true_isoform,ftype, name) %>% 
   calc_ci(value) %>% 
   ggplot(aes(x=as.numeric(as.character(conversion_rate))*100, y=col.mean, col=name, group=name, linetype=name)) + 
@@ -586,25 +682,33 @@ fcr_perf %>%
 
 ```
 
+### FCR: best mapper
 <div class = "blue">
 <b>Best mapper counts.</b>
 Number of times a mapper 
 
 </div>
-
-```{r fcr_perf}
+```{r fcr_best_mapper}
 fcr_perf %>% group_by(conversion_rate, best_mapper, ftype, true_isoform) %>% 
   summarise(n = n()) %>%
   mutate(frac = n / sum(n)) %>% 
   ggplot(aes(conversion_rate, frac, fill=best_mapper)) + geom_bar(stat='identity', position = 'dodge') +
   ggtitle('Best mapper wrt. FCR') +
   facet_grid(ftype~true_isoform)
+```
+### FCR diff
+<div class = "blue">
+<b> </b>
 
+</div>
+```{r fcr_best_mapper}
 fcr_perf %>% 
+  filter(ftype=='tx') %>% 
   pivot_longer(c(diff_HISAT3N, diff_STAR)) %>% 
   ggplot(aes(x=conversion_rate, y=value, col=name)) +
   geom_boxplot() +
-  scale_y_continuous(trans=scales::pseudo_log_trans(base = 10))
+  facet_zoom(ylim=c(-0.05, 0.05)) +
+  ggtitle('FCR difference to simulated values per mapper')
 ```
 
 # SJ
@@ -889,11 +993,317 @@ for ( filter_type in c('include_converted', 'unconverted_only')) {
 ```
 
 
+# Special analyses
+
+## Performance of converted vs unconverted reads
+
+
+<div class = "blue">
+<b>Fraction of false positive/negative reads stratified by nucleotide mismatches.</b>
+We expected the fraction of FP/FN reads to increase with increasing mismatches to the reference sequence that can stem from simulated nucleotide conversions or sequencing errors. 
+
+The plots show an increased rate of FP/FN reads in HISAT3N vs STAR.
+
+HISAT3N should be less/not influenced by nucleotide conversions (as these are masked from the reference genome).
+</div>
+
+```{r}
+calc_fcr_cvsu = function(tab) {
+  tab %>% 
+    group_by( mapper, classification, ftype, mappability) %>% 
+    summarise(all=sum(count),
+              cv_0=sum(count[(cv1==0) & (cv2==0)]), # reads with no tc conv
+              cv_1=sum(count[(cv1==1) & (cv2==0)]), # reads with 1 tc conv
+              cv_2=sum(count[cv2==1]), # reads with 2+ tc conv
+              se_0=sum(count[(se1==0) & (se2==0)]), # reads with no seq err
+              se_1=sum(count[(se1==1) & (se2==0)]), # reads with 1 seq err
+              se_2=sum(count[(se2==1)])) %>% # reads with 2+ seq err
+    pivot_wider(names_from=classification, 
+                values_from=c(all, cv_0,cv_1,cv_2, se_0,se_1,se_2), 
+                names_sort=T) %>% 
+    mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>% 
+    mutate(
+      cv_0_fn_frac=ifelse(cv_0_TP+cv_0_FN>0,cv_0_FN/(cv_0_TP+cv_0_FN),NA),
+      cv_1_fn_frac=ifelse(cv_1_TP+cv_1_FN>0,cv_1_FN/(cv_1_TP+cv_1_FN),NA),
+      cv_2_fn_frac=ifelse(cv_2_TP+cv_2_FN>0,cv_2_FN/(cv_2_TP+cv_2_FN),NA),
+      se_0_fn_frac=ifelse(se_0_TP+se_0_FN>0,se_0_FN/(se_0_TP+se_0_FN),NA),
+      se_1_fn_frac=ifelse(se_1_TP+se_1_FN>0,se_1_FN/(se_1_TP+se_1_FN),NA),
+      se_2_fn_frac=ifelse(se_2_TP+se_2_FN>0,se_2_FN/(se_2_TP+se_2_FN),NA),
+      # FP rate
+      cv_0_fp_frac=ifelse(cv_0_TP+cv_0_FP>0,cv_0_FP/(cv_0_TP+cv_0_FP),NA),
+      cv_1_fp_frac=ifelse(cv_1_TP+cv_1_FP>0,cv_1_FP/(cv_1_TP+cv_1_FP),NA),
+      cv_2_fp_frac=ifelse(cv_2_TP+cv_2_FP>0,cv_2_FP/(cv_2_TP+cv_2_FP),NA),
+      se_0_fp_frac=ifelse(se_0_TP+se_0_FP>0,se_0_FP/(se_0_TP+se_0_FP),NA),
+      se_1_fp_frac=ifelse(se_1_TP+se_1_FP>0,se_1_FP/(se_1_TP+se_1_FP),NA),
+      se_2_fp_frac=ifelse(se_2_TP+se_2_FP>0,se_2_FP/(se_2_TP+se_2_FP),NA)
+  ) %>% 
+#  filter_at(vars(tc_0_fn_frac, tc_1_fn_frac, tc_2_fn_frac), all_vars(!is.na(.))) %>% # values in all categories
+  pivot_longer(cols=ends_with('frac')) %>%
+  separate(name, into=c('cat','n_conv','class',NA), sep ='_')  %>% 
+  mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+  mutate(n_conv=factor(ifelse(n_conv==2, '2+', as.character(n_conv)), levels=c('0','1','2+')))
+}
+
+fcr_cvsu = calc_fcr_cvsu(tx)
+
+
+p1=fcr_cvsu %>% 
+  filter(cat=='se', class=='fn') %>% 
+  ggplot(aes(n_conv, value, col=mapper, group=mapper)) +
+  geom_line() +
+  facet_grid(mappability~mapper, scales = 'free') +
+  ggtitle('sequencing errors, FN')
+p2=fcr_cvsu %>% 
+  filter(cat=='se', class=='fp') %>% 
+  ggplot(aes(n_conv, value, col=mapper, group=mapper)) +
+  geom_line() +
+  facet_grid(mappability~mapper, scales = 'free') +
+  ggtitle('sequencing errors, FP')
+p3=fcr_cvsu %>% 
+  filter(cat=='cv', class=='fn') %>% 
+  ggplot(aes(n_conv, value, col=mapper, group=mapper)) +
+  geom_line() +
+  facet_grid(mappability~mapper, scales = 'free') +
+  ggtitle('nucleotide conversions, FN')
+p4=fcr_cvsu %>% 
+  filter(cat=='cv', class=='fp') %>% 
+  ggplot(aes(n_conv, value, col=mapper, group=mapper)) +
+  geom_line() +
+  facet_grid(mappability~mapper, scales = 'free') +
+  ggtitle('nucleotide conversions, FP')
+my_plot_grid(list(p1,p2,p3,p4), nrow=2, 'FN/FP fraction dependence on mismatches')
+```
+## MQ20 Mapping quality filtering
+
+Demonstrate effect of mq20 filtering on coverage and mapping F1.
+
+```{r}
+
+comp_cov=function(a,b, grp_vars) {
+  sel_vars=grp_vars[grp_vars!='classification']
+  calc_coverage(a %>% group_by_at(grp_vars) ) %>% 
+    select(any_of(c(sel_vars, 'value'))) %>% 
+    left_join(
+      calc_coverage(b %>% group_by_at(grp_vars) ) %>% 
+        select(any_of(c(sel_vars, 'value'))),
+      by=sel_vars, suffix = c(".mq0", ".mq20"),
+    )
+}
+
+cov_comp_tx = comp_cov(tx, tx20, c('mapper', 'conversion_rate', 'fid', 'len', 'classification' ))
+cov_comp_fx = comp_cov(fx, fx20, c('mapper', 'conversion_rate', 'fid', 'true_isoform', 'ftype', 'len', 'classification' )) 
+# sanity check: 
+#testthat::expect_that(cov_comp_tx %>% filter(value.mq20>value.mq0) %>% nrow(), equals(0))
+#testthat::expect_that(cov_comp_fx %>% filter(value.mq20>value.mq0) %>% nrow(), equals(0))
+#cov_comp_fx %>% mutate(comp=(value.mq0 > value.mq20) - (value.mq0 < value.mq20)) %>% count(comp)
+
+
+p1 = cov_comp_tx %>% 
+  pivot_longer(c(value.mq0, value.mq20), names_prefix='value.', names_to='mq') %>% 
+  replace_na(list(value = 0)) %>% 
+  ggplot(aes(x=mapper, y=value, fill=factor(mq))) + geom_boxplot() +
+  scale_y_sqrt() +
+  #facet_grid(conversion_rate~., scales = 'free') +
+  ggtitle('Coverage over tx interval') + 
+  xlab('') + ylab('coverage') +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
+  guides(fill=guide_legend(title="Min mapping quality"))
+
+
+p2 = cov_comp_fx %>% 
+  pivot_longer(c(value.mq0, value.mq20), names_prefix='value.', names_to='mq') %>% 
+  replace_na(list(value = 0)) %>% # some mq20 entries have no counts in any classification leading to NAs
+  ggplot(aes(x=mapper, y=value, fill=factor(mq))) + geom_boxplot() +
+  scale_y_sqrt() +
+  ggtitle('Coverage per genomic feature') +
+  facet_grid(true_isoform~ftype, scales = 'free') + 
+  xlab('') + ylab('coverage') +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  guides(fill=guide_legend(title="Min mapping quality"))
+
+p3=cov_comp_fx %>% 
+  group_by(mapper, conversion_rate, true_isoform, ftype ) %>% 
+  summarise(mq0=sum(value.mq0),
+            mq20=sum(value.mq20, na.rm = T),
+            frac_fil=ifelse(mq0>0,(mq0-mq20)/mq0,0)) %>% 
+  ggplot(aes(conversion_rate, frac_fil, col=mapper, group=mapper)) +
+  geom_line() +
+  facet_grid(true_isoform~ftype, scales = 'free') +
+  ggtitle("Fraction of mq20 filtered reads per genomic feature")
+
+
+perf_comp = tx %>% bind_rows(fx) %>% 
+  group_by(mapper, conversion_rate, mappability, len, classification,true_isoform,ftype) %>% 
+  calc_performance(conf$readlen) %>% 
+  mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+  filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+  ungroup() %>% 
+  select(mapper, conversion_rate, mappability,true_isoform,ftype,F1.mq0=F1) %>% 
+  left_join(
+    tx20 %>% bind_rows(fx20) %>% 
+    group_by(mapper, conversion_rate, mappability, len, classification,true_isoform,ftype) %>% 
+    calc_performance(conf$readlen) %>% 
+    mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+    filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+    ungroup() %>% 
+    select(mapper, conversion_rate, mappability,true_isoform,ftype,F1.mq20=F1),
+    by=c('mapper', 'conversion_rate', 'mappability', 'true_isoform','ftype')
+  )
+
+p4 = perf_comp %>% 
+  pivot_longer(c(F1.mq0, F1.mq20), names_prefix='F1.', names_to='mq', values_to='F1') %>% 
+  group_by(conversion_rate, mapper, mappability, true_isoform, ftype, mq) %>% 
+  calc_ci(F1) %>% 
+  ggplot(aes(conversion_rate, col.mean, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~ftype+mq, scales = 'free') +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5))+
+  ylab("F1") +
+  ggtitle('Mean F1 for mature isoforms per condition based on mq20/unfiltered read counts') 
+
+
+p4 = perf_comp %>% 
+  pivot_longer(c(F1.mq0, F1.mq20), names_prefix='F1.', names_to='mq', values_to='F1') %>% 
+  group_by(conversion_rate, mapper, mappability, true_isoform, ftype, mq) %>% 
+  calc_ci(F1) %>% 
+  ggplot(aes(mapper, col.mean, col=mq, group=paste0(mapper,mq))) +
+  geom_boxplot() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~ftype+true_isoform, scales = 'free') +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5))+
+  ylab("F1") +
+  ggtitle('Mean F1 for mature isoforms per condition based on mq20/unfiltered read counts') 
+
+ my_plot_grid(list(p1,p2,p3,p4), labels = T, 'Coverage of mapping-quality filtered reads')
+
+ 
+ 
+ 
+ 
+```
+
+## Decay analysis
+
+```{r}
+
+# calculate theoretical data
+truth = tibble()
+for ( tp in decay_conf$timepoints ) {
+  truth = truth %>% rbind(
+    decay_isoform_truth  %>% mutate(tp=!!tp, ftc=exp(!!tp * -k)) %>% mutate(mapper='truth')
+  )
+}
+
+
+decay_fcr = list()
+for ( tp in names(decay_d)) {
+  decay_fcr[[tp]] = decay_d[[tp]][['tx']] %>% 
+    filter(conversion_rate==0.05) %>% # use only the labeled reads
+    select(-conversion_rate) %>% 
+    group_by(fid, mapper, classification) %>% # summarise over true_isoform
+    summarise(all=sum(count), 
+              tc1=sum(count[cv1==1]), 
+              tc2=sum(count[cv2==1])) %>% 
+    pivot_wider(names_from=classification, values_from=c(all, tc1, tc2), names_sort=T) %>% 
+    mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>% 
+    mutate(
+      all_true =  all_TP+all_FN,
+      all_found = all_TP+all_FP,
+      tc1_true =  tc1_TP+tc1_FN,
+      tc1_found = tc1_TP+tc1_FP,
+      tc2_true =  tc2_TP+tc2_FN,
+      tc2_found = tc2_TP+tc2_FP,
+      true_fcr1 = ifelse(all_true>0,tc1_true/all_true,0),
+      found_fcr1 = ifelse(all_found>0,tc1_found/all_found,0),
+      true_fcr2 = ifelse(all_true>0,tc2_true/all_true,0),
+      found_fcr2 = ifelse(all_found>0,tc2_found/all_found,0),
+  ) 
+}  
+decay_fcr = bind_rows(decay_fcr, .id = 'tp') %>% 
+  mutate(tp=as.numeric(substr(tp,3, length(tp)))) %>% 
+  left_join(decay_m[['tp0']][['tx']], by=c('fid'='tid')) # any tp will work here
+
+# calc fcr
+decay_fcr = decay_fcr %>% 
+  select(tp, fid,ftype,mappability,true_fcr1, found_fcr1) %>% 
+  ungroup() %>% 
+  pivot_wider(names_from=mapper, values_from=c(true_fcr1, found_fcr1)) %>% 
+  mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>%   # replace NA with 0; NA are resulting from mat not having introns. So if there are no FP values then there are no entries!
+  rename(simulated=true_fcr1_HISAT3N, HISAT3N=found_fcr1_HISAT3N, STAR=found_fcr1_STAR) %>%
+  select(-true_fcr1_STAR) %>%
+  pivot_longer(c('simulated','HISAT3N','STAR'), names_to='mapper', values_to='ftc') %>% 
+  select(tid=fid, tp, ftc, mapper) %>% 
+  left_join(decay_isoform_truth, by='tid')
+
+# add truth
+decay_fcr = decay_fcr %>% 
+  bind_rows(truth) %>% 
+  left_join(decay_m[['tp0']][['ga']]) %>% 
+   mutate(k=factor(k),
+         decay_rate=case_when(k==0.05 ~ 'slow',
+                              k==0.075 ~'medium',
+                              k==0.1 ~ 'fast',
+                              T~'NA'))
+
+# normalize ftc to 1st timepoint because we do not correct using ZIB here
+decay_fcr = decay_fcr %>% 
+  left_join(decay_fcr %>% filter(tp==0) %>% select(tid, mapper, ftc0=ftc), by=c('tid', 'mapper')) %>% 
+  mutate(ftc_norm=ftc/ftc0) %>% 
+  mutate(mapper=factor(mapper, levels=c('truth', 'simulated', 'HISAT3N', 'STAR'))) %>% 
+  mutate(mappability=factor(mappability, levels=c('low', 'medium', 'high')))
+
+# calculate half-life
+decay_halflifes = decay_fcr %>% 
+  select(tid, mapper, mappability, decay_rate, tp, ftc_norm) %>% 
+  mutate(tp = paste0('tp',tp)) %>% 
+  pivot_wider(names_from = tp, values_from = ftc_norm, id_cols = c('tid', 'mapper', 'mappability', 'decay_rate') ) %>% 
+  rowwise() %>% 
+  mutate(hl=fit_halflife(c(0,5,10,15,20,25), c(tp0,tp5,tp10,tp15,tp20,tp25))[['hl']]) %>% 
+  mutate(mappability=factor(mappability, levels=c('low', 'medium', 'high')))
+
+# replace inf and NA with 0
+decay_halflifes = decay_halflifes %>% 
+  mutate_if(is.numeric, list(~na_if(., Inf))) %>% 
+  replace(is.na(.), 0)
+
+# plot halflifes
+p1 = decay_fcr %>%
+  ggplot(aes(x=tp, y=ftc_norm, col=mappability, group=paste0( tid, mappability,mapper))) + 
+  geom_line(alpha=0.3) +
+  facet_wrap(mappability~mapper) +
+  geom_hline(yintercept = 0.5, col='grey', linetype='dotted') +
+  facet_grid(mappability~mapper) +
+  theme(legend.position="none") +
+  ggtitle("Fraction of converted reads", "normalized to 1st timepoint") +
+  ylim(0,1)
+
+  
+p2 = decay_halflifes %>% 
+  ggplot(aes(x=mapper, y=hl, col=mappability)) + 
+  geom_jitter() +
+  facet_grid(mappability~mapper) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  facet_grid(mappability~mapper, scales = 'free') +
+  ggtitle("Fitted halflifes")
+
+hlcorr=decay_halflifes %>% pivot_wider(names_from = mapper, values_from = hl, id_cols = c('tid', 'mapper', 'mappability', 'decay_rate'))
+p3 = plot_corr( hlcorr, 'simulated', 'STAR', 'mappability', main_title='STAR', max_x=NA, xlog=T, show_legend=F )
+p4 = plot_corr( hlcorr, 'simulated', 'HISAT3N', 'mappability', main_title='HISAT3N', max_x=NA, xlog=T, show_legend=F )
+
+
+my_plot_grid(list(p1,p2,p3,p4),  'Halflife reconstruction performance', labels = T, ncol = 2)
+```
+
 # Examples
 
 ```{r, include=F, echo=F, eval=F}
 
-tid='ENSMUST00000079496.8'
+gene_name='Actb'
+tid=gn2tid(gene_name)
+label=paste0(gene_name,':', tid)
 
 intron_mappability %>% 
   filter(tid==!!tid) %>% 
@@ -907,5 +1317,11 @@ sfrac %>%
   ggplot(aes(conversion_rate, value, col=name)) +
     geom_point() +
     facet_grid(mapper~filter_type)
+
+p1=calc_fcr_cvsu(tx %>% filter(fid==!!tid)) %>% 
+  ggplot(aes(n_conv, value, col=mapper, group=paste0(mapper,cat))) +
+  geom_line() +
+  facet_grid(cat~mapper+class, scales = 'free')  +
+  ggtitle('FCR',label)
 
 ```

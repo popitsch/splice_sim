@@ -53,6 +53,9 @@ profiles {
         time='4.d'
         queue='m'
       }
+      withName: 'preprocess_results' {
+        container = 'tobneu/splice_sim_r:latest'
+      }
      beforeScript = 'hostname; module purge; ml list; export DISPLAY=""; export R_LIBS_USER=""; export R_LIBS=""; export PYTHONPATH=""; export PERL5LIB="";'
     }
 

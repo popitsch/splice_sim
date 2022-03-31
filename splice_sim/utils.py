@@ -3,6 +3,11 @@ import os, sys
 import unicodedata
 import re
 
+# Table of reverse complement bases
+COMP_TABLE = {
+    "A": 'T', "C": 'G', "T": 'A', "G": 'C'
+    }
+
 rcmap=bytes.maketrans(b'ATCGatcgNn', b'TAGCTAGCNN')
 def reverse_complement(seq):
     """ Calculate reverse complement DNA sequence """

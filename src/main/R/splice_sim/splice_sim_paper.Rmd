@@ -1507,6 +1507,20 @@ p4 = perf_comp %>%
 
 ```{r}
 
+# # prepare experiment
+# set.seed(123)
+# isoform_config = load_table('/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/tids.tsv') %>%
+#   left_join(m[['tx']] %>% select(tid, rnk, mappability), by=c('transcript_id'='tid')) %>% 
+#   mutate(k = replicate(n(),sample(c(0.05, 0.075, 0.1),1,replace = TRUE))) %>% 
+#   mutate(k=factor(k),
+#          decay_rate=case_when(k==0.05 ~ 'slow',
+#                               k==0.075 ~'medium',
+#                               k==0.1 ~ 'fast',
+#                               T~'NA')
+#   ) %>% write_tsv('/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/decay_sim_nf4/isoform_config.tsv')
+
+
+
 # calculate theoretical data
 truth = tibble()
 for ( tp in decay_conf$timepoints ) {

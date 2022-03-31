@@ -305,6 +305,7 @@ echo "Starting splice_sim pipeline with profile $profile"
                 "dataset_name": config['dataset_name']+'_tp%i'%(tp),
                 "config_file": tp_dir+'decay_experiment.'+str(tp)+'.config.json',
                 "splice_sim_cmd": config['splice_sim_cmd'],
+                "splice_eva_preprocess_cmd": config['splice_eva_preprocess_cmd'] if 'splice_eva_preprocess_cmd' in config else 'NA',
                 "genome_fa": config['genome_fa'],
                 "genome_chromosome_sizes": config['genome_chromosome_sizes'],
                 "gene_gff": config['gene_gff'],
@@ -358,7 +359,8 @@ echo "Starting splice_sim pipeline with profile $profile"
                 print("nextflow -log logs/nextflow.log run "+config["splice_sim_nf"]+" -params-file %s -resume -profile $profile" % (tp_dir+'decay_experiment.'+str(tp)+'.config.json'), file=script_out)    
             with open(tp_dir+'run_splice_sim_eva.sh', 'w') as script_out:
                 print(header, file=script_out)
-                print("nextflow -log logs/nextflow.log run "+config["splice_sim_eva_nf"]+" -params-file %s -resume -profile $profile" % (tp_dir+'decay_experiment.'+str(tp)+'.config.json'), file=script_out)    
-            with open(tp_dir+'run_splice_sim_count.sh', 'w') as script_out:
-                print(header, file=script_out)
-                print("nextflow -log logs/nextflow.log run "+config["splice_sim_count_nf"]+" -params-file %s -resume -profile $profile" % (tp_dir+'decay_experiment.'+str(tp)+'.config.json'), file=script_out)    
+                print("nextflow -log logs/nextflow.log run "+config["splice_sim_eva_nf"]+" -params-file %s -resume -profile $profile" % (tp_dir+'decay_experiment.'+str(tp)+'.config.json'), file=script_out)
+            if 'splice_sim_count_nf' in config:
+                with open(tp_dir+'run_splice_sim_count.sh', 'w') as script_out:
+                    print(header, file=script_out)
+                    print("nextflow -log logs/nextflow.log run "+config["splice_sim_count_nf"]+" -params-file %s -resume -profile $profile" % (tp_dir+'decay_experiment.'+str(tp)+'.config.json'), file=script_out)    

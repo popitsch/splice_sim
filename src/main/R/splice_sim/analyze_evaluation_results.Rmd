@@ -109,6 +109,7 @@ calc_ci = function(d, col, min_lower_ci=NA, max_upper_ci=NA) {
   return (ret)
 }
 
+# calculate interquartile range
 calc_iqr = function(d, col) {
   d %>% summarise(
             col.median = median({{col}}, na.rm = T),
@@ -117,6 +118,11 @@ calc_iqr = function(d, col) {
             col.lower = quantile({{col}}, .25, na.rm = T),
             col.n = n(),
             .groups = 'drop')
+}
+
+# calculate number of observations and places near median of box
+give.n <- function(x){
+  return(c(y = median(x) + 0.1, label = length(x)))
 }
 
 #
@@ -260,7 +266,7 @@ print(paste0("We have data for ", length(found_tids), '/', length(d[['all_tids']
 extra_transcript_table2=load_table(params$extra_transcript_table) %>% 
   filter(transcript_id %in% d[['all_tids']]) %>% 
   select(transcript_id, chr,start,end,strand,gene_name,transcript_len=len,rnk, GC_frac, mappability_median, mappability_mean, T_Pos) %>% 
-  mutate(missing=ifelse(transcript_id %in% found_tids, 0,1))
+  mutate(missing=ifelse(transcript_id %in% found_tids, 0,1)) 
 extra_transcript_table2 %>% ggplot(aes(x=factor(missing), y=transcript_len)) + 
   geom_violin()  +scale_y_log10() + ggtitle("Length distribution of missing transcripts")
 ggsave(paste0(params$out_dir,'/qc_missing_transcripts.pdf'), width = 10, height = 8)

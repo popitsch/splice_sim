@@ -124,6 +124,11 @@ if __name__ == '__main__':
     parser["extract_feature_metadata"].add_argument("-m", "--model", type=str, required=True, dest="model_file", metavar="model_file", help="model file")
     parser["extract_feature_metadata"].add_argument("-o", "--outdir", type=str, required=True, dest="outdir", metavar="outdir", help="output dir")
 
+    parser["extract_bam_stats"] = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
+    parser["extract_bam_stats"].add_argument("-b", "--bam_file", type=str, required=True, dest="bam_file", metavar="bam_file", help="BAM file")
+    parser["extract_bam_stats"].add_argument("-o", "--outdir", type=str, required=True, dest="outdir", metavar="outdir", help="output dir")
+
+    
     #============================================================================
     if len(sys.argv) <= 1 or sys.argv[1] in ['-h', '--help']:
         print("usage: splice_sim.py [-h] " + ",".join(parser.keys()))
@@ -244,6 +249,7 @@ if __name__ == '__main__':
         init_logging(config, outdir)
         write_parquet_db(config, args.indir, outdir)
 
+    # evaluate2
     if mod == "evaluate":
         # load config to be able to react to config changes after model was built!
         config=json.load(open(args.config_file), object_pairs_hook=OrderedDict)
@@ -269,3 +275,8 @@ if __name__ == '__main__':
             random.seed(config["random_seed"])
             logging.info("setting random seed to %i" % config["random_seed"])
         extract_feature_metadata(config, m, outdir)
+
+    if mod == "extract_bam_stats":
+        print("extract_bam_stats")
+        extract_bam_stats(args.bam_file, outdir)
+        

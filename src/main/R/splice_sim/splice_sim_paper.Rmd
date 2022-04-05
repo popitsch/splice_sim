@@ -19,7 +19,7 @@ params:
     splice_sim_config:
        value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/splice_sim.config.json"
     decay_config:
-       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/decay_sim_nf3/config.json"
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/decay_sim_nf4/config.json"
     out_dir:
        value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/analysis/"
 ---
@@ -64,6 +64,7 @@ require(skimr)
 require(ggforce)
 require(writexl)
 require(xfun)
+require(forcats)
 # NB install arrow with snappy on Rstudio server
 # Sys.setenv(ARROW_WITH_SNAPPY = "ON")
 # Sys.setenv(NOT_CRAN="true")
@@ -135,6 +136,20 @@ calc_iqr = function(d, col) {
             .groups = 'drop')
 }
 
+# calculate outlier cutoffs based on IQR
+# Lower Bound: (Q1 - 1.5 * IQR)
+# Upper Bound: (Q3 + 1.5 * IQR)
+# usage: mtcars %>% group_by(cyl) %>% calc_outlier(mpg)
+calc_outlier = function(d, col) {
+  d %>% summarise(
+            col.median = median({{col}}, na.rm = T),
+            col.iqr = quantile({{col}}, .75, na.rm = T)-quantile({{col}}, .25, na.rm = T),
+            col.upper = quantile({{col}}, .75, na.rm = T) + 1.5 * col.iqr,
+            col.lower = quantile({{col}}, .25, na.rm = T) - 1.5 * col.iqr,
+            col.n = n(),
+            .groups = 'drop')
+}
+
 #
 # write result tibble to BED file
 #
@@ -200,7 +215,7 @@ fit_halflife = function(TP, dat) {
       })
   if ( inherits(mod, "simpleError")) {return (list(mod=NA,k=NA,hl=NA,pseudoR2=NA, bic=NA)) }
   k=coef(mod)[length(coef(mod))]
-  hl=log(2)/k
+  hl=ifelse(k>0, log(2)/k, NA)
   rss = sum(residuals(mod)^2)
   tss = sum((dat - mean(dat ,na.rm = TRUE))^2 ,na.rm = TRUE)  # Total sum of squares
   pseudoR2 = 1 - (rss/tss)  # R-squared measure
@@ -209,14 +224,14 @@ fit_halflife = function(TP, dat) {
 }
 
 # simple correlation plot
-plot_corr = function(d, a, b, col_, main_title=NA, xlog=F, draw_diag=T, max_x=NA, show_legend=T) {
+plot_corr = function(d, a, b, col_, shape_=NULL, main_title=NA, xlog=F, draw_diag=T, max_x=NA, show_legend=T) {
   thecor = paste("r_pearson = ", round(cor(d[[a]], d[[b]], use = "complete.obs"), 4), 
                  "\nr_spearman = ", round(cor(d[[a]], d[[b]], use = "complete.obs", method="spearman"), 4),
-                 "\nn =",nrow(d)  )
+                 "\nn =",nrow(na.omit(d %>% select(all_of(a),all_of(b))))  )
   if (is.na(main_title)) {
     main_title=paste0("Correlation between ",a," and ",b)
   }
-  p = ggplot( d, aes_string(x=a, y=b, col=col_) ) +
+  p = ggplot( d, aes_string(x=a, y=b, col=col_, shape=shape_) ) +
     geom_point(aes(alpha=0.2))  +
     ggtitle(main_title, thecor) 
   if ( !is.na(max_x) ) {
@@ -324,8 +339,18 @@ for ( tp in decay_conf$timepoints) {
   decay_d[[paste0('tp', tp)]] = readRDS(paste0(decay_home_dir,'tp',tp,'/eva/results/data.rds'))
   decay_m[[paste0('tp', tp)]] = readRDS(paste0(decay_home_dir,'tp',tp,'/eva/results/meta.rds'))
 }
-decay_isoform_truth = load_table(paste0(decay_home_dir,decay_conf$isoform_config)) %>% rename(tid=transcript_id)
+decay_isoform_truth = load_table(paste0(decay_home_dir,decay_conf$isoform_config)) %>% rename(tid=transcript_id) %>% 
+filter(tid %in% (decay_m[['tp0']][['tx']] %>% pull(tid))) # remove tids w/o mappings
 
+# ===========================================================
+# bam stats
+# ===========================================================
+if (dir.exists(paste0(home_dir,'/eva/bamstats'))) {
+  d[['bam_stats']]=tibble()
+  for ( f in list.files(paste0(home_dir,'/eva/bamstats'), pattern='\\.bamstats.tsv$', full.names = T)) {
+    d[['bam_stats']] = d[['bam_stats']] %>% bind_rows(load_table(f))
+  }
+}
 
 # result tables
 results=list()
@@ -333,6 +358,42 @@ results=list()
 
 
 ## QC
+
+### BAM stats
+```{r bam_stats, include=T, echo=F, cache=T}
+bam_stats = d[['bam_stats']] %>% 
+  group_by(mapper, cr, ftype) %>% 
+  summarise(
+    n_reads=sum(n_reads),
+    n_softclipped_reads=sum(n_softclipped_reads),
+    mean_span_reads=mean(mean_span_reads, na.rm=T),
+    len_spliced_reads=mean(len_spliced_reads, na.rm=T),
+    n_unmapped=sum(n_unmapped),
+    n_spliced_reads=sum(n_spliced_reads),
+  ) %>% 
+  mutate(cr=factor(cr), 
+         frac_spliced=n_spliced_reads/n_reads,
+         frac_softclipped=n_softclipped_reads/n_reads) 
+
+p1 = bam_stats %>% 
+  ggplot(aes(cr,frac_spliced, fill=mapper)) +
+  geom_col(position = 'dodge')
+
+p2 = bam_stats %>% 
+  ggplot(aes(cr,frac_softclipped, fill=mapper)) +
+  geom_col(position = 'dodge')
+
+p3 = bam_stats %>% 
+  ggplot(aes(cr,mean_span_reads, fill=mapper)) +
+  geom_col(position = 'dodge')
+
+p4 = bam_stats %>% 
+  ggplot(aes(cr,len_spliced_reads, fill=mapper)) +
+  geom_col(position = 'dodge')
+
+my_plot_grid(list(p1,p2,p3,p4), 'bam stats', labels = T)
+#ggsave(paste0(params$out_dir, 'bam_stats.pdf'), width=12, height=10)
+```
 
 ### NA counts
 
@@ -624,7 +685,7 @@ perf %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>%
   #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
   facet_grid(mappability~ftype, scales = 'free') +
   scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
-  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5))+
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5)) +
   ylab("F1") +
   ggtitle('Median F1 per condition') 
 
@@ -1505,36 +1566,52 @@ p4 = perf_comp %>%
 
 ## Decay analysis
 
+
+<div class = "blue">
+<b>Effect of mappability on halflife calculations.</b>
+A) Normalized FCR for true, simulated and mapped data. The FCR was normalized to the maximum value across all timepoints, decay curves are colored by the simulated decay rate (red: fast/k=0.15, green: medium/k=0.1, blue: slow/k=0.05). By definition, halflife is the timepoint when the decay curve crosses the 50% FCR line (grey, dashed).
+The data reconstructed from the read mapper alignments show increasing noise with decreasing genomic mappability although some clear outliers are also visible in high  mappability regions.
+B) Reconstructed halflifes. Median halflife for the considered genes is slightly over-/underestimated for fast and slow genes respectively (compare also panels C+D). The boxpllot also shows a considerable number of outliers for both mappers.
+Note that estimated halflifes from simulated data is systematically higher than the true value because this analysis counts all reads without T/C conversions as 'unconverted' although they might have zero conversions just by chance. [TODO: explain better]
+C+D) Correlation between simulated and estimated halflifes for STAR and HISAT3N alignments respectively. The theoretical true halflife for the three categories is indicated by the red dashed lines. 
+</div>
+
+
 ```{r}
 
-# # prepare experiment
+# prepare experiment
 # set.seed(123)
 # isoform_config = load_table('/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/tids.tsv') %>%
-#   left_join(m[['tx']] %>% select(tid, rnk, mappability), by=c('transcript_id'='tid')) %>% 
-#   mutate(k = replicate(n(),sample(c(0.05, 0.075, 0.1),1,replace = TRUE))) %>% 
+#   left_join(m[['tx']] %>% select(tid, rnk, mappability), by=c('transcript_id'='tid')) %>%
+#   mutate(k = replicate(n(),sample(c(0.05, 0.1, 0.15),1,replace = TRUE))) %>%
 #   mutate(k=factor(k),
 #          decay_rate=case_when(k==0.05 ~ 'slow',
-#                               k==0.075 ~'medium',
-#                               k==0.1 ~ 'fast',
+#                               k==0.1 ~'medium',
+#                               k==0.15 ~ 'fast',
 #                               T~'NA')
 #   ) %>% write_tsv('/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/decay_sim_nf4/isoform_config.tsv')
-
 
 
 # calculate theoretical data
 truth = tibble()
 for ( tp in decay_conf$timepoints ) {
   truth = truth %>% rbind(
-    decay_isoform_truth  %>% mutate(tp=!!tp, ftc=exp(!!tp * -k)) %>% mutate(mapper='truth')
+    decay_isoform_truth  %>% mutate(tp=!!tp, ftc=exp(!!tp * -k), hl=log(2)/k) %>% mutate(mapper='truth')
   )
 }
 
 
 decay_fcr = list()
 for ( tp in names(decay_d)) {
-  decay_fcr[[tp]] = decay_d[[tp]][['tx']] %>% 
-    filter(conversion_rate==0.05) %>% # use only the labeled reads
-    select(-conversion_rate) %>% 
+  # to avoid missing values for some tids we join with 'all_data'
+  all_data = expand_grid(fid = decay_m[['tp0']][['tx']] %>% pull(tid), 
+                         mapper= c('STAR', 'HISAT3N'))
+  decay_fcr[[tp]] = all_data %>% 
+    left_join(decay_d[[tp]][['tx']] %>% 
+                filter(conversion_rate==0.05) %>% # use only the labeled reads
+                select(-conversion_rate),
+                by=c('fid', 'mapper')) %>% 
+    mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>%    
     group_by(fid, mapper, classification) %>% # summarise over true_isoform
     summarise(all=sum(count), 
               tc1=sum(count[cv1==1]), 
@@ -1560,7 +1637,7 @@ decay_fcr = bind_rows(decay_fcr, .id = 'tp') %>%
 
 # calc fcr
 decay_fcr = decay_fcr %>% 
-  select(tp, fid,ftype,mappability,true_fcr1, found_fcr1) %>% 
+  select(mapper, tp, fid,ftype,mappability,true_fcr1, found_fcr1) %>% 
   ungroup() %>% 
   pivot_wider(names_from=mapper, values_from=c(true_fcr1, found_fcr1)) %>% 
   mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>%   # replace NA with 0; NA are resulting from mat not having introns. So if there are no FP values then there are no entries!
@@ -1575,59 +1652,133 @@ decay_fcr = decay_fcr %>%
   bind_rows(truth) %>% 
   left_join(decay_m[['tp0']][['ga']]) %>% 
    mutate(k=factor(k),
-         decay_rate=case_when(k==0.05 ~ 'slow',
-                              k==0.075 ~'medium',
-                              k==0.1 ~ 'fast',
-                              T~'NA'))
+          decay_rate=case_when(k==0.05 ~ 'slow',
+                              k==0.1 ~'medium',
+                              k==0.15 ~ 'fast',
+                              T~NA_character_))
 
 # normalize ftc to 1st timepoint because we do not correct using ZIB here
 decay_fcr = decay_fcr %>% 
-  left_join(decay_fcr %>% filter(tp==0) %>% select(tid, mapper, ftc0=ftc), by=c('tid', 'mapper')) %>% 
-  mutate(ftc_norm=ftc/ftc0) %>% 
+  group_by(mapper, tid) %>% mutate(ftc_max=max(ftc)) %>% ungroup() %>% 
+  left_join(decay_fcr %>% filter(tp==0) %>% select(tid, mapper, ftc0=ftc), by=c('mapper', 'tid')) %>% 
+  mutate(ftc_norm_tp0=ifelse(ftc0>0,ftc/ftc0,NA),
+         ftc_norm_max=ifelse(ftc_max>0,ftc/ftc_max,NA)) %>% 
   mutate(mapper=factor(mapper, levels=c('truth', 'simulated', 'HISAT3N', 'STAR'))) %>% 
-  mutate(mappability=factor(mappability, levels=c('low', 'medium', 'high')))
+  mutate(mappability=factor(mappability, levels=c('high', 'medium', 'low')))
 
 # calculate half-life
 decay_halflifes = decay_fcr %>% 
-  select(tid, mapper, mappability, decay_rate, tp, ftc_norm) %>% 
+  select(tid, mapper, mappability, decay_rate, tp, ftc_norm_max) %>% 
   mutate(tp = paste0('tp',tp)) %>% 
-  pivot_wider(names_from = tp, values_from = ftc_norm, id_cols = c('tid', 'mapper', 'mappability', 'decay_rate') ) %>% 
+  pivot_wider(names_from = tp, values_from = ftc_norm_max, id_cols = c('tid', 'mapper', 'mappability', 'decay_rate') ) %>% 
   rowwise() %>% 
-  mutate(hl=fit_halflife(c(0,5,10,15,20,25), c(tp0,tp5,tp10,tp15,tp20,tp25))[['hl']]) %>% 
-  mutate(mappability=factor(mappability, levels=c('low', 'medium', 'high')))
+  mutate(hl=fit_halflife(
+    c(0,5,10,15,20,25), c(tp0,tp5,tp10,tp15,tp20,tp25))[['hl']]) %>% 
+  mutate(mappability=factor(mappability, levels=c('high', 'medium', 'low')))
 
-# replace inf and NA with 0
-decay_halflifes = decay_halflifes %>% 
-  mutate_if(is.numeric, list(~na_if(., Inf))) %>% 
-  replace(is.na(.), 0)
 
 # plot halflifes
 p1 = decay_fcr %>%
-  ggplot(aes(x=tp, y=ftc_norm, col=mappability, group=paste0( tid, mappability,mapper))) + 
+  ggplot(aes(x=tp, y=ftc_norm_max, col=decay_rate, group=paste0( tid, mappability,mapper))) + 
   geom_line(alpha=0.3) +
   facet_wrap(mappability~mapper) +
   geom_hline(yintercept = 0.5, col='grey', linetype='dotted') +
   facet_grid(mappability~mapper) +
-  theme(legend.position="none") +
-  ggtitle("Fraction of converted reads", "normalized to 1st timepoint") +
-  ylim(0,1)
-
+  ylab("FCR, normalized to maximum") +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", 
+                      breaks = NULL, labels = NULL)) +
+  theme(legend.position="none", axis.title.y.right = element_text(angle=-90, vjust = 1.5)) +
+  ggtitle("FCR decay curves") 
+  
   
 p2 = decay_halflifes %>% 
-  ggplot(aes(x=mapper, y=hl, col=mappability)) + 
-  geom_jitter() +
-  facet_grid(mappability~mapper) +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  facet_grid(mappability~mapper, scales = 'free') +
-  ggtitle("Fitted halflifes")
+  ggplot(aes(x=decay_rate, y=hl, col=mapper)) + 
+  geom_boxplot() +
+  stat_summary(fun.data = function(x){return(c(y=0,label=length(x)))}, geom = "text", position = position_dodge(width = 0.75)) +
+  scale_y_sqrt() +
+  ggtitle('Reconstructed halflifes')
 
-hlcorr=decay_halflifes %>% pivot_wider(names_from = mapper, values_from = hl, id_cols = c('tid', 'mapper', 'mappability', 'decay_rate'))
-p3 = plot_corr( hlcorr, 'simulated', 'STAR', 'mappability', main_title='STAR', max_x=NA, xlog=T, show_legend=F )
-p4 = plot_corr( hlcorr, 'simulated', 'HISAT3N', 'mappability', main_title='HISAT3N', max_x=NA, xlog=T, show_legend=F )
+hlcorr=decay_halflifes %>% 
+  pivot_wider(names_from = mapper, values_from = hl, id_cols = c('tid', 'mapper', 'mappability', 'decay_rate'))
 
+p3 = plot_corr( hlcorr, 'simulated', 'STAR', 'decay_rate', main_title='STAR', max_x=NA, xlog=T, show_legend=F ) +
+  geom_vline(xintercept = unique(truth$hl), col='red', linetype='dotted')
+p4 = plot_corr( hlcorr, 'simulated', 'HISAT3N', 'decay_rate', main_title='HISAT3N', max_x=NA, xlog=T, show_legend=F ) +
+  geom_vline(xintercept = unique(truth$hl), col='red', linetype='dotted')
 
 my_plot_grid(list(p1,p2,p3,p4),  'Halflife reconstruction performance', labels = T, ncol = 2)
 ggsave(paste0(params$out_dir, 'special_decay.pdf'), width=12, height=10)
+
+```
+### halflife outliers
+```{r}
+
+# add outlier detection
+diff_perc=0.1
+hlcorr = hlcorr %>% 
+  mutate(STAR_outlier=STAR<simulated*(1.0-!!diff_perc) | STAR > simulated*(1.0+!!diff_perc),
+         HISAT3N_outlier=HISAT3N<simulated*(1.0-!!diff_perc) | HISAT3N > simulated*(1.0+!!diff_perc)) %>% 
+  mutate(cat=case_when(
+    STAR_outlier & HISAT3N_outlier ~ 'Outlier in both',
+    !STAR_outlier & HISAT3N_outlier ~ 'Outlier in HISAT3N',
+    STAR_outlier & !HISAT3N_outlier ~ 'Outlier in STAR',
+    !STAR_outlier & !HISAT3N_outlier ~ 'Outlier in none',
+    TRUE ~ NA_character_
+  ) ) %>% left_join(m[['ga']], by='tid') 
+
+p1 = hlcorr %>% 
+  plot_corr( 'simulated', 'STAR', 'STAR_outlier', shape='STAR_outlier', main_title='STAR', max_x=NA, xlog=T, show_legend=F )
+
+p2 = hlcorr %>% count(cat=cat) %>% 
+  mutate(cat=factor(cat), cat=fct_reorder(cat, n, .desc=T)) %>% 
+  ggplot(aes(cat, n)) + geom_col() + xlab("")
+  
+p3 = hlcorr %>% 
+  filter(cat=='Outlier in both') %>% 
+  group_by(mappability) %>% 
+  count(gene_type) %>% 
+  ungroup() %>% 
+  mutate(gene_type=factor(gene_type), gene_type=fct_reorder(gene_type, n)) %>% 
+  ggplot(aes(gene_type, n, fill=mappability)) +
+  geom_col() +
+  coord_flip()
+
+# all protein_coding are histones/rpls
+out_tids = hlcorr %>% filter(cat=='Outlier in both') %>% pull(tid)
+p4 = decay_fcr %>%
+  filter(tid %in% !!out_tids) %>% 
+  ggplot(aes(x=tp, y=ftc_norm_max, col=decay_rate, group=paste0( tid, mappability,mapper))) + 
+  geom_line(alpha=0.3) +
+  facet_wrap(mappability~mapper) +
+  geom_hline(yintercept = 0.5, col='grey', linetype='dotted') +
+  facet_grid(mappability~mapper) +
+  ylab("FCR, normalized to maximum") +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", 
+                      breaks = NULL, labels = NULL)) +
+  theme(legend.position="none", axis.title.y.right = element_text(angle=-90, vjust = 1.5)) +
+  ggtitle("FCR decay curves for halflife outliers in both mappers") 
+
+my_plot_grid(list(p1,p2,p3,p4), 'Halflife outliers', labels = T, ncol = 2)
+ggsave(paste0(params$out_dir, 'special_decay_outliers.pdf'), width=12, height=10)
+```
+
+### intron halflifes
+```{r}
+
+# prepare experiment
+# set.seed(123)
+# isoform_config = load_table('/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/tids.tsv') %>%
+#   left_join(m[['tx']] %>% select(tid, rnk, mappability), by=c('transcript_id'='tid')) %>%
+#   mutate(k = replicate(n(),sample(c(0.05, 0.1, 0.15),1,replace = TRUE))) %>%
+#   mutate(frac_mature = 0) %>% 
+#   mutate(k=factor(k),
+#          frac_mature=0,
+#          decay_rate=case_when(k==0.05 ~ 'slow',
+#                               k==0.1 ~'medium',
+#                               k==0.15 ~ 'fast',
+#                               T~'NA')
+#   ) %>% write_tsv('/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/decay_sim_nf4_intron/isoform_config.tsv')
+
 ```
 
 ## Mismapped reads per chromosome
@@ -1637,6 +1788,47 @@ We know for every read where it originates from an where it maps to
 Example analysis: where do we see large clusters of sequence similar regions. Plot #FP/FN per chrom. Chrom13 should have a peak due to histone cluster
 
 ```{r chrom_mismap, include=F, echo=F, eval=F}
+```
+
+
+## Mean mappability per genomic feature
+
+<div class = "blue">
+<b>Genomic mappability of genommic features.</b>
+A) Violin plots of mean mappability for genomic features from the mouse dataset starified by gene type category. 
+Mean mappability was calculated by averaging over a mm10 single-read umap mappability score created with kmer size 24.
+B) Mean mappability vs feature length  for protein coding genes only.
+</div>
+
+```{r, include=F, echo=F, eval=F}
+# top_gene_type_cat = m[['ga']] %>% count(gene_type) %>% arrange(desc(n)) %>% head(4) %>% pull(gene_type)
+top_gene_type_cat=c('protein_coding', 'lincRNA', 'processed_pseudogene', 'other')
+tab = m[['fx']] %>% select(tid, fid, ftype, mean_map, len) %>% 
+  bind_rows(
+    m[['tx']] %>% mutate(fid=tid) %>% select(tid, fid, ftype, mean_map, len)
+  ) %>% 
+  left_join(m[['ga']], by='tid') %>% 
+  mutate(gene_type_cat=case_when( gene_type %in% !!top_gene_type_cat ~ as.character(gene_type),
+                                  TRUE ~ 'other') ) %>% 
+  mutate(gene_type_cat=factor(gene_type_cat, levels=!!top_gene_type_cat)) 
+
+p1 = tab %>% 
+  ggplot(aes(gene_type_cat, mean_map)) +
+  geom_violin() +
+  geom_hline(yintercept = c(0.2,0.9),  col="black",linetype="dotted") +
+  facet_grid(ftype~.)
+
+p2 = tab %>%
+  filter(gene_type=='protein_coding')  %>% 
+  ggplot(aes( mean_map, len/1000 )) +
+  stat_binhex(bins=50) + scale_fill_gradientn("", trans = "log", colours =
+                                                rev(rainbow(5, end = 4/6))) +
+  geom_vline(xintercept = c(0.2,0.9),  col="black",linetype="dotted")  +
+  facet_grid(ftype~.) +
+  scale_y_log10() +
+  ylab("feature length [kb]")
+
+my_plot_grid(list(p1,p2), labels = T, 'mappability ')
 ```
 
 # Examples

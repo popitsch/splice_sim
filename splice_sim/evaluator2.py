@@ -3,6 +3,7 @@
 '''
 from collections import *
 import csv, datetime, time, logging, sys, os, json, pickle
+from pathlib import Path
 import pysam
 import numpy as np
 from genomic_iterators import Location, get_chrom_dicts_from_bam, get_chrom_dicts
@@ -10,7 +11,7 @@ from genomic_iterators.bam_iterators import ReadIterator
 from genomic_iterators.grouped_iterators import BlockedIterator, BlockLocationIterator, AnnotationOverlapIterator
 from splice_sim.utils import *
 from splice_sim.model import *
-from functools import reduce
+import statistics
 import concurrent.futures   
 
 read_colors={
@@ -170,7 +171,7 @@ def classify_region(target_region, config, bam_file, chrom2feat, tid2feat, out_f
         if chrom in samin.references: # there are reads on this chrom
             aits = [BlockLocationIterator(iter(sorted(chrom2feat[chrom] if chrom in chrom2feat else [], key=lambda x: x[0]) ))]
             rit = ReadIterator(samin, dict_chr2idx, reference=chrom, start=target_region.start, end=target_region.end, max_span=None, flag_filter=0) # max_span=m.max_ilen
-            it = AnnotationOverlapIterator(rit, aits, check_read_alignment=False)
+            it = AnnotationOverlapIterator(rit, aits, check_read_alignment=True)
             for loc, (read, annos) in it:
                 wr+=1
                 overlapping_annos = annos[0] # select 1st entry as theree is only one ait
@@ -425,3 +426,54 @@ def extract_feature_metadata(config, m, out_dir):
                                 ','.join(overlapping)
                             ]]), file=out_tx)
     print("All done.")
+
+
+def extract_bam_stats(bam_file, out_dir):
+    """ Extract stats per BAM file """
+    stats=Counter()
+    logging.info("extract_bam_stats for %s" % bam_file)
+    assert os.path.exists(bam_file) and os.path.exists(bam_file+'.bai'), "Could not find bam file (or idx) for %s" % (bam_file)
+    # parse cr/mapper from file name    
+    assert '.cr' in bam_file, "Cannot parse bam file name %s" % (bam_file)
+    if bam_file.endswith('.eval.bam'):
+        tmp = bam_file[:-9]
+        tmp,ftype=tmp.rsplit('.', 1)
+    elif bam_file.endswith('.final.bam'):
+        ftype='NA'
+        tmp = bam_file[:-10]
+    else:
+        ftype='NA'
+        tmp = bam_file[:-4]
+    cr,mapper=tmp[tmp.find('.cr')+3:].rsplit('.', 1)
+    cr=float(cr)
+    samin = pysam.AlignmentFile(bam_file, "rb")
+    dict_chr2idx, dict_idx2chr, dict_chr2len=get_chrom_dicts_from_bam(bam_file)    
+    cols=['n_reads','n_spliced_reads','n_softclipped_reads','mean_span_reads','len_spliced_reads', 'n_unmapped']
+    with open(out_dir+'/'+Path(bam_file).stem+'.bamstats.tsv', 'w') as out:
+        print("\t".join([str(x) for x in ['chromosome', 'mapper', 'cr', 'ftype'] + cols]), file=out)
+        for chrom, chrlen in dict_chr2len.items():        
+            rit = ReadIterator(samin, dict_chr2idx, reference=chrom, start=1, end=chrlen, max_span=None, flag_filter=0) # max_span=m.max_ilen
+            stats[chrom, 'mean_span_reads']=[]
+            stats[chrom, 'len_spliced_reads']=[]
+            for loc, r in rit:
+                stats[chrom, 'n_reads']+=1
+                stats[chrom, 'mean_span_reads'].append(r.reference_end-r.reference_start+1)
+                if r.is_unmapped:
+                    stats[chrom, 'n_unmapped']+=1
+                maxn=0
+                is_spliced=0
+                is_softclipped=0
+                for op,l in r.cigartuples:
+                    if op==3:
+                        maxn = max(l, maxn) # N
+                        is_spliced=1
+                    if op==4:
+                        is_softclipped=1
+                if maxn>0:
+                    stats[chrom, 'len_spliced_reads'].append(maxn)
+                stats[chrom, 'n_spliced_reads']+=is_spliced
+                stats[chrom, 'n_softclipped_reads']+=is_softclipped
+            stats[chrom, 'mean_span_reads']=statistics.mean(stats[chrom, 'mean_span_reads']) if len(stats[chrom, 'mean_span_reads'])>0 else 'NA'
+            stats[chrom, 'len_spliced_reads']=statistics.mean(stats[chrom, 'len_spliced_reads']) if len(stats[chrom, 'len_spliced_reads'])>0 else 'NA'
+            print("\t".join([str(x) for x in [
+                chrom, mapper, cr, ftype] + [stats[chrom, col] for col in cols]]), file=out)

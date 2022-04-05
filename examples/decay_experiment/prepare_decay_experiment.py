@@ -348,7 +348,7 @@ echo "Starting splice_sim pipeline with profile $profile"
                 print('transcript_id\tabundance\tfrac_mature\tfrac_old_mature', file=out)
                 for tid in tab['k'].keys():
                     abundance=1
-                    frac_mat=1
+                    frac_mat=tab['frac_mature'][tid] if 'frac_mature' in tab.keys() else 1
                     k=tab['k'][tid]
                     frac_old_mat=1-math.exp(tp * -k)
                     print('\t'.join([str(x) for x in [tid, abundance, frac_mat, frac_old_mat]]), file=out)

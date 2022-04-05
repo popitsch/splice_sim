@@ -134,7 +134,7 @@ def classify_read(found_read, found_overlapping_raw, tid2feat, performance, dict
                 if len(FN)>0:
                     is_correct_strand = ( found_read.is_reverse and true_strand=='-' ) or ((not found_read.is_reverse) and true_strand=='+')
                     true_read.query_sequence = found_read.query_sequence if is_correct_strand else reverse_complement(found_read.query_sequence)
-                    true_read.query_qualities = found_read.query_qualities # fixme also rev?
+                    true_read.query_qualities = found_read.query_qualities if is_correct_strand else list(reversed(found_read.query_qualities))
                     true_read.reference_id = dict_chr2idx[true_chr]
                     true_read.tags = (("NM", n_seqerr + n_converted ),)
                     true_read.flag = 0 if true_strand=='+' else 16

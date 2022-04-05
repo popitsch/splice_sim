@@ -43,7 +43,7 @@ def calculate_transcript_data(config, tid_meta, tid_file):
         # generate data file
         base_abundance = config["base_abundance"] if 'base_abundance' in config else 10
         frac_old_mature=min(1.0,config["frac_old_mature"]) if 'frac_old_mature' in config else 0.0 # fraction of 'old' (unlabeled), mature isoform
-        frac_oldpre=min(1.0,config["frac_oldpre"]) if 'frac_oldpre' in config else 0.0 # fraction of 'old' (unlabeled), premature isoform
+        frac_old_pre=min(1.0,config["frac_old_pre"]) if 'frac_old_pre' in config else 0.0 # fraction of 'old' (unlabeled), premature isoform
         for tid, pinfo in tid_meta.items():
             rnk=pinfo['rnk']-1 # number of  introns
             gene_name = pinfo['gene_name']
@@ -53,16 +53,16 @@ def calculate_transcript_data(config, tid_meta, tid_file):
                 isoform_data['old']['splicing_status']=[1] * rnk
                 isoform_data['old']['fraction']=frac_old_mature
                 isoform_data['old']['is_labeled']=0
-            if frac_oldpre>0: # add 'old' rna isoform
+            if frac_old_pre>0: # add 'old' rna isoform
                 isoform_data['oldpre'] = OrderedDict()
                 isoform_data['oldpre']['splicing_status']=[0] * rnk
-                isoform_data['oldpre']['fraction']=frac_oldpre
+                isoform_data['oldpre']['fraction']=frac_old_pre
                 isoform_data['oldpre']['is_labeled']=0
             if frac_old_mature < 1.0: # premature isoform
                 isoform_data['pre'] = OrderedDict()
                 if rnk: # at least one intron
                     isoform_data['pre']['splicing_status']=[0] * rnk
-                isoform_data['pre']['fraction']=round((1-(frac_old_mature+frac_oldpre)) * 0.5,3)
+                isoform_data['pre']['fraction']=round((1-(frac_old_mature+frac_old_pre)) * 0.5,3)
                 isoform_data['pre']['is_labeled']=1
             # output data
             tdata[tid] = OrderedDict()
@@ -85,9 +85,9 @@ def calculate_transcript_data(config, tid_meta, tid_file):
             frac_old_mature=tid_table_data['frac_old_mature'][tid]
             if frac_old_mature=='random':
                 frac_old_mature=random.uniform(0, 1)
-            frac_oldpre=tid_table_data['frac_oldpre'][tid]
-            if frac_oldpre=='random':
-                frac_oldpre=random.uniform(0, 1)
+            frac_old_pre=tid_table_data['frac_old_pre'][tid]
+            if frac_old_pre=='random':
+                frac_old_pre=random.uniform(0, 1)
             abundance=tid_table_data['abundance'][tid]
             if abundance=='random':
                 abundance=random.uniform(0, 1)
@@ -98,16 +98,16 @@ def calculate_transcript_data(config, tid_meta, tid_file):
                 isoform_data['old']['splicing_status']=[1] * rnk
                 isoform_data['old']['fraction']=round(frac_old_mature,3)
                 isoform_data['old']['is_labeled']=0
-            if frac_oldpre>0: # add 'old' rna isoform
+            if frac_old_pre>0: # add 'old' rna isoform
                 isoform_data['oldpre'] = OrderedDict()
                 isoform_data['oldpre']['splicing_status']=[0] * rnk
-                isoform_data['oldpre']['fraction']=round(frac_oldpre,3)
+                isoform_data['oldpre']['fraction']=round(frac_old_pre,3)
                 isoform_data['oldpre']['is_labeled']=0
             if frac_old_mature < 1.0:
                 isoform_data['pre'] = OrderedDict()
                 if rnk: # at least one intron
                     isoform_data['pre']['splicing_status']=[0] * rnk
-                isoform_data['pre']['fraction']=round((1-(frac_old_mature+frac_oldpre)) * (1-frac_mature),3)
+                isoform_data['pre']['fraction']=round((1-(frac_old_mature+frac_old_pre)) * (1-frac_mature),3)
                 isoform_data['pre']['is_labeled']=1
             # output data
             tdata[tid] = OrderedDict()

@@ -247,8 +247,11 @@ class Transcript():
     def get_sequences(self):
         ret=OrderedDict()
         total_count=0
+        last_expressed_iso='mat'
         for id in self.isoforms.keys():
             frac = self.isoforms[id].fraction
+            if frac>0:
+                last_expressed_iso=id
             count=int(self.abundance * frac)
             total_count+=count
             ret[id]=[
@@ -257,9 +260,8 @@ class Transcript():
         toadd = self.abundance - total_count
         #assert toadd==0 | toadd==1 , "rounding error"
         if toadd > 0: # add 1 to last isoform
-            logging.debug("corrected counts by %i" % (toadd))
-            id = list(self.isoforms.keys())[-1]
-            ret[id]=[ret[id][0], ret[id][1] + toadd]
+            logging.debug("corrected %s counts by %i" % (last_expressed_iso, toadd))
+            ret[last_expressed_iso]=[ret[last_expressed_iso][0], ret[last_expressed_iso][1] + toadd]
         return (ret)
     def to_bed(self):
         return ("%s\t%i\t%i\t%s\t%i\t%s" % (self.chromosome, self.start, self.end, self.transcript_data['ID'], 1000, self.strand) )

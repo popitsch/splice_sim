@@ -271,11 +271,15 @@ echo "Starting splice_sim pipeline with profile $profile"
     if mod == "prepare_decay_experiment_genome":
         # load and check onfig
         config=json.load(open(args.config_file), object_pairs_hook=OrderedDict)
+        
+        # get simulated isoform (pre or mat)
+        simulated_iso = config['simulated_isoform'] if 'simulated_isoform' in config else 'mat'
+        print("Simulated isoform: ", simulated_iso)
     
         # read a list of tids and metadata:
         # headers: transcript_id, k
         tab=pd.read_csv(config['isoform_config'],delimiter='\t',encoding='utf-8').set_index('transcript_id').to_dict()
-        print(tab)
+        #print(tab)
     
         header="""
 #!/usr/bin/bash
@@ -345,13 +349,19 @@ echo "Starting splice_sim pipeline with profile $profile"
     
             # write config per timepoint
             with open(tp_dir+'decay_experiment.'+str(tp)+'.isoform_data.tsv', 'w') as out:
-                print('transcript_id\tabundance\tfrac_mature\tfrac_old_mature', file=out)
+                print('transcript_id\tabundance\tfrac_mature\tfrac_old_pre\tfrac_old_mature', file=out)
                 for tid in tab['k'].keys():
                     abundance=1
-                    frac_mat=tab['frac_mature'][tid] if 'frac_mature' in tab.keys() else 1
                     k=tab['k'][tid]
-                    frac_old_mat=1-math.exp(tp * -k)
-                    print('\t'.join([str(x) for x in [tid, abundance, frac_mat, frac_old_mat]]), file=out)
+                    if simulated_iso=='pre':
+                        frac_mat=0
+                        frac_old_mat=0
+                        frac_old_pre=1-math.exp(tp * -k)
+                    else:
+                        frac_mat=1
+                        frac_old_mat=1-math.exp(tp * -k)
+                        frac_old_pre=0
+                    print('\t'.join([str(x) for x in [tid, abundance, frac_mat, frac_old_pre, frac_old_mat]]), file=out)
     
             # write run commands
             with open(tp_dir+'run_splice_sim.sh', 'w') as script_out:

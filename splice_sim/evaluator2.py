@@ -458,8 +458,6 @@ def extract_bam_stats(bam_file, out_dir):
             for loc, r in rit:
                 stats[chrom, 'n_reads']+=1
                 stats[chrom, 'mean_span_reads'].append(r.reference_end-r.reference_start+1)
-                if r.is_unmapped:
-                    stats[chrom, 'n_unmapped']+=1
                 maxn=0
                 is_spliced=0
                 is_softclipped=0
@@ -475,5 +473,11 @@ def extract_bam_stats(bam_file, out_dir):
                 stats[chrom, 'n_softclipped_reads']+=is_softclipped
             stats[chrom, 'mean_span_reads']=statistics.mean(stats[chrom, 'mean_span_reads']) if len(stats[chrom, 'mean_span_reads'])>0 else 'NA'
             stats[chrom, 'len_spliced_reads']=statistics.mean(stats[chrom, 'len_spliced_reads']) if len(stats[chrom, 'len_spliced_reads'])>0 else 'NA'
+        # unmapped reads
+        for unmapped_read in samin.fetch(contig=None, until_eof=True):
+            if r.is_unmapped:
+                stats['unmapped', 'n_unmapped']+=1
+        # write results
+        for chrom in list(dict_chr2len.keys())+['unmapped']:
             print("\t".join([str(x) for x in [
                 chrom, mapper, cr, ftype] + [stats[chrom, col] for col in cols]]), file=out)

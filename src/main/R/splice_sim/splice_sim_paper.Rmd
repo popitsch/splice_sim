@@ -17,11 +17,11 @@ output:
     fig_caption: true
 params:
     splice_sim_config:
-       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/splice_sim.config.json"
+       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/splice_sim.config.json"
     decay_config:
-       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/decay_sim_nf4_intron/config.json"
+       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/decay_sim_nf4_intron/config.json"
     out_dir:
-       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/analysis/"
+       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/analysis/"
 ---
 <style type="text/css">
 body, td {
@@ -285,7 +285,7 @@ if (!dir.exists(paste0(params$out_dir,'/cache/'))) {
 } 
 
 
-#home_dir='/Users/niko.popitsch/Desktop/data/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/'
+#home_dir='/Users/niko.popitsch/Desktop/data/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/'
 
 
 # results files (~45 G) 
@@ -363,36 +363,43 @@ bam_stats = d[['bam_stats']] %>%
          frac_softclipped=n_softclipped_reads/n_reads,
          cat='bam_stats') 
 
-count_stats = d[['tx']] %>% 
-  group_by(mapper, conversion_rate, classification) %>% 
-  summarise(c=sum(count)) %>% 
-  pivot_wider(names_from = classification, values_from = c) %>% 
-  mutate(n_reads=FN+TP, cat='counts') 
+# compare with count stats. 
+# NOTE: when you run splice_sim_eva with a chromosom param then there are slightly more reads in 
+# bam_stats than in count tables due to missed reads on non-canonical chrom .
+# count_stats = d[['tx']] %>% 
+#   group_by(mapper, conversion_rate, classification) %>% 
+#   summarise(c=sum(count)) %>% 
+#   pivot_wider(names_from = classification, values_from = c) %>% 
+#   mutate(n_reads=FN+TP) %>% 
+#   select(mapper, conversion_rate, value=n_reads) %>% 
+#   mutate(name='n_reads', cat='counts')
 
 p1 = bam_stats %>% 
+  select(mapper, conversion_rate, cat, n_reads, n_unmapped) %>% 
+  pivot_longer(c(n_reads, n_unmapped)) %>% 
   bind_rows(count_stats) %>% 
-  ggplot(aes(conversion_rate,n_reads, fill=cat)) +
-  facet_wrap(mapper~.) +
-  geom_col(position = 'dodge')
+  ggplot(aes(cat, value, fill=name)) +
+  facet_wrap(conversion_rate~mapper) +
+  geom_col(position = 'stack')
 
 p2 = bam_stats %>%
- ggplot(aes(cr,n_spliced_reads, fill=mapper)) +
+ ggplot(aes(conversion_rate,n_spliced_reads, fill=mapper)) +
  geom_col(position = 'dodge')
 
 p3 = bam_stats %>% 
-  ggplot(aes(cr,frac_spliced, fill=mapper)) +
+  ggplot(aes(conversion_rate,frac_spliced, fill=mapper)) +
   geom_col(position = 'dodge')
 
 p4 = bam_stats %>% 
-  ggplot(aes(cr,frac_softclipped, fill=mapper)) +
+  ggplot(aes(conversion_rate,frac_softclipped, fill=mapper)) +
   geom_col(position = 'dodge')
 
 p5 = bam_stats %>% 
-  ggplot(aes(cr,mean_span_reads, fill=mapper)) +
+  ggplot(aes(conversion_rate,mean_span_reads, fill=mapper)) +
   geom_col(position = 'dodge')
 
 p6 = bam_stats %>% 
-  ggplot(aes(cr,len_spliced_reads, fill=mapper)) +
+  ggplot(aes(conversion_rate,mean_len_spliced_reads, fill=mapper)) +
   geom_col(position = 'dodge')
 
 my_plot_grid(list(p1,p2,p3,p4,p5,p6), 'bam stats', labels = T)

@@ -112,10 +112,10 @@ m[['sj']] = m[['sj']] %>%
   left_join(m[['tx']] %>% select(tid, tx_rnk=rnk, num_exons, tx_mappability=mappability), by='tid') %>% # get cols from tx data
   mutate(chromosome=factor(chromosome),
          len=end-start+1,
-         mappability_acc = case_when(acc_win_map<0.2 ~ 'low',
+         acc_mappability = case_when(acc_win_map<0.2 ~ 'low',
                                      acc_win_map>0.9 ~ 'high',
                                      TRUE ~ 'medium'),
-         mappability_don = case_when(don_win_map<0.2 ~ 'low',
+         don_mappability = case_when(don_win_map<0.2 ~ 'low',
                                      don_win_map>0.9 ~ 'high',
                                      TRUE ~ 'medium'),
          

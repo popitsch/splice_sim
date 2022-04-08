@@ -1,0 +1,391 @@
+---
+title: "splice_sim_compare_big34.Rmd"
+author: "niko.popitsch@imba.oeaw.ac.at"
+documentclass: article
+fontsize: 10pt
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    fig_width: 14
+    fig_height: 10
+    fig_caption: true
+    df_print: paged
+  pdf_document:
+    fig_width: 12
+    fig_height: 10
+    fig_caption: true
+params:
+    big3_config:
+       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/splice_sim.config.json"
+    big4_config:
+       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/splice_sim.config.json"
+    out_dir:
+       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/analysis/"
+---
+<style type="text/css">
+body, td {
+   font-size: 10px;
+}
+code.r{
+  font-size: 10px;
+}
+pre {
+  font-size: 10px
+}
+div.blue pre { background-color:lightblue; }
+div.blue pre.r { background-color:blue; }
+</style>
+
+<!--
+rmarkdown::render('splice_sim_big34.Rmd', 'html_document')
+-->
+
+# INIT
+
+```{r setup, include=FALSE}
+require(data.table)
+require(tidyr)
+require(dplyr)
+require(ggplot2)
+require(scales)
+require(rjson)
+require(stringr)
+require(VGAM)
+require(cowplot)
+require(arrow)
+require(tictoc)
+require(ggpubr)
+require(minpack.lm)
+require(readr)
+require(testthat)
+require(RColorBrewer)
+require(skimr)
+require(ggforce)
+require(writexl)
+require(xfun)
+require(forcats)
+require(glue)
+# NB install arrow with snappy on Rstudio server
+# Sys.setenv(ARROW_WITH_SNAPPY = "ON")
+# Sys.setenv(NOT_CRAN="true")
+# Sys.setenv(LIBARROW_BINARY="FALSE")
+# install.packages("arrow", repos = "https://arrow-r-nightly.s3.amazonaws.com")
+
+# to ensure stripping '\0' (nul) from character vector
+options(arrow.skip_nul = TRUE)
+
+# global theme
+ggplot2::theme_set(theme_light())
+
+# enable tidylog (has overhead!)
+#require(tidylog)
+# turn tidylog off
+options("tidylog.display" = list()) 
+
+# load data from TSV
+load_table = function(dataF, append="", header=T, nrows=Inf) {
+  dataF = as.character(paste0(dataF, append))
+  print(paste("Loading", dataF))
+  if ( endsWith(dataF, ".gz") ) {
+    return(fread(cmd=paste('gunzip -c', dataF), header=header, sep="\t", na.strings=c("na","NA",".", "None"), nrows=nrows))
+  } else {
+    return(fread(dataF, header=header, sep="\t", na.strings=c("na","NA",".", "None"), nrows=nrows))
+  }
+}
+
+# multiple plots with single title
+my_plot_grid = function(plots, main, ncol=NULL, nrow=NULL, labels=NULL) {
+  
+  if (!is.null(labels)){
+    if (labels==T) { labels=LETTERS[1:length(plots)] }
+  }
+  plot_row=plot_grid(plotlist=plots, ncol=ncol, nrow=nrow, labels=labels)
+  if (main=='') {
+    return(plot_row)
+  }
+  title <- ggdraw() + draw_label( main, fontface = 'bold', x = 0, hjust = 0 ) + theme(plot.margin = margin(0, 0, 0, 7))
+  return (plot_grid(title, plot_row, ncol = 1, rel_heights = c(0.1, 1)))
+}
+
+# calculate confidence interval (ci),  a measure of precision 
+# call with mtcars %>% calc_ci(mpg) or mtcars %>% group_by(cyl) %>% calc_ci(mpg)
+# plot with ...  %>% ggplot(aes(x=cyl, y=col.mean)) + geom_line() + geom_ribbon(aes(ymin=col.lower, ymax=col.upper), alpha=0.1 ...)
+calc_ci = function(d, col, min_lower_ci=NA, max_upper_ci=NA) {
+  ret = d %>% summarise(
+            col.mean := mean({{col}}, na.rm = TRUE),
+            #col.median := median({{col}}, na.rm = TRUE),
+            col.sd = sd({{col}}, na.rm = TRUE),
+            col.n = n(),
+            .groups = 'drop') %>%
+  mutate(stderr = col.sd / sqrt(col.n),
+         col.lower = col.mean - qt(1 - (0.05 / 2), col.n - 1) * stderr,
+         col.upper = col.mean + qt(1 - (0.05 / 2), col.n - 1) * stderr) %>% 
+  ungroup() %>% 
+  mutate(col.lower = pmax(min_lower_ci, col.lower, na.rm=T),
+         col.upper = pmin(max_upper_ci, col.upper, na.rm=T))
+  return (ret)
+}
+
+# calculate interquartile range (iqr), a measure of dispersion
+# call with mtcars %>% calc_iqr(mpg) or mtcars %>% group_by(cyl) %>% calc_iqr(mpg)
+# plot with  ... %>% ggplot(aes(x=cyl, y=col.median)) + geom_line() + geom_ribbon(aes(ymin=col.lower, ymax=col.upper), alpha=0.1 ...)
+calc_iqr = function(d, col) {
+  d %>% summarise(
+            col.median = median({{col}}, na.rm = T),
+            #col.mean = mean({{col}}, na.rm = T),
+            col.upper = quantile({{col}}, .75, na.rm = T),
+            col.lower = quantile({{col}}, .25, na.rm = T),
+            col.n = n(),
+            .groups = 'drop')
+}
+
+# calculate outlier cutoffs based on IQR
+# Lower Bound: (Q1 - 1.5 * IQR)
+# Upper Bound: (Q3 + 1.5 * IQR)
+# usage: mtcars %>% group_by(cyl) %>% calc_outlier(mpg)
+calc_outlier = function(d, col) {
+  d %>% summarise(
+            col.median = median({{col}}, na.rm = T),
+            col.iqr = quantile({{col}}, .75, na.rm = T)-quantile({{col}}, .25, na.rm = T),
+            col.upper = quantile({{col}}, .75, na.rm = T) + 1.5 * col.iqr,
+            col.lower = quantile({{col}}, .25, na.rm = T) - 1.5 * col.iqr,
+            col.n = n(),
+            .groups = 'drop')
+}
+
+#
+# write result tibble to BED file
+#
+write_bed = function(dat, bed_file, title, header=F) {
+  sink(bed_file)
+  cat(paste0("track name=",title," description=\"",title,"\" useScore=1 itemRgb=\"On\"\n"))
+  sink()
+  dat %>% write_tsv( bed_file, col_names = F, append = T ) 
+}
+
+# calculates performance and coverage on grouped data.
+# required columns: count, classification, len
+calc_performance=function(tab, readlen) {
+  tab %>% 
+    summarise(count=sum(count)) %>% 
+    pivot_wider(names_from=classification, values_from=count, names_sort=T) %>% 
+    mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>% 
+    mutate(
+      read_count=TP+FN,
+      cov=read_count*!!readlen/len,
+      precision=ifelse(TP+FP>0, TP/(TP+FP), NA),
+      recall=ifelse(TP+FN>0,TP/(TP+FN), NA),
+      F1=ifelse((2*TP+FP+FN)>0,2*TP/(2*TP+FP+FN),NA)
+  ) 
+}
+
+# calculate coverage for a grouped table
+calc_coverage = function(grp_tab) {
+  grp_tab %>% 
+      summarise(count=sum(count)) %>% 
+      pivot_wider(names_from=c(mapper,classification), values_from=count, names_sort=T) %>% 
+      mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>% 
+      filter(len>conf$readlen) %>% # filter too-short introns as this will lead to wrong coverage calc. Example: ENSMUST00000116560.2_in5
+      mutate(
+        simulated=(HISAT3N_TP+HISAT3N_FN)*!!conf$readlen/len, # same as simulated_star!
+        HISAT3N=(HISAT3N_TP+HISAT3N_FP)*!!conf$readlen/len,
+        STAR=(STAR_TP+STAR_FP)*!!conf$readlen/len,
+    ) %>% pivot_longer(c(simulated, HISAT3N, STAR), names_to='mapper') %>% 
+    mutate(mapper=factor(mapper, levels=c('simulated', 'HISAT3N', 'STAR')),
+           is_converted=ifelse(conversion_rate==0,'no conversions', 'converted reads')) %>% 
+    ungroup()
+}
+
+# simple exponential decay model
+decay_model= function(t, k) {
+  return( exp(t * -k) )
+}
+# fit decay model and calculate halflife
+fit_halflife = function(TP, dat) {
+  if (any(is.na(dat))) {
+    return (list(mod=NA,k=NA,hl=NA,pseudoR2=NA, bic=NA))
+  }
+  mod = tryCatch({
+        nlsLM(dat~decay_model(TP, k),
+              start=list(
+                k=0),
+              lower = c(0),                 
+              upper = c(Inf),
+              control = nls.lm.control(maxiter = 1000),
+              na.action = na.omit)
+      }, error=function(e){
+        print(e)
+      })
+  if ( inherits(mod, "simpleError")) {return (list(mod=NA,k=NA,hl=NA,pseudoR2=NA, bic=NA)) }
+  k=coef(mod)[length(coef(mod))]
+  hl=ifelse(k>0, log(2)/k, NA)
+  rss = sum(residuals(mod)^2)
+  tss = sum((dat - mean(dat ,na.rm = TRUE))^2 ,na.rm = TRUE)  # Total sum of squares
+  pseudoR2 = 1 - (rss/tss)  # R-squared measure
+  bic = BIC(mod)
+  return (list(mod=mod,k=k,hl=hl,pseudoR2=pseudoR2, bic=bic))
+}
+
+# simple correlation plot
+plot_corr = function(d, a, b, col_, shape_=NULL, main_title=NA, xlog=F, draw_diag=T, max_x=NA, show_legend=T, calc_corr=T) {
+  thecor=''
+  if ( calc_corr) {
+  thecor = paste("r_pearson = ", round(cor(d[[a]], d[[b]], use = "complete.obs"), 4), 
+                 "\nr_spearman = ", round(cor(d[[a]], d[[b]], use = "complete.obs", method="spearman"), 4),
+                 "\nn =",nrow(na.omit(d %>% select(all_of(a),all_of(b))))  )
+  }
+  if (is.na(main_title)) {
+    main_title=paste0("Correlation between ",a," and ",b)
+  }
+  p = ggplot( d, aes_string(x=a, y=b, col=col_, shape=shape_) ) +
+    geom_point(aes(alpha=0.2))
+  if ((main_title!='') | (thecor!='')) {
+    if (thecor!='') {
+      p=p+ggtitle(main_title, thecor) 
+    } else {
+      p=p+ggtitle(main_title) 
+    }
+    
+  }
+  if ( !is.na(max_x) ) {
+    p=p+xlim(0,max_x)+ylim(0, max_x)
+  }
+  if (draw_diag) {
+    p=p+geom_abline(intercept = 0, slope = 1, col="black",linetype="dotted") 
+  }
+  if ( xlog ) {
+    p=p+scale_x_log10()+scale_y_log10()
+  }
+  if ( ! show_legend ) {
+    p=p+theme(legend.position="none")
+  }
+  return(p)
+}
+
+gn2tid = function(gn) {
+  return(unique( m[['ga']] %>% filter(gene_name == gn) %>% pull(tid) ))
+}
+tid2coord = function(tid) {
+  return(unique( m[['tx']] %>% filter(tid == !!tid) %>% select(chromosome, start, end) ))
+}
+
+# cache results
+# usage: d = cache({x %>% head()}, 'x_head')
+cache = function(my_expr, name, rerun=F) {
+  xfun::cache_rds(my_expr, rerun=rerun, dir=paste0(params$out_dir, '/cache/'), file=name)
+}
+
+clean_cache = function() {
+  cached_files = list.files(paste0(params$out_dir, '/cache/'), '_[0-9a-f]{32}[.]rds$', full.names = TRUE)
+  unlink(cached_files)
+}
+
+```
+
+
+# data
+
+```{r data, include=F, echo=F, cache=T, eval=F}
+
+big3_home_dir=paste0(dirname(params$big3_config),'/')
+big3_conf=fromJSON(paste(readLines(params$big3_config), collapse=""))
+big4_home_dir=paste0(dirname(params$big4_config),'/')
+big4_conf=fromJSON(paste(readLines(params$big4_config), collapse=""))
+
+# create result dir?
+if (!dir.exists(params$out_dir)) {
+  dir.create(params$out_dir)
+} 
+if (!dir.exists(paste0(params$out_dir,'/cache/'))) {
+  dir.create(paste0(params$out_dir,'/cache/'))
+} 
+
+
+#home_dir='/Users/niko.popitsch/Desktop/data/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/'
+
+
+# results files (~45 G) 
+big3_data_file=paste0(big3_home_dir,'/eva/results/data.rds')
+big4_data_file=paste0(big4_home_dir,'/eva/results/data.rds')
+big3_meta_file=paste0(big3_home_dir,'/eva/results/meta.rds')
+
+d3=readRDS(big3_data_file)
+#d4=readRDS(big4_data_file)
+m3=readRDS(big3_meta_file)
+
+# shortcuts
+tx3 = d3[['tx']] %>% left_join(m[['tx']], by=c('fid'='tid')) 
+all_tids=unique(tx3 %>% pull(fid))
+tx4 = d4[['tx']] %>% filter(fid %in% all_tids) %>% left_join(m[['tx']], by=c('fid'='tid')) 
+
+# result tables
+results=list()
+```
+
+
+## compare big3 / big4 tx
+
+
+<div class = "blue">
+<b>Comparison between big3 and big4.</b>
+A) Boxplots of transcript F1 values show reduced F1 in big4 compared to big3. 
+This analysis incorporated all tx simulated in big3 tx. Note that in big4, however, we simulated many more tx (basically one tx for every gene) that contribute FPs to the analysed transcripts.
+B) Comparing TP, FP and FN values between shows the increased FP rates in big4 stemming from tx not simulated in big3. 
+C+D) Effect on F1 and recall correlations between these datasets.
+</div>
+
+```{r big34, include=T, echo=F, cache=T}
+
+perf_tx34 = cache({
+  tx3 %>% select(fid, mapper, conversion_rate, classification, count) %>% mutate(dataset='big3') %>% 
+    bind_rows( tx4 %>% select(fid, mapper, conversion_rate, classification, count) %>% mutate(dataset='big4') ) %>% 
+    group_by(dataset, fid, mapper, conversion_rate, classification) %>% 
+    summarise(count=sum(count)) %>% 
+    pivot_wider(names_from=classification, values_from=count, names_sort=T) %>% 
+    mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>% 
+    mutate(
+      F1=ifelse((2*TP+FP+FN)>0,2*TP/(2*TP+FP+FN),NA),
+      recall=ifelse((TP+FN)>0,TP/(TP+FN),NA),
+      ) %>% 
+      ungroup()
+}, 'perf_tx34', rerun = T)
+
+perf_tx34_corr = perf_tx34 %>% 
+  select(fid, mapper, conversion_rate, dataset, F1, recall, TP, FP, FN) %>% 
+  pivot_wider(names_from=dataset, values_from = c(F1, recall, TP, FP, FN)) 
+
+
+p1 = perf_tx34 %>% 
+  ggplot(aes(dataset, F1, fill=dataset)) + 
+  geom_boxplot() +
+  facet_grid(mapper~conversion_rate)
+
+p2.1=plot_grid(plotlist=list(
+      perf_tx34_corr %>% 
+      plot_corr( 'TP_big3', 'TP_big4', 'mapper', main_title='TP ', max_x=NA, xlog=F, show_legend=F, calc_corr=F, draw_diag = T ) +
+      my_scales() + facet_grid(mapper~.) + xlab("big3") + ylab("big4") + theme(axis.text.x=element_text(size=rel(0.7)))
+      ,
+      perf_tx34_corr %>% 
+      plot_corr( 'FN_big3', 'FN_big4', 'mapper', main_title='FN', max_x=NA, xlog=F, show_legend=F, calc_corr=F, draw_diag = T ) +
+      my_scales() + facet_grid(mapper~.) + xlab("big3") + ylab("big4") + theme(axis.text.x=element_text(size=rel(0.7)))
+      ), nrow=1)
+p2.2=perf_tx34_corr %>% 
+    plot_corr( 'FP_big3', 'FP_big4', 'mapper', main_title='FP', max_x=NA, xlog=F, show_legend=F, calc_corr=F, draw_diag = T ) +
+    my_scales() + facet_grid(mapper~conversion_rate) + xlab("big3") + ylab("big4") + theme(axis.text.x=element_text(size=rel(0.7)))
+p2 = plot_grid(p2.1, p2.2, ncol=1)
+
+p3 = perf_tx34_corr %>% 
+  plot_corr( 'F1_big3', 'F1_big4', 'mapper', main_title='F1', max_x=NA, xlog=F, show_legend=F, calc_corr=T, draw_diag = T ) +
+  my_scales() +
+  facet_grid(mapper~conversion_rate) + xlab("big3") + ylab("big4") + theme(axis.text.x=element_text(size=rel(0.7)))
+
+p4 = perf_tx34_corr %>% 
+  plot_corr( 'recall_big3', 'recall_big4', 'mapper', main_title='Recall', max_x=NA, xlog=F, show_legend=F, calc_corr=T, draw_diag = T ) +
+  my_scales() +
+  facet_grid(mapper~conversion_rate) + xlab("big3") + ylab("big4") + theme(axis.text.x=element_text(size=rel(0.7)))
+
+my_plot_grid(list(p1,p2,p3,p4), 'Comparison of tx scores between big3 and big4', labels = T)
+ggsave(paste0(params$out_dir, 'compare_F1_big34.pdf'), width=14, height=10)
+
+```

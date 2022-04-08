@@ -17,11 +17,11 @@ output:
     fig_caption: true
 params:
     splice_sim_config:
-       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/splice_sim.config.json"
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/splice_sim.config.json"
     decay_config:
-       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/decay_sim_nf4_intron/config.json"
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/decay_sim_nf4_intron/config.json"
     out_dir:
-       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/analysis/"
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/analysis/"
 ---
 <style type="text/css">
 body, td {
@@ -65,6 +65,7 @@ require(ggforce)
 require(writexl)
 require(xfun)
 require(forcats)
+require(glue)
 # NB install arrow with snappy on Rstudio server
 # Sys.setenv(ARROW_WITH_SNAPPY = "ON")
 # Sys.setenv(NOT_CRAN="true")
@@ -377,10 +378,10 @@ bam_stats = d[['bam_stats']] %>%
 p1 = bam_stats %>% 
   select(mapper, conversion_rate, cat, n_reads, n_unmapped) %>% 
   pivot_longer(c(n_reads, n_unmapped)) %>% 
-  bind_rows(count_stats) %>% 
-  ggplot(aes(cat, value, fill=name)) +
-  facet_wrap(conversion_rate~mapper) +
-  geom_col(position = 'stack')
+  mutate(name=factor(name, levels=c('n_unmapped', 'n_reads'))) %>% 
+  ggplot(aes(conversion_rate, value, fill=name)) +
+  facet_wrap(mapper~.) +
+  geom_col()
 
 p2 = bam_stats %>%
  ggplot(aes(conversion_rate,n_spliced_reads, fill=mapper)) +
@@ -411,7 +412,8 @@ ggsave(paste0(params$out_dir, 'bam_stats.pdf'), width=12, height=10)
 
 ### NA counts
 
-Calculate and plot the fraction of NA counts per table/column
+Calculate and plot the fraction of NA counts per table/column.
+Internal data completeness QC only, don not include in ms/supp.
 
 ```{r non_na, include=T, echo=F, cache=T}
 # count non-NA values per column for all passed tables
@@ -446,6 +448,8 @@ ggsave(paste0(params$out_dir, 'qc_non_na_counts.pdf'), width=12, height=10)
 
 ### Missing tids
 
+Internal QC plot only, do not include in paper but mention number of recovered tx.
+
 Some of the originally configured transcript ids are missing from result data. 
 This is either because 
 - there were no reads simulated as the annotation is smaller than read-size and there are no (longer) overlapping transcripts
@@ -463,18 +467,27 @@ missing_tx=load_table('/groups/ameres/Niko/projects/Ameres/splicing/data/slamstr
   filter(tid %in% m[['all_tids']]) %>% 
   mutate(cat=ifelse(tid %in% found_tids, 'recovered','missing')) 
 p1=missing_tx %>% ggplot(aes(x=factor(cat), y=len)) + 
-  geom_violin()  +scale_y_log10() + ggtitle("Length distribution of recovered vs missing tx") +
+  geom_boxplot()  +scale_y_log10() + ggtitle("Length distribution of recovered vs missing tx") +
   geom_hline(yintercept = conf$readlen, col='red')
 p2=missing_tx %>% ggplot(aes(x=factor(cat), y=ilen)) + 
   geom_violin()  +scale_y_log10() + ggtitle("Intron Length distribution of recovered vs missing tx") +
   geom_hline(yintercept = conf$max_ilen, col='red')
 # did we recover all reads?
-p3 = d[['tx']] %>% group_by(mapper, conversion_rate, classification) %>% summarise(count=sum(count)) %>% pivot_wider(names_from=classification, values_from=count) %>% 
-mutate(all=TP+FN) %>% ggplot(aes(conversion_rate, all, fill=mapper)) + geom_bar(stat='identity', position='dodge') + ggtitle('read counts per mapper/condition')
+p3 = d[['tx']] %>% group_by(mapper, conversion_rate, classification) %>% summarise(count=sum(count)) %>% filter(classification %in% c('FN', 'TP', 'FP_raw')) %>% ggplot(aes(conversion_rate, count, fill=classification)) + geom_col() + facet_wrap(mapper~.) + ggtitle('read counts per mapper/condition') 
 
 my_plot_grid(list(p1,p2,p3), labels=T, 'QC only', nrow = 1)
 ggsave(paste0(params$out_dir, 'qc_missing_tids.pdf'), width=12, height=10)
 
+```
+### Isoform selection
+```{r}
+# see /groups/ameres/Niko/projects/Ameres/splicing/data/200513_R9575_pulse_reseq/3_map/STAR/mm10/2_pickMaxIsoform.sh
+isoform_mix = load_table('/Volumes/groups/ameres/Niko/projects/Ameres/splicing/data/200513_R9575_pulse_reseq/3_map/STAR/mm10/ns_r1_ip_180/ns_r1_ip_180.gencode.vM21.annotation.nochr.sorted.MAXISOFORM.gff3.data.tsv')
+p1=isoform_mix %>% count(mode) %>% ggplot(aes(mode, y=n)) + geom_col()
+p2=isoform_mix %>% count(isCanonical) %>% ggplot(aes(isCanonical, y=n)) + geom_col()
+
+glue("We mostly chose the canonical tx. frac= {isoform_mix %>% summarise(n=sum(isCanonical=='yes')) %>% pull(n) / isoform_mix %>% nrow()},")
+my_plot_grid(list(p1,p2), labels=T, 'Isoform selection', nrow = 1)
 ```
 
 
@@ -652,7 +665,7 @@ Performance drops with increasing conversion rate for STAR but not HISAT3N.
 
 perf_tx = cache({
   tx %>% 
-    group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+    group_by(fid, mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
              num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
     calc_performance(conf$readlen) %>% 
     mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
@@ -663,7 +676,7 @@ perf_tx = cache({
 perf_fx = cache({
   fx %>% 
     select(-rnk) %>% rename(rnk=tx_rnk) %>% #mappability=tx_mappability; we could also use tx_mappability here?
-    group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+    group_by(fid, mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
              num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
     calc_performance(conf$readlen) %>% 
     mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 

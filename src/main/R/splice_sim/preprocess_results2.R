@@ -136,8 +136,8 @@ m[['sj']] = m[['sj']] %>%
                              acc_in_fc<0.2 ~ 'low',
                              TRUE ~ 'medium')
   ) %>% mutate(
-    mappability_don=factor(mappability_don, levels=c('high', 'medium', 'low')),
-    mappability_acc=factor(mappability_acc, levels=c('high', 'medium', 'low')),
+    don_mappability=factor(don_mappability, levels=c('high', 'medium', 'low')),
+    acc_mappability=factor(acc_mappability, levels=c('high', 'medium', 'low')),
     don_ex_fc=factor(don_ex_fc, levels=c('high', 'medium', 'low')),
     don_in_fc=factor(don_in_fc, levels=c('high', 'medium', 'low')),
     acc_ex_fc=factor(acc_ex_fc, levels=c('high', 'medium', 'low')),

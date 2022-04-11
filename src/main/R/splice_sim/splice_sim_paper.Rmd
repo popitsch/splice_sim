@@ -290,9 +290,9 @@ if (!dir.exists(paste0(params$out_dir,'/cache/'))) {
 
 
 # results files (~45 G) 
-data_file=paste0(home_dir,'/eva/results/data.rds')
-data_file_mq20=paste0(home_dir,'/eva/results/data.mq20.rds')
-meta_file=paste0(home_dir,'/eva/results/meta.rds')
+data_file=paste0(home_dir,'/eva_can_chrom_only/results/data.rds')
+data_file_mq20=paste0(home_dir,'/eva_can_chrom_only/results/data.mq20.rds')
+meta_file=paste0(home_dir,'/eva_can_chrom_only/results/meta.rds')
   
 if (file.exists(data_file)) {
   tic("load data")

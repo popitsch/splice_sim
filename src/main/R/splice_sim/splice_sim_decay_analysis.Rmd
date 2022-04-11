@@ -207,8 +207,8 @@ clean_cache = function() {
 my_colors=c(
   "None"="grey21", 
   "Both"="goldenrod4", 
-  "STAR"="darkolivegreen",
-  "HISAT3N"="darkorange4",
+  "STAR"="green4",
+  "HISAT3N"="darkorange2",
   "simulated"="grey30",
   "truth"="black",
   "fast"="#551A8B",
@@ -216,7 +216,7 @@ my_colors=c(
   "slow"="violetred4",
   "high"="red",
   "medium"="blue4",
-  "low"="green4",
+  "low"="darkolivegreen",
   "outlier"="red",
   "Outlier in both"="goldenrod4",
   "Outlier in STAR"="darkolivegreen",
@@ -231,8 +231,6 @@ my_scales=function() {
     )
   )
 }
-
-
 
 ```
 

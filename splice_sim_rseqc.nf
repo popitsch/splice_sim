@@ -23,8 +23,16 @@ Channel.
 	set{ truth_bams_channel }
 
 Channel.
+  fromFilePairs("${workflow.launchDir}/sim/bams_truth/*.{bam,bai}") { file -> file.name.replaceAll(/.bam|.bai$/,'') }.
+	set{ truth_bais_channel  }
+
+Channel.
 	fromPath( "${workflow.launchDir}/sim/final_bams/*bam" ).
 	set{ mapped_bams_channel }
+
+Channel.
+  fromFilePairs("${workflow.launchDir}/sim/final_bams/*.{bam,bai}") { file -> file.name.replaceAll(/.bam|.bai$/,'') }.
+	set{ mapped_bais_channel }
 
 truth_bams_channel.
   mix(mapped_bams_channel).
@@ -40,6 +48,10 @@ truth_bams_channel.
 		rseqc_read_quality_input
 	}
 
+truth_bais_channel.
+  mix(mapped_bais_channel).
+	set{ rseqc_read_quality_bais_input }
+
 Channel.
 	fromPath( "${workflow.launchDir}/sim/bams_truth/*bam*" ).
 	set{ truth_bams_bais_channel }
@@ -54,7 +66,8 @@ truth_bams_bais_channel.
 
 /*
  * Prepare rseqc input bed
- 
+ */
+
 process gff_to_bed {
 	tag "${params.dataset_name}"
     cpus 1
@@ -76,7 +89,7 @@ process gff_to_bed {
 					sed -i '1d' gene_anno.bed
 				  #gff2bed < gene_anno.gff3 > gene_anno.bed
 		    """
-	}*/
+	}
 
 /*
  * Calculate rseqc clipping profile
@@ -133,10 +146,10 @@ process rseqc_insertion_profile {
 	module 'rseqc/2.6.5-foss-2018b-python-2.7.15'
 		publishDir "eva/rseqc/insertion_profile", mode: 'copy'
 	cache false
-	
+
 		when:
 	params.rseqc
-	
+
 	input:
 		set val(name), file(bam) from rseqc_insertion_input
 	output:
@@ -156,10 +169,10 @@ process rseqc_insertion_profile {
 	module 'rseqc/2.6.5-foss-2018b-python-2.7.15'
 		publishDir "eva/rseqc/deletion_profile", mode: 'copy'
 	cache false
-	
+
 		when:
 	params.rseqc
-	
+
 	input:
 		set val(name), file(bam) from rseqc_deletion_input
 	output:
@@ -179,12 +192,12 @@ process rseqc_read_duplication {
 	module 'rseqc/2.6.5-foss-2018b-python-2.7.15'
 		publishDir "eva/rseqc/read_duplication", mode: 'copy'
 	cache false
-	
+
 		label 'highmem'
-	
+
 		when:
 	params.rseqc
-	
+
 	input:
 		set val(name), file(bam) from rseqc_read_duplication_input
 	output:
@@ -235,12 +248,12 @@ process rseqc_read_quality {
 	params.rseqc
 
 	input:
-		set val(name), file(bam) from rseqc_read_quality_input
+		set val(name), file(bai) from rseqc_read_quality_bais_input
 	output:
 		file("${name}*") into rseqc_read_quality_output
 	script:
 		"""
-		  read_quality.py -i $bam -o $name
+		  read_quality.py -i ${name}.bam -o $name
 		"""
 	}
 
@@ -253,10 +266,10 @@ process rseqc_junction_annotation {
 	module 'rseqc/2.6.5-foss-2018b-python-2.7.15'
 		publishDir "eva/rseqc/junction_annotation", mode: 'copy'
 	cache false
-	
+
 		when:
 	params.rseqc
-	
+
 	input:
 		set val(name), file(bam) from rseqc_junction_annotation_input
 			file(reference) from rseqcbed_junction_annotation
@@ -301,12 +314,12 @@ process rseqc_genebody_profile {
 	module 'rseqc/2.6.5-foss-2018b-python-2.7.15'
 	publishDir "eva/rseqc/geneBody_coverage", mode: 'copy'
 	cache false
-	
+
 		label 'long'
-	
+
 		when:
 	params.rseqc
-	
+
 	input:
 		file(bams) from rseqc_genebody_input.collect()
 			file(reference) from rseqcbed_genebody_profile
@@ -327,26 +340,26 @@ process multiqc {
 	module 'multiqc/1.9-foss-2018b-python-3.6.6'
 		publishDir "eva/multiqc", mode: 'copy'
 	cache false
-	
+
 		when:
 	params.rseqc
-	
+
 	input:
 			file(rseqc_clipping) from rseqc_clipping_output.collect().ifEmpty([])
 			file(rseqc_mismatch) from rseqc_mismatch_output.collect().ifEmpty([])
 			file(rseqc_insertion) from rseqc_insertion_output.collect().ifEmpty([])
-			file(rseqc_deletion) from rseqc_deletion_output.collect().ifEmpty([])
+			//file(rseqc_deletion) from rseqc_deletion_output.collect().ifEmpty([])
 			file(rseqc_duplication) from rseqc_read_duplication_output.collect().ifEmpty([])
 			//file(rseqc_read_distribution) from rseqc_read_distribution_output.collect().ifEmpty([])
 			//file(rseqc_read_quality) from rseqc_read_quality_output.collect().ifEmpty([])
 			file(rseqc_junction_annotation) from rseqc_junction_annotation_output.collect().ifEmpty([])
 			file(rseqc_junction_saturation) from rseqc_junction_saturation_output.collect().ifEmpty([])
 			file(rseqc_genebody_profile) from rseqc_genebody_output.collect().ifEmpty([])
-	
+
 	output:
 	file "*multiqc_report.html" into ch_multiqc_report
 	file "*_data"
-	
+
 	script:
 	"""
 	multiqc -m rseqc -f .

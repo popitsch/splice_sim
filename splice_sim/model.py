@@ -353,7 +353,7 @@ class Model():
                 pinfo=parse_info( info )
                 tid = pinfo['transcript_id'] if 'transcript_id' in pinfo else None
                 if tid in self.transcripts.keys():
-                    print('\t'.join(str(x) for x in row), file=out)
+                    print('\t'.join([str(x) for x in row]), file=out)
             bgzip_and_tabix(out_file, seq_col=0, start_col=3, end_col=4, line_skip=0, zerobased=False)
         out_file=out_file+".gz"
         return out_file

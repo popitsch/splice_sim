@@ -171,7 +171,7 @@ def classify_region(target_region, config, bam_file, chrom2feat, tid2feat, out_f
         if chrom in samin.references: # there are reads on this chrom
             aits = [BlockLocationIterator(iter(sorted(chrom2feat[chrom] if chrom in chrom2feat else [], key=lambda x: x[0]) ))]
             rit = ReadIterator(samin, dict_chr2idx, reference=chrom, start=target_region.start, end=target_region.end, max_span=None, flag_filter=0) # max_span=m.max_ilen
-            it = AnnotationOverlapIterator(rit, aits, check_read_alignment=True)
+            it = AnnotationOverlapIterator(rit, aits, check_read_alignment=True, report_splicing=True)
             for loc, (read, annos) in it:
                 wr+=1
                 overlapping_annos = annos[0] # select 1st entry as theree is only one ait
@@ -475,7 +475,7 @@ def extract_bam_stats(bam_file, out_dir):
             stats[chrom, 'len_spliced_reads']=statistics.mean(stats[chrom, 'len_spliced_reads']) if len(stats[chrom, 'len_spliced_reads'])>0 else 'NA'
         # unmapped reads
         for unmapped_read in samin.fetch(contig=None, until_eof=True):
-            if r.is_unmapped:
+            if unmapped_read.is_unmapped:
                 stats['unmapped', 'n_unmapped']+=1
         # write results
         for chrom in list(dict_chr2len.keys())+['unmapped']:

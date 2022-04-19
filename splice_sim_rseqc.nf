@@ -234,7 +234,7 @@ process rseqc_read_distribution {
 
 /*
  * Calculate rseqc read quality
- */
+ *
 process rseqc_read_quality {
 	tag "$name"
 	cpus 1
@@ -255,7 +255,7 @@ process rseqc_read_quality {
 		"""
 		  read_quality.py -i ${name}.bam -o $name
 		"""
-	}
+	}*/
 
 /*
  * Calculate rseqc junction annotation

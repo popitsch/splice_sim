@@ -62,7 +62,7 @@ def chop3End(tid ,transcriptMeta, transcriptBuffer, nt):
 
     return txstart, txend, ends
 
-def extract_transcript_3ends(config, tids, out_dir) :
+def extract_transcript_3ends(config, gff_file, tids, out_dir) :
     dataset_name = config.get('dataset_name', 'test')
     print('subsetting transcripts to 3\'ends for ', len(tids), ' tids.')
     out_file_gff3 = out_dir + '/' + dataset_name + '.3ends.gff3'
@@ -77,7 +77,7 @@ def extract_transcript_3ends(config, tids, out_dir) :
 
     # process data
     with open(out_file_gff3, 'w') as out_gff3:
-        f = pysam.TabixFile(config["gene_gff"], mode="r")
+        f = pysam.TabixFile(gff_file, mode="r")
         for row in tqdm.tqdm(f.fetch(parser=pysam.asTuple()), desc="Processing features"):
             reference, source, ftype, fstart, fend, score, strand, phase, info = row
             pinfo = parse_info(info)
@@ -124,7 +124,7 @@ def extract_transcript_3ends(config, tids, out_dir) :
     print("Created resources:")
     print("GFF file + idx:\t" + out_file_gff3)
 
-    config["gene_gff"] = out_file_gff3 + ".gz"
+    return out_file_gff3 + ".gz"
 
 def build_transcriptome(config, tids, out_dir):
     """ Creates a transcriptome file   
@@ -259,10 +259,13 @@ if __name__ == '__main__':
     
     parser["prepare_3end_experiment"] = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
     parser["prepare_3end_experiment"].add_argument("-c", "--config", type=str, required=True, dest="config_file", metavar="config_file", help="JSON config file")
+    parser["prepare_3end_experiment"].add_argument("-t", "--transcript", action='store_true', dest="transcript", help="Simulate transcript-wide read noise")
     parser["prepare_3end_experiment"].add_argument("-o", "--outdir", type=str, required=False, dest="outdir", metavar="outdir", help="output directory (default is current dir)")
 
     parser["prepare_3end_experiment_genome"] = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
     parser["prepare_3end_experiment_genome"].add_argument("-c", "--config", type=str, required=True, dest="config_file", metavar="config_file", help="JSON config file")
+    parser["prepare_3end_experiment_genome"].add_argument("-t", "--transcript", action='store_true', dest="transcript", help="Simulate transcript-wide read noise")
+
     parser["prepare_3end_experiment_genome"].add_argument("-o", "--outdir", type=str, required=False, dest="outdir", metavar="outdir", help="output directory (default is current dir)")
 #============================================================================    
     if len(sys.argv) <= 1 or sys.argv[1] in ['-h', '--help']:
@@ -290,11 +293,24 @@ if __name__ == '__main__':
         tab=pd.read_csv(config['isoform_config'],delimiter='\t',encoding='utf-8')
         print(tab)
 
-        # build a 3'end reference
-        extract_transcript_3ends(config, tab['transcript_id'].tolist(), out_dir + 'ref/')
+        if args.transcript:
 
-        # build a reference transcriptome
-        build_transcriptome(config, tab['transcript_id'].tolist(), out_dir+'ref/')
+            # build a reference transcriptome
+            build_transcriptome(config, tab['transcript_id'].tolist(), out_dir + 'ref/')
+
+            transcriptome_gff = out_dir + 'ref/%s.gff3.gz' % (config['transcriptome_name'])
+
+            # build a 3'end reference from transcriptome
+            end_gff3 = extract_transcript_3ends(config, transcriptome_gff, tab['transcript_id'].tolist(), out_dir + 'ref/')
+
+        else:
+            # build a 3'end reference
+            end_gff3 = extract_transcript_3ends(config, config["gene_gff"], tab['transcript_id'].tolist(), out_dir + 'ref/')
+
+            config["gene_gff"] = end_gff3
+
+            # build a reference transcriptome
+            build_transcriptome(config, tab['transcript_id'].tolist(), out_dir + 'ref/')
         
         header="""
 #!/usr/bin/bash
@@ -361,6 +377,51 @@ echo "Starting splice_sim pipeline with profile $profile"
                 with open(out_dir+'splice_sim.config.json', 'w') as out:
                     json.dump(splice_sim_config, out, indent=4)
 
+                if (args.transcript) :
+                    splice_sim_eva_config = {
+                        "dataset_name": config['transcriptome_name'],
+                        "splice_sim_cmd": config['splice_sim_cmd'],
+                        "genome_fa": out_dir + 'ref/%s.fa' % (config['transcriptome_name']),
+                        "genome_chromosome_sizes": out_dir + 'ref/%s.fa.chrom.sizes' % (config['transcriptome_name']),
+                        "gene_gff": end_gff3,
+                        "create_bams": True,
+                        "transcript_ids": out_dir + 'ref/%s.tids.tsv' % (config['transcriptome_name']),
+                        "transcript_data": out_dir + 'ref/%s.data.config.json' % (config['transcriptome_name']),
+                        "isoform_mode": "1:1",
+                        "frac_old_mature": 0,
+                        "genome_mappability": out_dir + 'ref/%s.genmap.bedgraph.gz' % (config['transcriptome_name']),
+                        "condition": {
+                            "ref": "T",
+                            "alt": "C",
+                            "conversion_rates": config['conversion_rates'],
+                            "base_coverage": 10
+                        },
+                        "mappers": {
+                            "STAR": {
+                                "star_cmd": "STAR",
+                                "star_genome_idx": out_dir + 'ref/star_2.7.1_index/',  # NB must be built externally
+                                "star_splice_gtf": out_dir + 'ref/%s.gtf' % (config['transcriptome_name']),
+                            },
+                            "HISAT3N": {
+                                "hisat3n_cmd": "singularity exec /groups/ameres/Niko/software/SIF/hisat-3n.sif /hisat-3n/hisat-3n",
+                                "hisat3n_idx": out_dir + 'ref/hisat2-3n_index/%s' % (config['transcriptome_name']),
+                                # NB must be built externally
+                                "hisat3n_kss": out_dir + 'ref/%s.gtf.hisat2_splice_sites.txt' % (
+                                config['transcriptome_name'])
+                            }
+                        },
+                        "max_ilen": 100000,
+                        "min_abundance": 1,
+                        "random_seed": 1234,
+                        "readlen": 100,
+                        "create_tdf": True,
+                        "write_reads": False,
+                        "write_intron_bam": False,
+                        "rseqc": False
+                    }
+                    with open(out_dir + 'splice_sim.config.eva.json', 'w') as out:
+                        json.dump(splice_sim_eva_config, out, indent=4)
+
                 # write config per timepoint
                 with open(out_dir+'ref/%s.tids.tsv' % (config['transcriptome_name']), 'w') as out:
                     print('transcript_id', file=out)
@@ -369,10 +430,13 @@ echo "Starting splice_sim pipeline with profile $profile"
 
                 # write run commands
                 print("nextflow -log logs/nextflow.log run "+config["splice_sim_nf"]+" -params-file %s -resume -profile $profile" % (out_dir+'splice_sim.config.json'), file=script_out)
-                print("nextflow -log logs/nextflow.log run "+config["splice_sim_eva_nf"]+" -params-file %s -resume -profile $profile" % (out_dir+'splice_sim.config.json'), file=script_out2)
+                if (args.transcript):
+                    print("nextflow -log logs/nextflow.log run "+config["splice_sim_eva_nf"]+" -params-file %s -resume -profile $profile" % (out_dir+'splice_sim.config.eva.json'), file=script_out2)
+                else :
+                    print("nextflow -log logs/nextflow.log run " + config["splice_sim_eva_nf"] + " -params-file %s -resume -profile $profile" % (out_dir + 'splice_sim.config.json'), file=script_out2)
 #============================================================================
     if mod == "prepare_3end_experiment_genome":
-        # load and check onfig
+        # load and check config
         config=json.load(open(args.config_file), object_pairs_hook=OrderedDict)
     
         # read a list of tids and metadata:
@@ -380,7 +444,7 @@ echo "Starting splice_sim pipeline with profile $profile"
         tab=pd.read_csv(config['isoform_config'],delimiter='\t',encoding='utf-8')
         print(tab)
         # build a 3'end reference
-        extract_transcript_3ends(config, tab['transcript_id'].tolist(), out_dir + 'ref/')
+        endsGff = extract_transcript_3ends(config, config["gene_gff"], tab['transcript_id'].tolist(), out_dir + 'ref/')
     
         header="""
 #!/usr/bin/bash
@@ -400,8 +464,6 @@ if [ -n "$1" ]; then
 fi
 echo "Starting splice_sim pipeline with profile $profile"
             """
-        # 3'end files
-        endsGff = out_dir + 'ref/' + config['dataset_name'] + '.3ends.gff3.gz'
 
         # create config
         splice_sim_config={
@@ -447,10 +509,58 @@ echo "Starting splice_sim pipeline with profile $profile"
         with open(out_dir + 'splice_sim.config.json', 'w') as out:
             json.dump(splice_sim_config, out, indent=4)
 
+        if (args.transcript):
+            # create config
+            splice_sim_simulator_config = {
+                "dataset_name": config['dataset_name'],
+                "splice_sim_cmd": config['splice_sim_cmd'],
+                "genome_fa": config['genome_fa'],
+                "genome_chromosome_sizes": config['genome_chromosome_sizes'],
+                "gene_gff": config["gene_gff"],
+                "create_bams": True,
+                "frac_old_mature": 0,
+                "transcript_ids": config['isoform_config'],
+                "transcript_data": out_dir + '/' + config['dataset_name'] + '.data.config.json',
+                "isoform_mode": "1:1",
+                "genome_mappability": config['genome_mappability'],
+                "condition": {
+                    "ref": "T",
+                    "alt": "C",
+                    "conversion_rates": config['conversion_rates'],
+                    "base_coverage": 10
+                },
+                "mappers": {
+                    "STAR": {
+                        "star_cmd": "STAR",
+                        "star_genome_idx": "/groups/ameres/Niko/ref/genomes/mm10/indices/star_2.7.1",
+                        "star_splice_gtf": "/groups/ameres/Niko/ref/genomes/mm10/annotation/GRCm38.p6.annotation.gtf"
+                    },
+                    "HISAT3N": {
+                        "hisat3n_cmd": "singularity exec /groups/ameres/Niko/software/SIF/hisat-3n.sif /hisat-3n/hisat-3n",
+                        "hisat3n_idx": "/groups/ameres/Niko/ref/genomes/mm10/indices/hisat2-3n/Mus_musculus.GRCm38.dna.primary_assembly",
+                        "hisat3n_kss": "/groups/ameres/Niko/ref/genomes/mm10/annotation/GRCm38.p6.annotation.gtf.hisat2_splice_sites.txt"
+                    }
+                },
+                "max_ilen": 100000,
+                "min_abundance": 1,
+                "random_seed": 1234,
+                "readlen": 100,
+                "create_tdf": True,
+                "write_reads": False,
+                "write_intron_bam": False,
+                "rseqc": False
+            }
+
+            with open(out_dir + 'splice_sim.config.simulator.json', 'w') as out:
+                json.dump(splice_sim_simulator_config, out, indent=4)
+
         # write run commands
         with open(out_dir+'run_splice_sim.sh', 'w') as script_out:
             print(header, file=script_out)
-            print("nextflow -log logs/nextflow.log run "+config["splice_sim_nf"]+" -params-file %s -resume -profile $profile" % (out_dir + 'splice_sim.config.json'), file=script_out)
+            if args.transcript:
+                print("nextflow -log logs/nextflow.log run " + config["splice_sim_nf"] + " -params-file %s -resume -profile $profile" % (out_dir + 'splice_sim.config.simulator.json'), file=script_out)
+            else :
+                print("nextflow -log logs/nextflow.log run "+config["splice_sim_nf"]+" -params-file %s -resume -profile $profile" % (out_dir + 'splice_sim.config.json'), file=script_out)
         with open(out_dir+'run_splice_sim_eva.sh', 'w') as script_out:
             print(header, file=script_out)
             print("nextflow -log logs/nextflow.log run "+config["splice_sim_eva_nf"]+" -params-file %s -resume -profile $profile" % (out_dir + 'splice_sim.config.json'), file=script_out)

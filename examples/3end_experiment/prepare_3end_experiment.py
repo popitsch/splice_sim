@@ -20,7 +20,8 @@ def sort_bgzip_and_tabix(in_file, out_file=None, create_index=True, del_uncompre
         out_file=in_file+'.gz'
     pre,post=os.path.splitext(in_file)
     sorted_in_file=pre+'.sorted'+post
-    pybedtools.BedTool(in_file).sort().saveas(sorted_in_file)    
+    #pybedtools.BedTool(in_file).sort().saveas(sorted_in_file)
+    os.system("gff3sort.pl --precise " + in_file + " > " + sorted_in_file)
     pysam.tabix_compress(sorted_in_file, out_file, force=True) # @UndefinedVariable
     if create_index:
         pysam.tabix_index(out_file, force=True, seq_col=seq_col, start_col=start_col, end_col=end_col, meta_char='#', line_skip=line_skip, zerobased=zerobased) # @UndefinedVariable

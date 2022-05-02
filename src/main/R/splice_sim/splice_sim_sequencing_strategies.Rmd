@@ -18,6 +18,8 @@ output:
 params:
     splice_sim_config:
        value: "/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/big4_slamseq_nf/splice_sim.config.json"
+    genome_tx_noise_config:
+       value: "/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/big4_slamseq_3endcounted_nf/splice_sim.config.json"
     transcriptome_3end_config:
        value: "/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/big4_slamseq_3end_transcriptomic_nf/splice_sim.config.json"
     genome_3end_config:
@@ -318,6 +320,40 @@ fx = d[['fx']] %>% left_join(m[['fx']], by='fid')
 fx20 = d_mq20[['fx']] %>% left_join(m[['fx']], by='fid') 
 
 # ===========================================================
+# tx-noise 3' genome experiment
+# ===========================================================
+txnoise_genome_3end_conf=fromJSON(paste(readLines(params$genome_tx_noise_config), collapse=""))
+txnoise_genome_3end_home_dir=paste0(dirname(params$genome_tx_noise_config),'/')
+
+# results files (~45 G) 
+txnoise_genome_3end_data_file=paste0(txnoise_genome_3end_home_dir,'/eva/results/data.rds')
+txnoise_genome_3end_data_file_mq20=paste0(txnoise_genome_3end_home_dir,'/eva/results/data.mq20.rds')
+txnoise_genome_3end_meta_file=paste0(txnoise_genome_3end_home_dir,'/eva/results/meta.rds')
+  
+if (file.exists(txnoise_genome_3end_data_file)) {
+  tic("load data")
+  d3ng=readRDS(txnoise_genome_3end_data_file)
+  d3ng_mq20=readRDS(txnoise_genome_3end_data_file_mq20)
+  toc()
+} else {
+  stop("Could not find data_file")
+}
+if (file.exists(txnoise_genome_3end_meta_file)) {
+  tic("load metadata")
+  m3ng=readRDS(txnoise_genome_3end_meta_file)
+  toc()
+} else {
+  stop("Could not find meta_file")
+}
+
+# shortcuts
+tx3ng = d3ng[['tx']] %>% left_join(m3ng[['tx']], by=c('fid'='tid')) 
+tx203ng = d3ng_mq20[['tx']] %>% left_join(m3ng[['tx']], by=c('fid'='tid')) 
+fx3ng = d3ng[['fx']] %>% left_join(m3ng[['fx']], by='fid') 
+fx203ng = d3ng_mq20[['fx']] %>% left_join(m3ng[['fx']], by='fid') 
+
+
+# ===========================================================
 # 3' transcriptome experiment
 # ===========================================================
 transcriptome_3end_conf=fromJSON(paste(readLines(params$transcriptome_3end_config), collapse=""))
@@ -459,7 +495,7 @@ found_tids_3t=unique(d3t[['tx']] %>% pull(fid))
 found_tids_3g=unique(d3g[['tx']] %>% pull(fid))
 all_tids = m[['all_tids']]
 
-upset(fromList(list(all = all_tids, full_length = found_tids, transcriptome = found_tids_3t, genome = found_tids_3g)),order.by="freq")
+upset(fromList(list(all = all_tids, full_length = found_tids, transcriptome = found_tids_3t, genome = found_tids_3g, genome_noise = found_tids_3ng)),order.by="freq")
 
 pdf(paste0(params$out_dir, 'qc_tids_ovlp.pdf'),onefile=FALSE)
 
@@ -1077,11 +1113,45 @@ perf_tx3t = cache({
     ungroup()
 }, 'perf_tx3t', rerun = F)
 
+perf_fx3g = cache({
+  fx3g %>% 
+    select(-rnk) %>% rename(rnk=tx_rnk) %>% #mappability=tx_mappability; we could also use tx_mappability here?
+    group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+             num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+    calc_performance(conf$readlen) %>% 
+    mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+    filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+    ungroup()
+}, 'perf_fx3g', rerun = F)
+
+perf_tx3ng = cache({
+  tx3ng %>% 
+    group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+             num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+    calc_performance(conf$readlen) %>% 
+    mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+    filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+    ungroup()
+}, 'perf_tx3ng', rerun = F)
+
+perf_fx3ng = cache({
+  fx3ng %>% 
+    select(-rnk) %>% rename(rnk=tx_rnk) %>% #mappability=tx_mappability; we could also use tx_mappability here?
+    group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+             num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+    calc_performance(conf$readlen) %>% 
+    mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+    filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+    ungroup()
+}, 'perf_fx3ng', rerun = F)
+
 perf = bind_rows(perf_tx, perf_fx) 
 
 perf3g = bind_rows(perf_tx3g, perf_fx3g)
 
 perf3t = bind_rows(perf_tx3t, perf_fx3t)
+
+perf3ng = bind_rows(perf_tx3ng, perf_fx3ng)
 
 # Low genome mappability, high 3' end genome mappability
 
@@ -1466,6 +1536,14 @@ perf3g %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %
   facet_grid(mappability~ftype) +
   ylab("") +
   ggtitle('Median precision per condition 3end genome') 
+
+perf3ng %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(precision) %>% 
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~ftype) +
+  ylab("") +
+  ggtitle('Median precision per condition 3end transcript-noise genome') 
 
 perf3t %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(precision) %>% 
   ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +

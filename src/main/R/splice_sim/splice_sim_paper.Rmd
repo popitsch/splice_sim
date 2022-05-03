@@ -16,12 +16,16 @@ output:
     fig_height: 10
     fig_caption: true
 params:
-    splice_sim_config:
+    splice_sim_config_r1:
        value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/splice_sim.config.json"
+    splice_sim_config_r2:
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf_rep2/splice_sim.config.json"
+    splice_sim_config_r3:
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf_rep3/splice_sim.config.json"
     decay_config:
        value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/decay_sim_nf4_intron/config.json"
     out_dir:
-       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/analysis/"
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/splice_sim_paper/analysis/"
 ---
 <style type="text/css">
 body, td {
@@ -45,6 +49,10 @@ rmarkdown::render('splice_sim_paper.Rmd', 'html_document')
 
 ```{r setup, include=FALSE}
 require(data.table)
+require(goseq)
+require(AnnotationDbi)
+require(BiocGenerics)
+require(parallel)
 require(tidyr)
 require(dplyr)
 require(ggplot2)
@@ -66,6 +74,10 @@ require(writexl)
 require(xfun)
 require(forcats)
 require(glue)
+
+rename=dplyr::rename
+select=dplyr::select
+
 # NB install arrow with snappy on Rstudio server
 # Sys.setenv(ARROW_WITH_SNAPPY = "ON")
 # Sys.setenv(NOT_CRAN="true")
@@ -92,8 +104,13 @@ source('splice_sim_resources.R')
 
 ```{r data, include=F, echo=F, cache=T, eval=F}
 
-home_dir=paste0(dirname(params$splice_sim_config),'/')
-conf=fromJSON(paste(readLines(params$splice_sim_config), collapse=""))
+home_dir_r1=paste0(dirname(params$splice_sim_config_r1),'/')
+home_dir_r2=paste0(dirname(params$splice_sim_config_r2),'/')
+home_dir_r3=paste0(dirname(params$splice_sim_config_r3),'/')
+
+# read from 1st replicate
+conf=fromJSON(paste(readLines(params$splice_sim_config_r1), collapse=""))
+
 # create result dir?
 if (!dir.exists(params$out_dir)) {
   dir.create(params$out_dir)
@@ -103,57 +120,56 @@ if (!dir.exists(paste0(params$out_dir,'/cache/'))) {
 } 
 
 
-#home_dir='/Users/niko.popitsch/Desktop/data/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/'
-
-
 # results files (~45 G) 
-data_file=paste0(home_dir,'/eva_can_chrom_only/results/data.rds')
-data_file_mq20=paste0(home_dir,'/eva_can_chrom_only/results/data.mq20.rds')
-meta_file=paste0(home_dir,'/eva_can_chrom_only/results/meta.rds')
+meta_file=paste0(home_dir_r1,'/results/meta.rds') # read from 1st replicate
+data_file_r1=paste0(home_dir_r1,'/results/data.rds')
+data_file_r2=paste0(home_dir_r2,'/results/data.rds')
+data_file_r3=paste0(home_dir_r3,'/results/data.rds')
   
-if (file.exists(data_file)) {
-  tic("load data")
-  d=readRDS(data_file)
-  d_mq20=readRDS(data_file_mq20)
-  toc()
-} else {
-  stop("Could not find data_file")
-}
-if (file.exists(meta_file)) {
-  tic("load metadata")
-  m=readRDS(meta_file)
-  toc()
-} else {
-  stop("Could not find meta_file")
-}
+d=list()
+d[['rep1']] = load_rds(data_file_r1)
+d[['rep2']] = load_rds(data_file_r2)
+d[['rep3']] = load_rds(data_file_r3)
 
-
-# to calc performance data
-# d[['fx']] %>% 
-#   group_by(fid,mapper,conversion_rate,classification,len,gene_name,num_exons,ftype) %>% 
-#   calc_performance(conf$readlen) 
-
-# to add meta data
-# %>% 
-#   left_join(m[['tx']], by=c('fid'='tid')) %>% # NB too-short tx are lost
-#   left_join(m[['ga']], by=c('fid'='tid')) 
-
+m=load_rds(meta_file)
 
 # shortcuts
-tx = d[['tx']] %>% left_join(m[['tx']], by=c('fid'='tid')) 
-tx20 = d_mq20[['tx']] %>% left_join(m[['tx']], by=c('fid'='tid')) 
-fx = d[['fx']] %>% left_join(m[['fx']], by='fid') 
-fx20 = d_mq20[['fx']] %>% left_join(m[['fx']], by='fid') 
+tx = d[['rep1']][['tx']] %>% mutate(rep='rep1') %>% 
+  bind_rows(
+    d[['rep2']][['tx']] %>% mutate(rep='rep2') 
+  ) %>% 
+  bind_rows(
+    d[['rep3']][['tx']] %>% mutate(rep='rep3') 
+  ) %>% 
+  left_join(m[['tx']], by=c('fid'='tid')) %>% 
+  mutate(rep=factor(rep, levels=c('rep1', 'rep2', 'rep3')))
+
+fx = d[['rep1']][['fx']] %>% mutate(rep='rep1') %>% 
+  bind_rows(
+    d[['rep2']][['fx']] %>% mutate(rep='rep2') 
+  ) %>% 
+  bind_rows(
+    d[['rep3']][['fx']] %>% mutate(rep='rep3') 
+  ) %>% 
+  left_join(m[['fx']], by='fid') %>% 
+  mutate(rep=factor(rep, levels=c('rep1', 'rep2', 'rep3')))
 
 
 # ===========================================================
 # bam stats
 # ===========================================================
-if (dir.exists(paste0(home_dir,'/eva/bamstats'))) {
+if (dir.exists(paste0(home_dir_r1,'/eva/bamstats'))) {
   d[['bam_stats']]=tibble()
-  for ( f in list.files(paste0(home_dir,'/eva/bamstats'), pattern='\\.bamstats.tsv$', full.names = T)) {
-    d[['bam_stats']] = d[['bam_stats']] %>% bind_rows(load_table(f))
+  for ( f in list.files(paste0(home_dir_r1,'/eva/bamstats'), pattern='\\.bamstats.tsv$', full.names = T)) {
+    d[['bam_stats']] = d[['bam_stats']] %>% bind_rows(load_table(f) %>% mutate(rep='rep1'))
   }
+  for ( f in list.files(paste0(home_dir_r2,'/eva/bamstats'), pattern='\\.bamstats.tsv$', full.names = T)) {
+    d[['bam_stats']] = d[['bam_stats']] %>% bind_rows(load_table(f) %>% mutate(rep='rep2'))
+  }
+  for ( f in list.files(paste0(home_dir_r3,'/eva/bamstats'), pattern='\\.bamstats.tsv$', full.names = T)) {
+    d[['bam_stats']] = d[['bam_stats']] %>% bind_rows(load_table(f) %>% mutate(rep='rep3'))
+  }
+  d[['bam_stats']]=d[['bam_stats']] %>% mutate(rep=factor(rep, levels=c('rep1', 'rep2', 'rep3')))
 }
 
 # result tables
@@ -167,8 +183,8 @@ results=list()
 ### BAM stats
 ```{r bam_stats, include=T, echo=F, cache=T}
 bam_stats = d[['bam_stats']] %>% 
-  rename(conversion_rate=cr) %>% 
-  group_by(mapper, conversion_rate, ftype) %>% 
+  mutate(conversion_rate=as.numeric(cr)*100) %>% 
+  group_by(rep, mapper, conversion_rate, ftype) %>% 
   summarise(
     n_reads=sum(n_reads),
     n_softclipped_reads=sum(n_softclipped_reads),
@@ -194,34 +210,23 @@ bam_stats = d[['bam_stats']] %>%
 #   mutate(name='n_reads', cat='counts')
 
 p1 = bam_stats %>% 
-  select(mapper, conversion_rate, cat, n_reads, n_unmapped) %>% 
   pivot_longer(c(n_reads, n_unmapped)) %>% 
   mutate(name=factor(name, levels=c('n_unmapped', 'n_reads'))) %>% 
   ggplot(aes(conversion_rate, value, fill=name)) +
-  facet_wrap(mapper~.) +
-  geom_col()
+  facet_wrap(mapper~rep) +
+  geom_col() +
+  ylab("# reads") + xlab("conversion rate [%]")
 
 p2 = bam_stats %>%
- ggplot(aes(conversion_rate,n_spliced_reads, fill=mapper)) +
- geom_col(position = 'dodge')
+  pivot_longer(c('frac_spliced','frac_softclipped', 'mean_span_reads', 'mean_len_spliced_reads')) %>% 
+  ggplot(aes(conversion_rate,value, fill=mapper)) +
+  geom_col(position = 'dodge') +
+  facet_grid(name~rep, scales = 'free') +
+  my_scales() + 
+  ylab("") + xlab("conversion rate [%]")
 
-p3 = bam_stats %>% 
-  ggplot(aes(conversion_rate,frac_spliced, fill=mapper)) +
-  geom_col(position = 'dodge')
 
-p4 = bam_stats %>% 
-  ggplot(aes(conversion_rate,frac_softclipped, fill=mapper)) +
-  geom_col(position = 'dodge')
-
-p5 = bam_stats %>% 
-  ggplot(aes(conversion_rate,mean_span_reads, fill=mapper)) +
-  geom_col(position = 'dodge')
-
-p6 = bam_stats %>% 
-  ggplot(aes(conversion_rate,mean_len_spliced_reads, fill=mapper)) +
-  geom_col(position = 'dodge')
-
-my_plot_grid(list(p1,p2,p3,p4,p5,p6), 'bam stats', labels = T)
+my_plot_grid(list(p1,p2), 'bam stats', labels = T)
 ggsave(paste0(params$out_dir, 'bam_stats.pdf'), width=12, height=10)
 
 # mean_span_reads: mean(r.reference_end-r.reference_start+1)
@@ -252,15 +257,28 @@ count_na_per_column = function(tables) {
   return (counts)
 }
 
-non_na_counts = count_na_per_column(c(setNames(d, paste0('d_',names(d))),setNames(m, paste0('m_',names(m)))) )
-ggplot(non_na_counts, aes(x=name, y=frac)) +
-  geom_bar(stat='identity') +
-  facet_wrap(table~., scales = 'free') +
-  ggtitle("Fraction of NA counts per table column") + 
-  xlab("") + ylab("") +
-  ylim(0,1) +
-  coord_flip() 
+plt=list()
+for ( r in c('rep1', 'rep2', 'rep3')) {
+  plt[[r]] = 
+    count_na_per_column(c(setNames(d[[r]], paste0('d_',names(d[[r]]))))) %>% 
+    ggplot(aes(x=name, y=frac)) +
+    geom_bar(stat='identity') +
+    facet_wrap(table~., scales = 'free') +
+    ggtitle(r) + 
+    xlab("") + ylab("") +
+    ylim(0,1) +
+    coord_flip() 
+}
+plt[['m']] = count_na_per_column(c(setNames(m, paste0('m_',names(m)))) ) %>% 
+    ggplot(aes(x=name, y=frac)) +
+    geom_bar(stat='identity') +
+    facet_wrap(table~., scales = 'free') +
+    ggtitle('metadata') + 
+    xlab("") + ylab("") +
+    ylim(0,1) +
+    coord_flip() 
 
+my_plot_grid(plt, 'QC: Fraction of NA counts per table column')
 ggsave(paste0(params$out_dir, 'qc_non_na_counts.pdf'), width=12, height=10)
 ```
 
@@ -274,33 +292,37 @@ This is either because
 - annotations are very long (e.g., Kcnip1 or Cmss1)
 
 ```{r missing_tids, include=T, echo=F, cache=T}
-# how many tx did we recover
-found_tids=unique(d[['tx']] %>% pull(fid))
-missing_tids=setdiff(m[['all_tids']],found_tids)
-print(paste0("We have data for ", length(found_tids), '/', length(m[['all_tids']]), " tx"))
-
-# what are the missing tx?
-missing_tx=load_table('/groups/ameres/Niko/projects/Ameres/splicing/data/slamstr/pooled.mm10.all/pooled.mm10.all.Slamstr.stats.trans.final.tsv.gz') %>% 
-  select(tid=transcript_id, gene_type, len, ilen) %>% 
-  filter(tid %in% m[['all_tids']]) %>% 
-  mutate(cat=ifelse(tid %in% found_tids, 'recovered','missing')) 
-p1=missing_tx %>% ggplot(aes(x=factor(cat), y=len)) + 
-  geom_boxplot()  +scale_y_log10() + ggtitle("Length distribution of recovered vs missing tx") +
-  geom_hline(yintercept = conf$readlen, col='red')
-p2=missing_tx %>% ggplot(aes(x=factor(cat), y=ilen)) + 
-  geom_violin()  +scale_y_log10() + ggtitle("Intron Length distribution of recovered vs missing tx") +
-  geom_hline(yintercept = conf$max_ilen, col='red')
-# did we recover all reads?
-p3 = d[['tx']] %>% group_by(mapper, conversion_rate, classification) %>% summarise(count=sum(count)) %>% filter(classification %in% c('FN', 'TP', 'FP_raw')) %>% ggplot(aes(conversion_rate, count, fill=classification)) + geom_col() + facet_wrap(mapper~.) + ggtitle('read counts per mapper/condition') 
-
-my_plot_grid(list(p1,p2,p3), labels=T, 'QC only', nrow = 1)
+plt=list()
+for ( r in c('rep1', 'rep2', 'rep3')) {
+  
+  # how many tx did we recover
+  found_tids=unique(d[[r]][['tx']] %>% pull(fid))
+  missing_tids=setdiff(m[['all_tids']],found_tids)
+  print(paste0("We have data for ", length(found_tids), '/', length(m[['all_tids']]), " tx"))
+  
+  # what are the missing tx?
+  missing_tx=load_table('/groups/ameres/Niko/projects/Ameres/splicing/data/slamstr/pooled.mm10.all/pooled.mm10.all.Slamstr.stats.trans.final.tsv.gz') %>% 
+    select(tid=transcript_id, gene_type, len, ilen) %>% 
+    filter(tid %in% m[['all_tids']]) %>% 
+    mutate(cat=ifelse(tid %in% found_tids, 'recovered','missing')) 
+  p1=missing_tx %>% ggplot(aes(x=factor(cat), y=len)) + 
+    geom_boxplot()  +scale_y_log10() + ggtitle("Length distribution of recovered\nvs missing tx") +
+    geom_hline(yintercept = conf$readlen, col='red')
+  p2=missing_tx %>% ggplot(aes(x=factor(cat), y=ilen)) + 
+    geom_violin()  +scale_y_log10() + ggtitle("Intron Length distribution of recovered\nvs missing tx") +
+    geom_hline(yintercept = conf$max_ilen, col='red')
+  # did we recover all reads?
+  p3 = d[[r]][['tx']] %>% group_by(mapper, conversion_rate, classification) %>% summarise(count=sum(count)) %>% filter(classification %in% c('FN', 'TP', 'FP_raw')) %>% ggplot(aes(conversion_rate, count, fill=classification)) + geom_col() + facet_wrap(mapper~.) + ggtitle('read counts per mapper/condition') 
+  plt[[r]] = my_plot_grid(list(p1,p2,p3), r, nrow = 1)
+}
+my_plot_grid(plt, 'QC: missing tx', ncol = 1)
 ggsave(paste0(params$out_dir, 'qc_missing_tids.pdf'), width=12, height=10)
 
 ```
 ### Isoform selection
 ```{r}
 # see /groups/ameres/Niko/projects/Ameres/splicing/data/200513_R9575_pulse_reseq/3_map/STAR/mm10/2_pickMaxIsoform.sh
-isoform_mix = load_table('/Volumes/groups/ameres/Niko/projects/Ameres/splicing/data/200513_R9575_pulse_reseq/3_map/STAR/mm10/ns_r1_ip_180/ns_r1_ip_180.gencode.vM21.annotation.nochr.sorted.MAXISOFORM.gff3.data.tsv')
+isoform_mix = load_table('/groups/ameres/Niko/projects/Ameres/splicing/data/200513_R9575_pulse_reseq/3_map/STAR/mm10/ns_r1_ip_180/ns_r1_ip_180.gencode.vM21.annotation.nochr.sorted.MAXISOFORM.gff3.data.tsv')
 p1=isoform_mix %>% count(mode) %>% ggplot(aes(mode, y=n)) + geom_col()
 p2=isoform_mix %>% count(isCanonical) %>% ggplot(aes(isCanonical, y=n)) + geom_col()
 
@@ -315,7 +337,7 @@ my_plot_grid(list(p1,p2), labels=T, 'Isoform selection', nrow = 1)
 tab = tx %>% # NB too-short tx are lost
   filter(rnk==1, conversion_rate=='0.1') %>% 
   mutate(is_overlapping=ifelse(n_overlapping>0, 'overlaps tx', 'no overlap')) %>% 
-  group_by(fid, mapper, true_isoform, classification, mappability,is_overlapping ) %>% 
+  group_by(rep, fid, mapper, true_isoform, classification, mappability,is_overlapping ) %>% 
   summarise(count=sum(count)) %>% 
   pivot_wider(names_from = classification, values_from=count) %>% 
   mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>% 
@@ -325,7 +347,7 @@ tab = tx %>% # NB too-short tx are lost
   mutate(f1_diff=F1_mat-F1_pre) 
   
 p1 = tab %>% ggplot(aes(mapper, f1_diff)) + geom_boxplot() + 
-  facet_wrap(mappability~is_overlapping) +
+  facet_wrap(mappability~rep) +
   geom_hline(yintercept = 0, col='red') +
   ggtitle("Difference in F1 value between pre/mat.",
           "Should be close to zero!") 
@@ -333,16 +355,16 @@ p1 = tab %>% ggplot(aes(mapper, f1_diff)) + geom_boxplot() +
 p2 = tab %>% ggplot(aes(x=f1_diff)) + geom_density() + 
   ggtitle("Difference in F1 value between pre/mat.",
           "Should be close to zero!") +
-  facet_wrap(mapper~is_overlapping) +
+  facet_wrap(mapper~rep) +
   geom_vline(xintercept = 0, col='red')
 
-p3 = tab %>% ggplot(aes(x=FP_mat, y=FP_pre, col=mappability, alpha=0.05)) + geom_point() + scale_x_sqrt() + scale_y_sqrt() + facet_wrap(mapper~is_overlapping) + geom_abline(slope=1, intercept=0) + theme(legend.position="none") +
+p3 = tab %>% ggplot(aes(x=FP_mat, y=FP_pre, col=mappability, alpha=0.05)) + geom_point() + scale_x_sqrt() + scale_y_sqrt() + facet_wrap(mapper~rep) + geom_abline(slope=1, intercept=0) + theme(legend.position="none") +
   ggtitle('FP: caveat: isoform from originating read!')
-p4 = tab %>% ggplot(aes(x=FN_mat, y=FN_pre, col=mappability, alpha=0.05)) + geom_point() + scale_x_sqrt() + scale_y_sqrt() + facet_wrap(mapper~is_overlapping) + geom_abline(slope=1, intercept=0) + theme(legend.position="none") +
+p4 = tab %>% ggplot(aes(x=FN_mat, y=FN_pre, col=mappability, alpha=0.05)) + geom_point() + scale_x_sqrt() + scale_y_sqrt() + facet_wrap(mapper~rep) + geom_abline(slope=1, intercept=0) + theme(legend.position="none") +
   ggtitle('FN')
-p5 = tab %>% ggplot(aes(x=TP_mat, y=TP_pre, col=mappability, alpha=0.05)) + geom_point() + scale_x_sqrt() + scale_y_sqrt() + facet_wrap(mapper~is_overlapping) + geom_abline(slope=1, intercept=0) + theme(legend.position="none") +
+p5 = tab %>% ggplot(aes(x=TP_mat, y=TP_pre, col=mappability, alpha=0.05)) + geom_point() + scale_x_sqrt() + scale_y_sqrt() + facet_wrap(mapper~rep) + geom_abline(slope=1, intercept=0) + theme(legend.position="none") +
   ggtitle('TP')
-p6 = tab %>% ggplot(aes(x=FP_raw_mat, y=FP_raw_pre, col=mappability, alpha=0.05)) + geom_point() + scale_x_sqrt() + scale_y_sqrt() + facet_wrap(mapper~is_overlapping) + geom_abline(slope=1, intercept=0) +
+p6 = tab %>% ggplot(aes(x=FP_raw_mat, y=FP_raw_pre, col=mappability, alpha=0.05)) + geom_point() + scale_x_sqrt() + scale_y_sqrt() + facet_wrap(mapper~rep) + geom_abline(slope=1, intercept=0) +
   ggtitle('FP: caveat: isoform from originating read!')
 
 my_plot_grid(list(p1,p2,p3,p4,p5,p6), 
@@ -385,32 +407,34 @@ hlines=tribble(
 )
 
 cov_tx = cache({
-  calc_coverage(tx %>% group_by(mapper, conversion_rate, fid, len, classification ) ) 
+  calc_coverage(tx %>% group_by(rep, mapper, conversion_rate, fid, len, classification ) ) 
 }, 'cov_tx', rerun = F)
 
 cov_tx2 = cache({
-  calc_coverage(tx %>% group_by(mapper, conversion_rate, fid, true_isoform, len, classification ) ) 
+  calc_coverage(tx %>% group_by(rep, mapper, conversion_rate, fid, true_isoform, len, classification ) ) 
 }, 'cov_tx2', rerun = F)
 
 cov_fx = cache({
- calc_coverage(fx %>% group_by(mapper, conversion_rate, fid, true_isoform, ftype, len, classification ))
+ calc_coverage(fx %>% group_by(rep, mapper, conversion_rate, fid, true_isoform, ftype, len, classification ))
 }, 'cov_fx', rerun = F)
 
 cov_fx2 = cache({
-  calc_coverage(fx %>% group_by(mapper, conversion_rate, fid, ftype, len, classification ))
+  calc_coverage(fx %>% group_by(rep, mapper, conversion_rate, fid, ftype, len, classification ))
 }, 'cov_fx2', rerun = F)
 
 
 
-p1 = cov_tx2 %>% mutate(ftype='tx') %>% select(mapper, value, ftype, true_isoform) %>% 
-  bind_rows(cov_fx %>% select(mapper, value, ftype, true_isoform)) %>% 
-  ggplot(aes(x=mapper, y=value, fill=mapper)) + geom_boxplot() +
+p1 = cov_tx2 %>% filter(rep=='rep1') %>% mutate(ftype='tx') %>% select(rep, mapper, ftype, true_isoform, value) %>% 
+  bind_rows(cov_fx %>% filter(rep=='rep1') %>% select(rep, mapper, ftype, true_isoform, value)) %>% 
+  ggplot(aes(x=mapper, y=value, fill=mapper)) + 
+  geom_boxplot() +
   scale_y_sqrt() +
   geom_hline(data = hlines, aes(yintercept = y, linetype=factor(cat)), color = 'grey', show.legend=FALSE ) +
-  ggtitle('Coverage per genomic feature') +
+  ggtitle('Coverage per genomic feature, replicate 1') +
   facet_grid(true_isoform~ftype, scales = 'free') + 
   theme(legend.position="none") + xlab('') + 
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylab("") +
   my_scales()
 
 # p2 = cov_fx %>% group_by(conversion_rate, ftype, true_isoform, mapper) %>% calc_ci(value) %>% 
@@ -421,20 +445,20 @@ p1 = cov_tx2 %>% mutate(ftype='tx') %>% select(mapper, value, ftype, true_isofor
 #   facet_grid(.~true_isoform+ftype) +
 #   my_scales()
 
-p2 = cov_tx2 %>% mutate(ftype='tx') %>% select(mapper, conversion_rate, value, ftype, true_isoform) %>% 
-  bind_rows(cov_fx %>% select(mapper, conversion_rate, value, ftype, true_isoform)) %>% 
-  group_by(conversion_rate, ftype, true_isoform, mapper) %>% 
-  calc_iqr(value) %>% 
-  ggplot(aes(x=conversion_rate, y=col.median, col=mapper, group=mapper)) + 
-  geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=0, alpha=0.2) +
+p2 = cov_fx %>% select(rep, mapper, conversion_rate, ftype, true_isoform, value) %>% 
+  group_by(rep, conversion_rate, ftype, true_isoform, mapper) %>% 
+  calc_ci(value) %>% 
+  ggplot(aes(x=as.numeric(as.character(conversion_rate))*100, y=col.mean, col=mapper, linetype=rep, group=paste0(rep,mapper))) + 
   geom_line() +
-  geom_hline(data = hlines, aes(yintercept = y, linetype=factor(cat)), color = 'grey', show.legend=FALSE ) +
-  ggtitle('Median coverage per condition') +
-  facet_grid(true_isoform~ftype, scales = 'free') +
+  geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=0, alpha=0.2) +
+  ggtitle('Mean coverage per condition/replicate') +
+  facet_grid(rep~true_isoform+ftype, scales = 'free') +
+  xlab("conversion rate [%]") + ylab("mean coverage") +
   my_scales()
 
-my_plot_grid(list(p1,p2), labels=T, 'Coverage per mapper', nrow = 1)
-ggsave(paste0(params$out_dir, 'cov.pdf'), width=12, height=10)
+
+my_plot_grid(list(p1,p2), labels=T, main='Coverage per mapper', nrow = 1, rel_widths = c(1, 1.5))
+ggsave(paste0(params$out_dir, 'cov.pdf'), width=12, height=9)
 
 # calc_coverage(d[['tx']] %>% group_by(mapper, conversion_rate, fid, len, classification ) ) %>% group_by(conversion_rate,mapper) %>% summarise(m=mean(value)) %>% ggplot(aes(conversion_rate,m,fill=mapper)) + geom_bar(stat='identity', position = 'dodge') + ggtitle('Mean tx coverage per mapper and condition')
 
@@ -447,7 +471,7 @@ ggsave(paste0(params$out_dir, 'cov.pdf'), width=12, height=10)
 #  ggplot(aes(x=is_edge, y=value)) + geom_boxplot() + facet_wrap(ftype~true_isoform, scales='free') 
 
 
-#remove()
+remove(cov_tx, cov_tx2, cov_fx, cov_fx2 )
 
 ```
 
@@ -465,7 +489,7 @@ Performance drops with increasing conversion rate for STAR but not HISAT3N.
 
 perf_tx = cache({
   tx %>% 
-    group_by(fid, mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+    group_by(rep, fid, mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
              num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
     calc_performance(conf$readlen) %>% 
     mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
@@ -476,7 +500,7 @@ perf_tx = cache({
 perf_fx = cache({
   fx %>% 
     select(-rnk) %>% rename(rnk=tx_rnk) %>% #mappability=tx_mappability; we could also use tx_mappability here?
-    group_by(fid, mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+    group_by(rep, fid, mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
              num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
     calc_performance(conf$readlen) %>% 
     mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
@@ -490,38 +514,38 @@ perf = bind_rows(perf_tx, perf_fx)
 
 pdf(paste0(params$out_dir, 'map_perf.pdf'), width=8, height=6)
 
-perf %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(precision) %>% 
+perf %>% group_by(rep, conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(precision) %>% 
   ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
   geom_line() +
   #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
-  facet_grid(mappability~ftype) +
+  facet_grid(mappability~ftype+rep) +
   ylab("") +
   ggtitle('Median precision per condition') 
 
-perf %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(recall) %>% 
+perf %>% group_by(rep, conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(recall) %>% 
   ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
   geom_line() +
   #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
-  facet_grid(mappability~ftype) +
+  facet_grid(mappability~ftype+rep) +
   ylab("") +
   ggtitle('Median recall per condition') 
 
-perf %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(F1) %>% 
+perf %>% group_by(rep, conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(F1) %>% 
   ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
   geom_line() +
   #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
-  facet_grid(mappability~ftype, scales = 'free') +
+  facet_grid(mappability~ftype+rep, scales = 'free') +
   scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
   theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5)) +
   ylab("F1") +
   ggtitle('Median F1 per condition') 
 
 perf_tx %>% filter(mappability=='high') %>% 
-  group_by(conversion_rate, mapper, true_isoform, num_exons) %>% calc_iqr(F1) %>% 
+  group_by(rep, conversion_rate, mapper, true_isoform, num_exons) %>% calc_iqr(F1) %>% 
   ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
   geom_line() +
   #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
-  facet_wrap(num_exons~.) +
+  facet_grid(num_exons~rep) +
   scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
   theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5))+
   ylab("F1") +
@@ -1349,113 +1373,7 @@ ggsave(paste0(params$out_dir, 'special_conv_unconv_reads.pdf'), width=12, height
 
 Demonstrate effect of mq20 filtering on coverage and mapping F1.
 
-```{r}
-
-comp_cov=function(a, b, grp_vars) {
-  sel_vars=grp_vars[grp_vars!='classification']
-  calc_coverage(a %>% group_by_at(grp_vars) ) %>% 
-    select(any_of(c(sel_vars, 'value'))) %>% 
-    left_join(
-      calc_coverage(b %>% group_by_at(grp_vars) ) %>% 
-        select(any_of(c(sel_vars, 'value'))),
-      by=sel_vars, suffix = c(".mq0", ".mq20"),
-    )
-}
-
-cov_comp_tx = comp_cov(tx, tx20, c('mapper', 'conversion_rate', 'fid', 'len', 'classification' ))
-cov_comp_fx = comp_cov(fx, fx20, c('mapper', 'conversion_rate', 'fid', 'true_isoform', 'ftype', 'len', 'classification' )) 
-# sanity check: 
-#testthat::expect_that(cov_comp_tx %>% filter(value.mq20>value.mq0) %>% nrow(), equals(0))
-#testthat::expect_that(cov_comp_fx %>% filter(value.mq20>value.mq0) %>% nrow(), equals(0))
-#cov_comp_fx %>% mutate(comp=(value.mq0 > value.mq20) - (value.mq0 < value.mq20)) %>% count(comp)
-
-
-p1 = cov_comp_tx %>% 
-  pivot_longer(c(value.mq0, value.mq20), names_prefix='value.', names_to='mq') %>% 
-  replace_na(list(value = 0)) %>% 
-  ggplot(aes(x=mapper, y=value, fill=factor(mq))) + geom_boxplot() +
-  scale_y_sqrt() +
-  #facet_grid(conversion_rate~., scales = 'free') +
-  ggtitle('Coverage over tx interval') + 
-  xlab('') + ylab('coverage') +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
-  guides(fill=guide_legend(title="Min mapping quality"))
-
-
-p2 = cov_comp_fx %>% 
-  pivot_longer(c(value.mq0, value.mq20), names_prefix='value.', names_to='mq') %>% 
-  replace_na(list(value = 0)) %>% # some mq20 entries have no counts in any classification leading to NAs
-  ggplot(aes(x=mapper, y=value, fill=factor(mq))) + geom_boxplot() +
-  scale_y_sqrt() +
-  ggtitle('Coverage per genomic feature') +
-  facet_grid(true_isoform~ftype, scales = 'free') + 
-  xlab('') + ylab('coverage') +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  guides(fill=guide_legend(title="Min mapping quality"))
-
-p3=cov_comp_fx %>% 
-  group_by(mapper, conversion_rate, true_isoform, ftype ) %>% 
-  summarise(mq0=sum(value.mq0),
-            mq20=sum(value.mq20, na.rm = T),
-            frac_fil=ifelse(mq0>0,(mq0-mq20)/mq0,0)) %>% 
-  ggplot(aes(conversion_rate, frac_fil, col=mapper, group=mapper)) +
-  geom_line() +
-  facet_grid(true_isoform~ftype, scales = 'free') +
-  ggtitle("Fraction of mq20 filtered reads per genomic feature")
-
-
-perf_comp = tx %>% bind_rows(fx) %>% 
-  group_by(mapper, conversion_rate, mappability, len, classification,true_isoform,ftype) %>% 
-  calc_performance(conf$readlen) %>% 
-  mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
-  filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
-  ungroup() %>% 
-  select(mapper, conversion_rate, mappability,true_isoform,ftype,F1.mq0=F1) %>% 
-  left_join(
-    tx20 %>% bind_rows(fx20) %>% 
-    group_by(mapper, conversion_rate, mappability, len, classification,true_isoform,ftype) %>% 
-    calc_performance(conf$readlen) %>% 
-    mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
-    filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
-    ungroup() %>% 
-    select(mapper, conversion_rate, mappability,true_isoform,ftype,F1.mq20=F1),
-    by=c('mapper', 'conversion_rate', 'mappability', 'true_isoform','ftype')
-  )
-
-p4 = perf_comp %>% 
-  pivot_longer(c(F1.mq0, F1.mq20), names_prefix='F1.', names_to='mq', values_to='F1') %>% 
-  group_by(conversion_rate, mapper, mappability, true_isoform, ftype, mq) %>% 
-  calc_ci(F1) %>% 
-  ggplot(aes(conversion_rate, col.mean, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
-  geom_line() +
-  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
-  facet_grid(mappability~ftype+mq, scales = 'free') +
-  scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
-  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5))+
-  ylab("F1") +
-  ggtitle('Mean F1 for mature isoforms per condition based on mq20/unfiltered read counts') 
-
-
-p4 = perf_comp %>% 
-  pivot_longer(c(F1.mq0, F1.mq20), names_prefix='F1.', names_to='mq', values_to='F1') %>% 
-  group_by(conversion_rate, mapper, mappability, true_isoform, ftype, mq) %>% 
-  calc_ci(F1) %>% 
-  ggplot(aes(mapper, col.mean, col=mq, group=paste0(mapper,mq))) +
-  geom_boxplot() +
-  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
-  facet_grid(mappability~ftype+true_isoform, scales = 'free') +
-  scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
-  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5))+
-  ylab("F1") +
-  ggtitle('Mean F1 for mature isoforms per condition based on mq20/unfiltered read counts') 
-
- my_plot_grid(list(p1,p2,p3,p4), labels = T, 'Coverage of mapping-quality filtered reads')
-
- 
- 
- 
- 
-```
+@see splice_sim_mq20_analysis.Rmd
 
 ## Decay analysis
 
@@ -1513,6 +1431,84 @@ p2 = tab %>%
   ylab("feature length [kb]")
 
 my_plot_grid(list(p1,p2), labels = T, 'mappability ')
+```
+
+
+## GO / mappability analysis
+```{r}
+
+calc_go_results = function(go_cats=c("GO:BP")) {
+  res=tibble()
+  for ( map_cat in c('high', 'medium', 'low')) {
+    tab=m[['tx']] %>% 
+    left_join(m[['ga']],by='tid') %>% 
+    mutate(ilm=ifelse(mappability==!!map_cat,1,0)) %>% 
+    group_by(gene_name) %>% summarise(ilm=first(ilm), len=max(len)) %>% distinct() 
+    pwf = nullp(setNames(tab$ilm, tab$gene_name), "hg38", "geneSymbol", 
+            bias.data = tab$len, plot.fit=F)
+    goResults <- goseq(pwf, "hg38","geneSymbol", test.cats=go_cats)
+    res = res %>% bind_rows(
+      goResults %>% 
+        select(category, numInCat, term, numDEInCat) %>% rename(!!map_cat := numDEInCat) %>% 
+        pivot_longer(!!map_cat)
+    )
+  }
+  return(res)
+}
+go_results=calc_go_results()
+
+# plot the fractions of high/med/low mappability genes for largest GO-term categories.
+p1=go_results %>% 
+  pivot_wider(names_from = name, values_from = value) %>% 
+  arrange(desc(numInCat)) %>% 
+  head(n=20) %>% 
+  mutate(all=high+medium+low,
+         f_high=high/numInCat,
+         f_med=medium/numInCat,
+         f_low=low/numInCat,
+         f_all=all/numInCat
+         ) %>% 
+  pivot_longer(c(f_high,f_med,f_low)) %>% 
+  ggplot(aes(x=term, y=value, fill=name)) +
+  geom_col() + coord_flip()
+
+
+plot_top10_goterms = function(map_cat='low', go_cats=c("GO:BP")) {
+  tab=m[['tx']] %>% 
+    left_join(m[['ga']],by='tid') %>% 
+    mutate(ilm=ifelse(mappability==!!map_cat,1,0)) %>% 
+    group_by(gene_name) %>% summarise(ilm=max(ilm), len=max(len)) %>% distinct() 
+  pwf = nullp(setNames(tab$ilm, tab$gene_name), "hg38", "geneSymbol", 
+            bias.data = tab$len, plot.fit=F)
+  goResults <- goseq(pwf, "hg38","geneSymbol", test.cats=go_cats)
+  p=goResults %>% 
+    top_n(10, wt=-over_represented_pvalue) %>% 
+    mutate(hitsPerc=numDEInCat*100/numInCat) %>% 
+    ggplot(aes(x=hitsPerc, 
+               y=term, 
+               colour=over_represented_pvalue, 
+               size=numDEInCat)) +
+        geom_point() +
+        expand_limits(x=0) +
+        labs(x="Hits (%)", y="GO term", colour="p value", size="Count")
+  return(p)
+}
+
+
+p2 = plot_top10_goterms(map_cat='high') + 
+  scale_colour_continuous(guide = "none") +
+  ggtitle("High mappability genes") +
+  ylab("")
+p3 = plot_top10_goterms(map_cat='medium') + 
+  scale_colour_continuous(guide = "none") +
+  ggtitle("Medium mappability genes")+
+  ylab("")
+p4 = plot_top10_goterms(map_cat='low') + 
+  scale_colour_continuous(guide = "none")  +
+  ggtitle("Low mappability genes")+
+  ylab("")
+
+my_plot_grid(list(p1, p2, p3, p4), 'Fig1d', labels = T)
 ```
 
 # Examples

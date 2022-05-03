@@ -14,13 +14,25 @@ load_table = function(dataF, append="", header=T, nrows=Inf) {
   }
 }
 
+# load RDS file 
+load_rds = function(data_file) {
+  if (file.exists(data_file)) {
+    tic(paste0("load ", data_file))
+    d=readRDS(data_file)
+    toc()
+    return(d)
+  } else {
+    stop("Could not find data_file")
+  }
+}
+
 # multiple plots with single title
-my_plot_grid = function(plots, main, ncol=NULL, nrow=NULL, labels=NULL) {
+my_plot_grid = function(plots, main='', ncol=NULL, nrow=NULL, labels=NULL, rel_widths = 1, rel_heights = 1) {
   
   if (!is.null(labels)){
     if (labels==T) { labels=LETTERS[1:length(plots)] }
   }
-  plot_row=plot_grid(plotlist=plots, ncol=ncol, nrow=nrow, labels=labels)
+  plot_row=plot_grid(plotlist=plots, ncol=ncol, nrow=nrow, labels=labels, rel_heights=rel_heights, rel_widths=rel_widths)
   title <- ggdraw() + draw_label( main, fontface = 'bold', x = 0, hjust = 0 ) + theme(plot.margin = margin(0, 0, 0, 7))
   return (plot_grid(title, plot_row, ncol = 1, rel_heights = c(0.1, 1)))
 }

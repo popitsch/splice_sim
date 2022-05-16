@@ -30,7 +30,9 @@ if __name__ == '__main__':
     else :
         fout = sys.stdout
 
-    print("transcript_id", fout)
+    tids = set()
+
+    print("transcript_id", file=fout)
 
     with opener(args.gff3_file, 'rt') as f:
         for line in f:
@@ -39,8 +41,10 @@ if __name__ == '__main__':
             chr, source, feature, start, end, score, strand, phase, info = line.rstrip().split("\t")
             if (feature == "transcript"):
                 tags = dict(x.split("=") for x in info.split(";"))
-                if "Ensembl_canonical" in tags["tag"] :
-                    print(tags['transcript_id'], fout)
+                if "tag" in tags and "Ensembl_canonical" in tags["tag"] :
+                    tids.add(tags['transcript_id'])
 
+    for tid in tids:
+        print(tid, file=fout)
     if args.outfile:
         fout.close()

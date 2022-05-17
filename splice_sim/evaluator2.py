@@ -561,7 +561,7 @@ def special_count_HISAT3N_strand_stats(bam_file, out_dir):
             rit = ReadIterator(samin, dict_chr2idx, reference=chrom, start=1, end=chrlen, max_span=None, flag_filter=0) # max_span=m.max_ilen
             for loc, r in rit:
                 true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted_read = r.query_name.split('_')
-                matching_strand=(r.is_reverse & true_strand=='-') or ( not r.is_reverse & true_strand=='+')
+                matching_strand=((r.is_reverse) and (true_strand=='-')) or ( (not r.is_reverse) and (true_strand=='+'))
                 is_softclipped=4 in [x for x,_ in r.cigartuples]
                 stats[chrom, matching_strand, 'n_reads']+=1
                 stats[chrom, matching_strand, 'n_softclipped_reads']+=is_softclipped

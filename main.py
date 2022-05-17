@@ -128,6 +128,9 @@ if __name__ == '__main__':
     parser["extract_bam_stats"].add_argument("-b", "--bam_file", type=str, required=True, dest="bam_file", metavar="bam_file", help="BAM file")
     parser["extract_bam_stats"].add_argument("-o", "--outdir", type=str, required=True, dest="outdir", metavar="outdir", help="output dir")
 
+    parser["special_count_HISAT3N_strand_stats"] = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
+    parser["special_count_HISAT3N_strand_stats"].add_argument("-b", "--bam_file", type=str, required=True, dest="bam_file", metavar="bam_file", help="BAM file")
+    parser["special_count_HISAT3N_strand_stats"].add_argument("-o", "--outdir", type=str, required=True, dest="outdir", metavar="outdir", help="output dir")
     
     #============================================================================
     if len(sys.argv) <= 1 or sys.argv[1] in ['-h', '--help']:
@@ -280,3 +283,6 @@ if __name__ == '__main__':
         print("extract_bam_stats")
         extract_bam_stats(args.bam_file, outdir)
         
+    if mod == "special_count_HISAT3N_strand_stats":
+        print("special_count_HISAT3N_strand_stats")
+        special_count_HISAT3N_strand_stats(args.bam_file, outdir)

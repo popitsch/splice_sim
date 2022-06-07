@@ -16,14 +16,12 @@ output:
     fig_caption: true
     df_print: paged
 params:
-    splice_sim_config:
-       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/splice_sim.config.json"
     decay_config_tx:
-       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/decay_sim_nf4/config.json"
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/decay_sim_nf4/config.json"
     decay_config_intron:
-       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/decay_sim_nf4_intron/config.json"
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/decay_sim_nf4_intron/config.json"
     out_dir:
-       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/analysis/"
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/splice_sim_paper/analysis/"
 ---
 <style type="text/css">
 body, td {
@@ -84,154 +82,8 @@ ggplot2::theme_set(theme_light())
 # turn tidylog off
 options("tidylog.display" = list()) 
 
-# load data from TSV
-load_table = function(dataF, append="", header=T, nrows=Inf) {
-  dataF = as.character(paste0(dataF, append))
-  print(paste("Loading", dataF))
-  if ( endsWith(dataF, ".gz") ) {
-    return(fread(cmd=paste('gunzip -c', dataF), header=header, sep="\t", na.strings=c("na","NA",".", "None"), nrows=nrows))
-  } else {
-    return(fread(dataF, header=header, sep="\t", na.strings=c("na","NA",".", "None"), nrows=nrows))
-  }
-}
-
-# multiple plots with single title
-my_plot_grid = function(plots, main, ncol=NULL, nrow=NULL, labels=NULL) {
-  
-  if (!is.null(labels)){
-    if (labels==T) { labels=LETTERS[1:length(plots)] }
-  }
-  plot_row=plot_grid(plotlist=plots, ncol=ncol, nrow=nrow, labels=labels)
-  title <- ggdraw() + draw_label( main, fontface = 'bold', x = 0, hjust = 0 ) + theme(plot.margin = margin(0, 0, 0, 7))
-  return (plot_grid(title, plot_row, ncol = 1, rel_heights = c(0.1, 1)))
-}
-
-#
-# write result tibble to BED file
-#
-write_bed = function(dat, bed_file, title, header=F) {
-  sink(bed_file)
-  cat(paste0("track name=",title," description=\"",title,"\" useScore=1 itemRgb=\"On\"\n"))
-  sink()
-  dat %>% write_tsv( bed_file, col_names = F, append = T ) 
-}
-
-# simple exponential decay model
-decay_model= function(t, k) {
-  return( exp(t * -k) )
-}
-
-# fit decay model and calculate halflife
-fit_halflife = function(TP, dat) {
-  if (any(is.na(dat))) {
-    return (list(mod=NA,k=NA,hl=NA,pseudoR2=NA, bic=NA))
-  }
-  mod = tryCatch({
-        nlsLM(dat~decay_model(TP, k),
-              start=list(
-                k=0),
-              lower = c(0),                 
-              upper = c(Inf),
-              control = nls.lm.control(maxiter = 1000),
-              na.action = na.omit)
-      }, error=function(e){
-        print(e)
-      })
-  if ( inherits(mod, "simpleError")) {return (list(mod=NA,k=NA,hl=NA,pseudoR2=NA, bic=NA)) }
-  k=coef(mod)[length(coef(mod))]
-  hl=ifelse(k>0, log(2)/k, NA)
-  rss = sum(residuals(mod)^2)
-  tss = sum((dat - mean(dat ,na.rm = TRUE))^2 ,na.rm = TRUE)  # Total sum of squares
-  pseudoR2 = 1 - (rss/tss)  # R-squared measure
-  bic = BIC(mod)
-  return (list(mod=mod,k=k,hl=hl,pseudoR2=pseudoR2, bic=bic))
-}
-
-# simple correlation plot
-plot_corr = function(d, a, b, col_, shape_=NULL, main_title=NA, xlog=F, draw_diag=T, max_x=NA, show_legend=T) {
-  
-  #ggtitle(expression(paste("Reconstructed halflifes", X[2])))
-  
-  thecor = bquote( 
-    paste("r"[pearson], " = " , .(round(cor(d[[a]], d[[b]], use = "complete.obs"), 4)), ", ",
-          "r"[spearman], " = ", .(round(cor(d[[a]], d[[b]], use = "complete.obs", method="spearman"), 4)), ", ",
-          "n = ", .(nrow(na.omit(d %>% select(all_of(a),all_of(b))))) )
-  )
-  if (is.na(main_title)) {
-    main_title=paste0("Correlation between ",a," and ",b)
-  }
-  p = ggplot( d, aes_string(x=a, y=b, col=col_, shape=shape_) ) +
-    geom_point(aes(alpha=0.2))  +
-    ggtitle(main_title, thecor) 
-  if ( !is.na(max_x) ) {
-    p=p+xlim(0,max_x)+ylim(0, max_x)
-  }
-  if (draw_diag) {
-    p=p+geom_abline(intercept = 0, slope = 1, col="black",linetype="dotted") 
-  }
-  if ( xlog ) {
-    p=p+scale_x_log10()+scale_y_log10()
-  }
-  if ( ! show_legend ) {
-    p=p+theme(legend.position="none")
-  }
-  return(p)
-}
-
-gn2tid = function(gn) {
-  return(unique( m[['ga']] %>% filter(gene_name == gn) %>% pull(tid) ))
-}
-tid2coord = function(tid) {
-  return(unique( m[['tx']] %>% filter(tid == !!tid) %>% select(chromosome, start, end) ))
-}
-
-# cache results
-# usage: d = cache({x %>% head()}, 'x_head')
-cache = function(my_expr, name, rerun=F) {
-  xfun::cache_rds(my_expr, rerun=rerun, dir=paste0(params$out_dir, '/cache/'), file=name)
-}
-
-clean_cache = function() {
-  cached_files = list.files(paste0(params$out_dir, '/cache/'), '_[0-9a-f]{32}[.]rds$', full.names = TRUE)
-  unlink(cached_files)
-}
-
-
-
-  
-  
-# usage p + my_scales()
-# all_factors=c("None", "Both", "STAR","HISAT3N","simulated","truth","fast","moderate","slow" )
-# pal=brewer.pal(name="Dark2",n=8)
-# my_colors=setNames(colorRampPalette(pal)(length(all_factors)), all_factors)
-my_colors=c(
-  "None"="grey21", 
-  "Both"="goldenrod4", 
-  "STAR"="green4",
-  "HISAT3N"="darkorange2",
-  "simulated"="grey30",
-  "truth"="black",
-  "fast"="#551A8B",
-  "moderate"="sienna4",
-  "slow"="violetred4",
-  "high"="red",
-  "medium"="blue4",
-  "low"="darkolivegreen",
-  "outlier"="red",
-  "Outlier in both"="goldenrod4",
-  "Outlier in STAR"="darkolivegreen",
-  "Outlier in HISAT3N"="darkorange4",
-  "Outlier in none"="grey21"
-)
-# show_col(my_colors)
-my_scales=function() {
-  return(list(
-    scale_color_manual(values = my_colors, limits = force),
-    scale_fill_manual(values = my_colors, limits = force) 
-    )
-  )
-}
-
+# load resources/functions
+source('splice_sim_resources.R')
 ```
 
 
@@ -239,14 +91,9 @@ my_scales=function() {
 
 ```{r data, include=F, echo=F, cache=T, eval=F}
 
-home_dir=paste0(dirname(params$splice_sim_config),'/')
-conf=fromJSON(paste(readLines(params$splice_sim_config), collapse=""))
 # create result dir?
 if (!dir.exists(params$out_dir)) {
   dir.create(params$out_dir)
-} 
-if (!dir.exists(paste0(params$out_dir,'/cache/'))) {
-  dir.create(paste0(params$out_dir,'/cache/'))
 } 
 
 # ===========================================================
@@ -268,23 +115,24 @@ for ( tp in decay_conf_tx$timepoints) {
 }
 for ( tp in decay_conf_in$timepoints) {
   decay_m[['in']][[paste0('tp', tp)]] = readRDS(paste0(decay_home_dir_in,'tp',tp,'/eva/results/meta.rds'))[['fx']] %>% 
-     filter(ftype=='intron')
+     filter(ftype=='intron') %>% as_tibble()
   decay_d[['in']][[paste0('tp', tp)]] = readRDS(paste0(decay_home_dir_in,'tp',tp,'/eva/results/data.rds'))[['fx']] %>% 
     left_join(decay_m[['in']][[paste0('tp', tp)]] %>% select(fid, ftype), by='fid') %>% 
-    filter(ftype=='intron')
-  decay_g[['in']][[paste0('tp', tp)]] = readRDS(paste0(decay_home_dir_in,'tp',tp,'/eva/results/meta.rds'))[['ga']]
+    filter(ftype=='intron') %>% as_tibble()
+  decay_g[['in']][[paste0('tp', tp)]] = readRDS(paste0(decay_home_dir_in,'tp',tp,'/eva/results/meta.rds'))[['ga']] %>% as_tibble()
 }
 
 # truth data
 decay_isoform_truth_tx = load_table(paste0(decay_home_dir_tx, decay_conf_tx$isoform_config)) %>% 
   rename(fid=transcript_id) %>% 
-  filter(fid %in% (decay_m[['tx']][['tp0']] %>% pull(tid))) # remove tids w/o mappings
+  filter(fid %in% (decay_m[['tx']][['tp0']] %>% pull(tid))) %>%  # remove tids w/o mappings
+  as_tibble()
 decay_isoform_truth_in = load_table(paste0(decay_home_dir_in, decay_conf_in$isoform_config)) %>% 
   rename(tid=transcript_id) %>% 
   left_join(decay_m[['in']][['tp0']] %>% select(tid, fid, len), by='tid') %>% 
   filter(!is.na(fid) ) %>% # remove fids w/o mappings
-  filter(len>100) # remove very short introns
-
+  filter(len>100) %>% # remove very short introns
+  as_tibble()
 # calculate theoretical data
 truth_tx = tibble()
 for ( tp in decay_conf_tx$timepoints ) {
@@ -427,7 +275,7 @@ decay_halflifes_tx = decay_fcr_tx %>%
 diff_perc=0.1
 hlcorr_tx=decay_halflifes_tx %>% 
   pivot_wider(names_from = mapper, values_from = hl, 
-              id_cols = c('fid', 'mapper', 'mappability', 'decay_rate')) %>% 
+              id_cols = c('fid', 'mappability', 'decay_rate')) %>% 
   mutate(STAR_outlier=ifelse(STAR<simulated*(1.0-!!diff_perc) | STAR > simulated*(1.0+!!diff_perc),'outlier','no_outlier'),
          HISAT3N_outlier=ifelse(HISAT3N<simulated*(1.0-!!diff_perc) | HISAT3N > simulated*(1.0+!!diff_perc),'outlier','no_outlier')) %>% 
   mutate(cat=case_when(
@@ -479,7 +327,8 @@ p1 = decay_fcr_tx %>%
                       breaks = NULL, labels = NULL)) +
   theme(legend.position="none", axis.title.y.right = element_text(angle=-90, vjust = 1.5)) +
   my_scales() +
-  ggtitle("FCR decay curves") 
+  ggtitle("FCR decay curves") +
+  xlab("timepoint")
   
   
 p2 = decay_halflifes_tx %>% 
@@ -488,22 +337,24 @@ p2 = decay_halflifes_tx %>%
   stat_summary(fun.data = function(x){return(c(y=0,label=length(na.omit(x))))}, 
                geom = "text", position = position_dodge(width = 0.75), size=2.5) +
   my_scales() +
-  scale_y_sqrt() + ylab("halflife") + xlab("decay rate") +
+  scale_y_sqrt() + ylab("halflife") + xlab("Decay rate") +
   ggtitle("Reconstructed halflifes")
 
 p3 = plot_corr( hlcorr_tx, 'simulated', 'STAR', 'STAR_outlier', shape='STAR_outlier', main_title='STAR', max_x=NA, xlog=T, show_legend=F ) +
   my_scales() +
-  geom_vline(xintercept = unique(truth_tx$hl), col='red', linetype='dotted')
+  geom_vline(xintercept = unique(truth_tx$hl), col='red', linetype='dotted') +
+  xlab("Simulated halflife") + ylab("STAR halflife")
 
 p4 = plot_corr( hlcorr_tx, 'simulated', 'HISAT3N', 'HISAT3N_outlier', shape='HISAT3N_outlier', main_title='HISAT3N', max_x=NA, xlog=T, show_legend=F ) +
   my_scales() +
-  geom_vline(xintercept = unique(truth_tx$hl), col='red', linetype='dotted')
+  geom_vline(xintercept = unique(truth_tx$hl), col='red', linetype='dotted') +
+  xlab("Simulated halflife") + ylab("HISAT3N halflife")
 
 p5 = hlcorr_tx %>% count(cat=cat) %>% 
   mutate(cat=factor(cat), cat=fct_reorder(cat, n, .desc=T)) %>% 
   ggplot(aes(cat, n)) + geom_col() + xlab("") +
   scale_y_sqrt() +
-  ylab("") +
+  ylab("# Transcripts") +
   my_scales() +
   coord_flip() 
 
@@ -519,10 +370,22 @@ p6 = hlcorr_tx %>%
   scale_y_sqrt() +
   coord_flip() +
   my_scales() +
-  xlab("") + ylab("")
+  xlab("") + ylab("# Outliers")
+
+p7 = decay_m[['tx']][['tp0']] %>% group_by(ftype) %>% count(mappability) %>% 
+  rename(genomic_mappability=mappability) %>% 
+  mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+  ggplot(aes(genomic_mappability, n, fill=genomic_mappability)) +
+  geom_col(position=position_dodge()) +
+  xlab("Genomic Mappability") + ylab("") + my_scales() + facet_wrap(.~ftype, scales = 'free') + 
+  theme(legend.position="none") +
+  ylab("# Transcripts") +
+  my_scales()
 
 
-my_plot_grid(list(p1,p2,p3,p4,p5,p6),  'Tx halflife reconstruction performance', labels = T, ncol = 2)
+upper=plot_grid(p1,p2,p3,p4, labels = c('A','B','C','D'), nrow = 2)
+lower=plot_grid(p5,p6,p7, labels = c('E','F','G'), nrow = 1, rel_widths = c(1,1.2,0.6))
+my_plot_grid(list(upper, lower),  'Tx halflife reconstruction performance', ncol = 1, rel_heights = c(2,1))
 ggsave(paste0(params$out_dir, 'special_decay_tx.pdf'), width=12, height=10)
 
 ```
@@ -617,7 +480,7 @@ decay_halflifes_in = decay_fcr_in %>%
 diff_perc=0.1
 hlcorr_in=decay_halflifes_in %>% 
   pivot_wider(names_from = mapper, values_from = hl, 
-              id_cols = c('tid', 'fid', 'mapper', 'mappability', 'decay_rate')) %>% 
+              id_cols = c('tid', 'fid', 'mappability', 'decay_rate')) %>% 
   mutate(STAR_outlier=ifelse(STAR<simulated*(1.0-!!diff_perc) | STAR > simulated*(1.0+!!diff_perc),'outlier','no_outlier'),
          HISAT3N_outlier=ifelse(HISAT3N<simulated*(1.0-!!diff_perc) | HISAT3N > simulated*(1.0+!!diff_perc),'outlier','no_outlier')) %>% 
   mutate(cat=case_when(
@@ -653,7 +516,8 @@ p1 = decay_fcr_in %>%
   scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", 
                       breaks = NULL, labels = NULL)) +
   theme(legend.position="none", axis.title.y.right = element_text(angle=-90, vjust = 1.5)) +
-  ggtitle("FCR decay curves") 
+  ggtitle("FCR decay curves") +
+  xlab("timepoint")
   
   
 p2 = decay_halflifes_in %>% 
@@ -662,22 +526,24 @@ p2 = decay_halflifes_in %>%
   my_scales() +
   stat_summary(fun.data = function(x){return(c(y=0,label=length(x)))}, 
                geom = "text", position = position_dodge(width = 0.75), size=2.5) +
-  scale_y_sqrt() + ylab("halflife") + xlab("decay rate") +
+  scale_y_sqrt() + ylab("halflife") + xlab("Decay rate") +
   ggtitle('Reconstructed halflifes')
 
 p3 = plot_corr( hlcorr_in, 'simulated', 'STAR', 'STAR_outlier', shape='STAR_outlier', main_title='STAR', max_x=NA, xlog=T, show_legend=F ) +
   my_scales() +
-  geom_vline(xintercept = unique(truth_in$hl), col='red', linetype='dotted')
+  geom_vline(xintercept = unique(truth_in$hl), col='red', linetype='dotted') +
+  xlab("Simulated halflife") + ylab("STAR halflife")
 
 p4 = plot_corr( hlcorr_in, 'simulated', 'HISAT3N', 'HISAT3N_outlier', shape='HISAT3N_outlier', main_title='HISAT3N', max_x=NA, xlog=T, show_legend=F ) +
   my_scales() +
-  geom_vline(xintercept = unique(truth_in$hl), col='red', linetype='dotted')
+  geom_vline(xintercept = unique(truth_in$hl), col='red', linetype='dotted') +
+  xlab("Simulated halflife") + ylab("HISAT3N halflife")
 
 p5 = hlcorr_in %>% count(cat=cat) %>% 
   mutate(cat=factor(cat), cat=fct_reorder(cat, n, .desc=T)) %>% 
   ggplot(aes(cat, n)) + geom_col() + xlab("") +
   scale_y_sqrt() +
-  ylab("") +
+  ylab("# Introns") +
   my_scales() +
   coord_flip() 
 
@@ -693,14 +559,46 @@ p6 = hlcorr_in %>%
   scale_y_sqrt() +
   coord_flip() +
   my_scales() +
-  xlab("") + ylab("")
+  xlab("") + ylab("# Outliers")
 
+p7 = decay_m[['in']][['tp0']] %>% group_by(ftype) %>% count(mappability) %>% 
+  rename(genomic_mappability=mappability) %>% 
+  mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+  ggplot(aes(genomic_mappability, n, fill=genomic_mappability)) +
+  geom_col(position=position_dodge()) +
+  xlab("Genomic Mappability") + ylab("# Introns") + 
+  facet_wrap(.~ftype, scales = 'free') + 
+  theme(legend.position="none") +
+  my_scales()
 
-my_plot_grid(list(p1,p2,p3,p4,p5,p6),  'Intron halflife reconstruction performance', labels = T, ncol = 2)
+upper=plot_grid(p1,p2,p3,p4, labels = c('A','B','C','D'), nrow = 2)
+lower=plot_grid(p5,p6,p7, labels = c('E','F','G'), nrow = 1, rel_widths = c(1,1.2,0.6))
+my_plot_grid(list(upper, lower),  'Intron halflife reconstruction performance', ncol = 1, rel_heights = c(2,1))
+
 ggsave(paste0(params$out_dir, 'special_decay_intron.pdf'), width=12, height=10)
 
 
 ```
 
 
+# _________
+# Suppl Figures
+
+## Fig S1
+
+<div class = "blue">
+<b>XXX</b>
+
+Number of annotations with high (>0.9), low (<0.2) and medium genomic mappability.
+</div>
+
+```{r}
+
+
+
+
+#my_plot_grid(list(f1a, f1b, f1c, f1d), 'Fig1', labels = T)
+ggsave(paste0(params$out_dir, 'special_decay_mappability.pdf'), width=8, height=4)
+
+```
 

@@ -59,14 +59,16 @@ calc_ci = function(d, col, min_lower_ci=NA, max_upper_ci=NA) {
 # calculate interquartile range (iqr), a measure of dispersion
 # call with mtcars %>% calc_iqr(mpg) or mtcars %>% group_by(cyl) %>% calc_iqr(mpg)
 # plot with  ... %>% ggplot(aes(x=cyl, y=col.median)) + geom_line() + geom_ribbon(aes(ymin=col.lower, ymax=col.upper), alpha=0.1 ...)
-calc_iqr = function(d, col) {
+calc_iqr = function(d, col, min_lower_ci=NA, max_upper_ci=NA) {
   d %>% summarise(
-    col.median = median({{col}}, na.rm = T),
-    #col.mean = mean({{col}}, na.rm = T),
-    col.upper = quantile({{col}}, .75, na.rm = T),
-    col.lower = quantile({{col}}, .25, na.rm = T),
+    col.median = median({{col}}, na.rm = TRUE),
+    #col.mean = mean({{col}}, na.rm = TRUE),
+    col.upper = quantile({{col}}, .75, na.rm = TRUE),
+    col.lower = quantile({{col}}, .25, na.rm = TRUE),
     col.n = n(),
-    .groups = 'drop')
+    .groups = 'drop') %>% 
+    mutate(col.lower = pmax(min_lower_ci, col.lower, na.rm=T),
+           col.upper = pmin(max_upper_ci, col.upper, na.rm=T))
 }
 
 # calculate outlier cutoffs based on IQR
@@ -75,10 +77,10 @@ calc_iqr = function(d, col) {
 # usage: mtcars %>% group_by(cyl) %>% calc_outlier(mpg)
 calc_outlier = function(d, col) {
   d %>% summarise(
-    col.median = median({{col}}, na.rm = T),
-    col.iqr = quantile({{col}}, .75, na.rm = T)-quantile({{col}}, .25, na.rm = T),
-    col.upper = quantile({{col}}, .75, na.rm = T) + 1.5 * col.iqr,
-    col.lower = quantile({{col}}, .25, na.rm = T) - 1.5 * col.iqr,
+    col.median = median({{col}}, na.rm = TRUE),
+    col.iqr = quantile({{col}}, .75, na.rm = TRUE)-quantile({{col}}, .25, na.rm = TRUE),
+    col.upper = quantile({{col}}, .75, na.rm = TRUE) + 1.5 * col.iqr,
+    col.lower = quantile({{col}}, .25, na.rm = TRUE) - 1.5 * col.iqr,
     col.n = n(),
     .groups = 'drop')
 }
@@ -110,20 +112,29 @@ calc_performance=function(tab, readlen) {
 }
 
 # calculate coverage for a grouped table
-calc_coverage = function(grp_tab) {
-  grp_tab %>% 
-    summarise(count=sum(count)) %>% 
-    pivot_wider(names_from=c(mapper,classification), values_from=count, names_sort=T) %>% 
-    mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>% 
-    filter(len>conf$readlen) %>% # filter too-short introns as this will lead to wrong coverage calc. Example: ENSMUST00000116560.2_in5
-    mutate(
-      simulated=(HISAT3N_TP+HISAT3N_FN)*!!conf$readlen/len, # same as simulated_star!
-      HISAT3N=(HISAT3N_TP+HISAT3N_FP)*!!conf$readlen/len,
-      STAR=(STAR_TP+STAR_FP)*!!conf$readlen/len,
-    ) %>% pivot_longer(c(simulated, HISAT3N, STAR), names_to='mapper') %>% 
-    mutate(mapper=factor(mapper, levels=c('simulated', 'HISAT3N', 'STAR')),
-           is_converted=ifelse(conversion_rate==0,'no conversions', 'converted reads')) %>% 
-    ungroup()
+# calc_coverage = function(grp_tab) {
+#   grp_tab %>% 
+#     summarise(count=sum(count)) %>% 
+#     pivot_wider(names_from=c(mapper,classification), values_from=count, names_sort=T) %>% 
+#     mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>% 
+#     filter(len>conf$readlen) %>% # filter too-short introns as this will lead to wrong coverage calc. Example: ENSMUST00000116560.2_in5
+#     mutate(
+#       simulated=(HISAT3N_TP+HISAT3N_FN)*!!conf$readlen/len, # same as simulated_star!
+#       HISAT3N=(HISAT3N_TP+HISAT3N_FP)*!!conf$readlen/len,
+#       STAR=(STAR_TP+STAR_FP)*!!conf$readlen/len,
+#     ) %>% pivot_longer(c(simulated, HISAT3N, STAR), names_to='mapper') %>% 
+#     mutate(mapper=factor(mapper, levels=c('simulated', 'HISAT3N', 'STAR')),
+#            is_converted=ifelse(conversion_rate==0,'no conversions', 'converted reads')) %>% 
+#     ungroup()
+# }
+
+#see https://github.com/tidyverse/dplyr/issues/4223
+named_group_split <- function(.tbl, ...) {
+  grouped <- group_by(.tbl, ...)
+  names <- rlang::inject(paste(!!!group_keys(grouped), sep = " / "))
+  grouped %>% 
+    group_split() %>% 
+    rlang::set_names(names)
 }
 
 # simple exponential decay model
@@ -167,16 +178,24 @@ calc_cor = function(d,a,b) {
 }
 
 # simple correlation plot
-plot_corr = function(d, a, b, col_, shape_=NULL, main_title=NA, xlog=F, draw_diag=T, max_x=NA, show_legend=T, alpha_=0.2) {
+plot_corr = function(d, a, b, col_, shape_=NULL, main_title=NA, xlog=F, use_hex=F, draw_diag=T, max_x=NA, show_legend=T, alpha_=0.2) {
   thecor = paste("r_pearson = ", round(cor(d[[a]], d[[b]], use = "complete.obs"), 4), 
                  "\nr_spearman = ", round(cor(d[[a]], d[[b]], use = "complete.obs", method="spearman"), 4),
                  "\nn =",nrow(na.omit(d %>% select(all_of(a),all_of(b))))  )
   if (is.na(main_title)) {
     main_title=paste0("Correlation between ",a," and ",b)
   }
-  p = ggplot( d, aes_string(x=a, y=b, col=col_, shape=shape_) ) +
-    geom_point(aes(alpha=alpha_))  +
-    ggtitle(main_title, thecor) 
+  
+  if ( use_hex) {
+    p = ggplot( d, aes_string(x=a, y=b) ) +
+      geom_hex(bins=100)
+  } else {
+    p = ggplot( d, aes_string(x=a, y=b, col=col_, shape=shape_) ) +
+      geom_point(aes(alpha=alpha_)) 
+  }
+  if (main_title!='') {
+    p=p+ggtitle(main_title, thecor) 
+  }
   if ( !is.na(max_x) ) {
     p=p+xlim(0,max_x)+ylim(0, max_x)
   }

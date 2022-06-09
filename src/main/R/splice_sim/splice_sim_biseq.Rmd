@@ -984,6 +984,30 @@ perf_Bs %>%
   scale_fill_brewer(palette = "Set1") +
   ggtitle('CR 98%: Median F1 per tx', 'by number of exons (high bismap mappability only)')
 
+perf %>%
+  dplyr::filter(conversion_rate == 0.98) %>%
+  group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(F1) %>%
+  dplyr::select(conversion_rate, mapper, mappability, true_isoform, ftype, col.median) %>%
+  dplyr::rename(F1_umap = col.median) %>%
+  dplyr::inner_join(
+    perf_Bs %>%
+      dplyr::filter(conversion_rate == 0.98) %>%
+      dplyr::rename(mappability = bs_mappability) %>%
+      group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(F1) %>%
+      dplyr::select(conversion_rate, mapper, mappability, true_isoform, ftype, col.median) %>%
+      dplyr::rename(F1_bismap = col.median)
+  ) %>%
+  dplyr::mutate(F1_diff = F1_umap - F1_bismap) %>%
+  dplyr::mutate(mappability = factor(mappability, levels = c("high","medium","low"))) %>%
+  ggplot(aes(mapper, F1_diff, fill=true_isoform)) +
+  geom_bar(stat="identity",position = position_dodge(width=-0.9),width=0.8) +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~ftype) +
+  ylab("F1 umap - F1 bismap") +
+  xlab("") +
+  scale_fill_brewer(palette = "Set1") +
+  ggtitle('98% CR F1 umap - F1 bismap')
+
 dev.off()
 ```
 
@@ -1060,217 +1084,252 @@ tibble(
   mappability = "umap", mapper = "STAR", true_isoform = "mat", ftype = "tx", cor = cor(
     perf %>% dplyr::filter(mapper == "STAR", true_isoform == "mat", ftype == "tx", conversion_rate == 0.98) %>% .$F1,
     perf %>% dplyr::filter(mapper == "STAR", true_isoform == "mat", ftype == "tx", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "umap", mapper = "STAR", true_isoform = "pre", ftype = "tx", cor = cor(
     perf %>% dplyr::filter(mapper == "STAR", true_isoform == "pre", ftype == "tx", conversion_rate == 0.98) %>% .$F1,
     perf %>% dplyr::filter(mapper == "STAR", true_isoform == "pre", ftype == "tx", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "umap", mapper = "STAR", true_isoform = "mat", ftype = "exon", cor = cor(
     perf %>% dplyr::filter(mapper == "STAR", true_isoform == "mat", ftype == "exon", conversion_rate == 0.98) %>% .$F1,
     perf %>% dplyr::filter(mapper == "STAR", true_isoform == "mat", ftype == "exon", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "umap", mapper = "STAR", true_isoform = "pre", ftype = "exon", cor = cor(
     perf %>% dplyr::filter(mapper == "STAR", true_isoform == "pre", ftype == "exon", conversion_rate == 0.98) %>% .$F1,
     perf %>% dplyr::filter(mapper == "STAR", true_isoform == "pre", ftype == "exon", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "umap", mapper = "STAR", true_isoform = "mat", ftype = "intron", cor = cor(
     perf %>% dplyr::filter(mapper == "STAR", true_isoform == "mat", ftype == "intron", conversion_rate == 0.98) %>% .$F1,
     perf %>% dplyr::filter(mapper == "STAR", true_isoform == "mat", ftype == "intron", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "umap", mapper = "STAR", true_isoform = "pre", ftype = "intron", cor = cor(
     perf %>% dplyr::filter(mapper == "STAR", true_isoform == "pre", ftype == "intron", conversion_rate == 0.98) %>% .$F1,
     perf %>% dplyr::filter(mapper == "STAR", true_isoform == "pre", ftype == "intron", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "umap", mapper = "MERANGS", true_isoform = "mat", ftype = "tx", cor = cor(
     perf %>% dplyr::filter(mapper == "MERANGS", true_isoform == "mat", ftype == "tx", conversion_rate == 0.98) %>% .$F1,
     perf %>% dplyr::filter(mapper == "MERANGS", true_isoform == "mat", ftype == "tx", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "umap", mapper = "MERANGS", true_isoform = "pre", ftype = "tx", cor = cor(
     perf %>% dplyr::filter(mapper == "MERANGS", true_isoform == "pre", ftype == "tx", conversion_rate == 0.98) %>% .$F1,
     perf %>% dplyr::filter(mapper == "MERANGS", true_isoform == "pre", ftype == "tx", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "umap", mapper = "MERANGS", true_isoform = "mat", ftype = "exon", cor = cor(
     perf %>% dplyr::filter(mapper == "MERANGS", true_isoform == "mat", ftype == "exon", conversion_rate == 0.98) %>% .$F1,
     perf %>% dplyr::filter(mapper == "MERANGS", true_isoform == "mat", ftype == "exon", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "umap", mapper = "MERANGS", true_isoform = "pre", ftype = "exon", cor = cor(
     perf %>% dplyr::filter(mapper == "MERANGS", true_isoform == "pre", ftype == "exon", conversion_rate == 0.98) %>% .$F1,
     perf %>% dplyr::filter(mapper == "MERANGS", true_isoform == "pre", ftype == "exon", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "umap", mapper = "MERANGS", true_isoform = "mat", ftype = "intron", cor = cor(
     perf %>% dplyr::filter(mapper == "MERANGS", true_isoform == "mat", ftype == "intron", conversion_rate == 0.98) %>% .$F1,
     perf %>% dplyr::filter(mapper == "MERANGS", true_isoform == "mat", ftype == "intron", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "umap", mapper = "MERANGS", true_isoform = "pre", ftype = "intron", cor = cor(
     perf %>% dplyr::filter(mapper == "MERANGS", true_isoform == "pre", ftype == "intron", conversion_rate == 0.98) %>% .$F1,
     perf %>% dplyr::filter(mapper == "MERANGS", true_isoform == "pre", ftype == "intron", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "umap", mapper = "HISAT3N", true_isoform = "mat", ftype = "tx", cor = cor(
     perf %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "mat", ftype == "tx", conversion_rate == 0.98) %>% .$F1,
     perf %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "mat", ftype == "tx", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "umap", mapper = "HISAT3N", true_isoform = "pre", ftype = "tx", cor = cor(
     perf %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "pre", ftype == "tx", conversion_rate == 0.98) %>% .$F1,
     perf %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "pre", ftype == "tx", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "umap", mapper = "HISAT3N", true_isoform = "mat", ftype = "exon", cor = cor(
     perf %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "mat", ftype == "exon", conversion_rate == 0.98) %>% .$F1,
     perf %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "mat", ftype == "exon", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "umap", mapper = "HISAT3N", true_isoform = "pre", ftype = "exon", cor = cor(
     perf %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "pre", ftype == "exon", conversion_rate == 0.98) %>% .$F1,
     perf %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "pre", ftype == "exon", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "umap", mapper = "HISAT3N", true_isoform = "mat", ftype = "intron", cor = cor(
     perf %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "mat", ftype == "intron", conversion_rate == 0.98) %>% .$F1,
     perf %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "mat", ftype == "intron", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "umap", mapper = "HISAT3N", true_isoform = "pre", ftype = "intron", cor = cor(
     perf %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "pre", ftype == "intron", conversion_rate == 0.98) %>% .$F1,
     perf %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "pre", ftype == "intron", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "bsmap", mapper = "STAR", true_isoform = "mat", ftype = "tx", cor = cor(
     perf_Bs %>% dplyr::filter(mapper == "STAR", true_isoform == "mat", ftype == "tx", conversion_rate == 0.98) %>% .$F1,
     perf_Bs %>% dplyr::filter(mapper == "STAR", true_isoform == "mat", ftype == "tx", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "bsmap", mapper = "STAR", true_isoform = "pre", ftype = "tx", cor = cor(
     perf_Bs %>% dplyr::filter(mapper == "STAR", true_isoform == "pre", ftype == "tx", conversion_rate == 0.98) %>% .$F1,
     perf_Bs %>% dplyr::filter(mapper == "STAR", true_isoform == "pre", ftype == "tx", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "bsmap", mapper = "STAR", true_isoform = "mat", ftype = "exon", cor = cor(
     perf_Bs %>% dplyr::filter(mapper == "STAR", true_isoform == "mat", ftype == "exon", conversion_rate == 0.98) %>% .$F1,
     perf_Bs %>% dplyr::filter(mapper == "STAR", true_isoform == "mat", ftype == "exon", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "bsmap", mapper = "STAR", true_isoform = "pre", ftype = "exon", cor = cor(
     perf_Bs %>% dplyr::filter(mapper == "STAR", true_isoform == "pre", ftype == "exon", conversion_rate == 0.98) %>% .$F1,
     perf_Bs %>% dplyr::filter(mapper == "STAR", true_isoform == "pre", ftype == "exon", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "bsmap", mapper = "STAR", true_isoform = "mat", ftype = "intron", cor = cor(
     perf_Bs %>% dplyr::filter(mapper == "STAR", true_isoform == "mat", ftype == "intron", conversion_rate == 0.98) %>% .$F1,
     perf_Bs %>% dplyr::filter(mapper == "STAR", true_isoform == "mat", ftype == "intron", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "bsmap", mapper = "STAR", true_isoform = "pre", ftype = "intron", cor = cor(
     perf_Bs %>% dplyr::filter(mapper == "STAR", true_isoform == "pre", ftype == "intron", conversion_rate == 0.98) %>% .$F1,
     perf_Bs %>% dplyr::filter(mapper == "STAR", true_isoform == "pre", ftype == "intron", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "bsmap", mapper = "MERANGS", true_isoform = "mat", ftype = "tx", cor = cor(
     perf_Bs %>% dplyr::filter(mapper == "MERANGS", true_isoform == "mat", ftype == "tx", conversion_rate == 0.98) %>% .$F1,
     perf_Bs %>% dplyr::filter(mapper == "MERANGS", true_isoform == "mat", ftype == "tx", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "bsmap", mapper = "MERANGS", true_isoform = "pre", ftype = "tx", cor = cor(
     perf_Bs %>% dplyr::filter(mapper == "MERANGS", true_isoform == "pre", ftype == "tx", conversion_rate == 0.98) %>% .$F1,
     perf_Bs %>% dplyr::filter(mapper == "MERANGS", true_isoform == "pre", ftype == "tx", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "bsmap", mapper = "MERANGS", true_isoform = "mat", ftype = "exon", cor = cor(
     perf_Bs %>% dplyr::filter(mapper == "MERANGS", true_isoform == "mat", ftype == "exon", conversion_rate == 0.98) %>% .$F1,
     perf_Bs %>% dplyr::filter(mapper == "MERANGS", true_isoform == "mat", ftype == "exon", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "bsmap", mapper = "MERANGS", true_isoform = "pre", ftype = "exon", cor = cor(
     perf_Bs %>% dplyr::filter(mapper == "MERANGS", true_isoform == "pre", ftype == "exon", conversion_rate == 0.98) %>% .$F1,
     perf_Bs %>% dplyr::filter(mapper == "MERANGS", true_isoform == "pre", ftype == "exon", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "bsmap", mapper = "MERANGS", true_isoform = "mat", ftype = "intron", cor = cor(
     perf_Bs %>% dplyr::filter(mapper == "MERANGS", true_isoform == "mat", ftype == "intron", conversion_rate == 0.98) %>% .$F1,
     perf_Bs %>% dplyr::filter(mapper == "MERANGS", true_isoform == "mat", ftype == "intron", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "bsmap", mapper = "MERANGS", true_isoform = "pre", ftype = "intron", cor = cor(
     perf_Bs %>% dplyr::filter(mapper == "MERANGS", true_isoform == "pre", ftype == "intron", conversion_rate == 0.98) %>% .$F1,
     perf_Bs %>% dplyr::filter(mapper == "MERANGS", true_isoform == "pre", ftype == "intron", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "bsmap", mapper = "HISAT3N", true_isoform = "mat", ftype = "tx", cor = cor(
     perf_Bs %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "mat", ftype == "tx", conversion_rate == 0.98) %>% .$F1,
     perf_Bs %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "mat", ftype == "tx", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "bsmap", mapper = "HISAT3N", true_isoform = "pre", ftype = "tx", cor = cor(
     perf_Bs %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "pre", ftype == "tx", conversion_rate == 0.98) %>% .$F1,
     perf_Bs %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "pre", ftype == "tx", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "bsmap", mapper = "HISAT3N", true_isoform = "mat", ftype = "exon", cor = cor(
     perf_Bs %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "mat", ftype == "exon", conversion_rate == 0.98) %>% .$F1,
     perf_Bs %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "mat", ftype == "exon", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "bsmap", mapper = "HISAT3N", true_isoform = "pre", ftype = "exon", cor = cor(
     perf_Bs %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "pre", ftype == "exon", conversion_rate == 0.98) %>% .$F1,
     perf_Bs %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "pre", ftype == "exon", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "bsmap", mapper = "HISAT3N", true_isoform = "mat", ftype = "intron", cor = cor(
     perf_Bs %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "mat", ftype == "intron", conversion_rate == 0.98) %>% .$F1,
     perf_Bs %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "mat", ftype == "intron", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
   )
 ),
 tibble(
   mappability = "bsmap", mapper = "HISAT3N", true_isoform = "pre", ftype = "intron", cor = cor(
     perf_Bs %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "pre", ftype == "intron", conversion_rate == 0.98) %>% .$F1,
     perf_Bs %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "pre", ftype == "intron", conversion_rate == 0.98) %>% .$mean_bs_map
-  )
+  ,method="spearman")
 )
 )
 

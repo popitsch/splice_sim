@@ -18,12 +18,14 @@ output:
 params:
     splice_sim_config:
        value: "/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/big4_slamseq_nf/splice_sim.config.json"
-    genome_tx_noise_config:
-       value: "/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/big4_slamseq_3endcounted_nf/splice_sim.config.json"
     transcriptome_3end_config:
        value: "/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/big4_slamseq_3end_transcriptomic_nf/splice_sim.config.json"
+    transcriptome_tx_noise_config:
+       value: "/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/big4_slamseq_3end_transcriptomic_nf_txnoise/splice_sim.config.json"
     genome_3end_config:
        value: "/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/big4_slamseq_3end_genomic_nf/splice_sim.config.json"
+    genome_tx_noise_config:
+       value: "/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/big4_slamseq_3endcounted_nf/splice_sim.config.json"
     out_dir:
        value: "/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/big4_slamseq_nf/analysis/"
 ---
@@ -261,6 +263,8 @@ clean_cache = function() {
   unlink(cached_files)
 }
 
+source('splice_sim_resources.R')
+
 ```
 
 
@@ -320,6 +324,39 @@ fx = d[['fx']] %>% left_join(m[['fx']], by='fid')
 fx20 = d_mq20[['fx']] %>% left_join(m[['fx']], by='fid') 
 
 # ===========================================================
+# 3' genome experiment
+# ===========================================================
+genome_3end_conf=fromJSON(paste(readLines(params$genome_3end_config), collapse=""))
+genome_3end_home_dir=paste0(dirname(params$genome_3end_config),'/')
+
+# results files (~45 G) 
+genome_3end_data_file=paste0(genome_3end_home_dir,'/eva/results/data.rds')
+genome_3end_data_file_mq20=paste0(genome_3end_home_dir,'/eva/results/data.mq20.rds')
+genome_3end_meta_file=paste0(genome_3end_home_dir,'/eva/results/meta.rds')
+  
+if (file.exists(genome_3end_data_file)) {
+  tic("load data")
+  d3g=readRDS(genome_3end_data_file)
+  d3g_mq20=readRDS(genome_3end_data_file_mq20)
+  toc()
+} else {
+  stop("Could not find data_file")
+}
+if (file.exists(genome_3end_meta_file)) {
+  tic("load metadata")
+  m3g=readRDS(genome_3end_meta_file)
+  toc()
+} else {
+  stop("Could not find meta_file")
+}
+
+# shortcuts
+tx3g = d3g[['tx']] %>% left_join(m3g[['tx']], by=c('fid'='tid')) 
+tx203g = d3g_mq20[['tx']] %>% left_join(m3g[['tx']], by=c('fid'='tid')) 
+fx3g = d3g[['fx']] %>% left_join(m3g[['fx']], by='fid') 
+fx203g = d3g_mq20[['fx']] %>% left_join(m3g[['fx']], by='fid') 
+
+# ===========================================================
 # tx-noise 3' genome experiment
 # ===========================================================
 txnoise_genome_3end_conf=fromJSON(paste(readLines(params$genome_tx_noise_config), collapse=""))
@@ -351,7 +388,6 @@ tx3ng = d3ng[['tx']] %>% left_join(m3ng[['tx']], by=c('fid'='tid'))
 tx203ng = d3ng_mq20[['tx']] %>% left_join(m3ng[['tx']], by=c('fid'='tid')) 
 fx3ng = d3ng[['fx']] %>% left_join(m3ng[['fx']], by='fid') 
 fx203ng = d3ng_mq20[['fx']] %>% left_join(m3ng[['fx']], by='fid') 
-
 
 # ===========================================================
 # 3' transcriptome experiment
@@ -387,37 +423,38 @@ fx3t = d3t[['fx']] %>% left_join(m3t[['fx']], by='fid')
 fx203t = d3t_mq20[['fx']] %>% left_join(m3t[['fx']], by='fid') 
 
 # ===========================================================
-# 3' genome experiment
+# tx-noise 3' transcriptome experiment
 # ===========================================================
-genome_3end_conf=fromJSON(paste(readLines(params$genome_3end_config), collapse=""))
-genome_3end_home_dir=paste0(dirname(params$genome_3end_config),'/')
+
+txnoise_transcriptome_3end_conf=fromJSON(paste(readLines(params$transcriptome_tx_noise_config), collapse=""))
+txnoise_transcriptome_3end_home_dir=paste0(dirname(params$transcriptome_tx_noise_config),'/')
 
 # results files (~45 G) 
-genome_3end_data_file=paste0(genome_3end_home_dir,'/eva/results/data.rds')
-genome_3end_data_file_mq20=paste0(genome_3end_home_dir,'/eva/results/data.mq20.rds')
-genome_3end_meta_file=paste0(genome_3end_home_dir,'/eva/results/meta.rds')
+txnoise_transcriptome_3end_data_file=paste0(txnoise_transcriptome_3end_home_dir,'/eva/results/data.rds')
+txnoise_transcriptome_3end_data_file_mq20=paste0(txnoise_transcriptome_3end_home_dir,'/eva/results/data.mq20.rds')
+txnoise_transcriptome_3end_meta_file=paste0(txnoise_transcriptome_3end_home_dir,'/eva/results/meta.rds')
   
-if (file.exists(genome_3end_data_file)) {
+if (file.exists(txnoise_transcriptome_3end_data_file)) {
   tic("load data")
-  d3g=readRDS(genome_3end_data_file)
-  d3g_mq20=readRDS(genome_3end_data_file_mq20)
+  d3nt=readRDS(txnoise_transcriptome_3end_data_file)
+  d3nt_mq20=readRDS(txnoise_transcriptome_3end_data_file_mq20)
   toc()
 } else {
   stop("Could not find data_file")
 }
-if (file.exists(genome_3end_meta_file)) {
+if (file.exists(txnoise_transcriptome_3end_meta_file)) {
   tic("load metadata")
-  m3g=readRDS(genome_3end_meta_file)
+  m3nt=readRDS(txnoise_transcriptome_3end_meta_file)
   toc()
 } else {
   stop("Could not find meta_file")
 }
 
-# shortcuts
-tx3g = d3g[['tx']] %>% left_join(m3g[['tx']], by=c('fid'='tid')) 
-tx203g = d3g_mq20[['tx']] %>% left_join(m3g[['tx']], by=c('fid'='tid')) 
-fx3g = d3g[['fx']] %>% left_join(m3g[['fx']], by='fid') 
-fx203g = d3g_mq20[['fx']] %>% left_join(m3g[['fx']], by='fid') 
+# shortcuts - join with transcriptome metadata
+tx3nt = d3nt[['tx']] %>% left_join(m3t[['tx']], by=c('fid'='tid')) 
+tx203nt = d3nt_mq20[['tx']] %>% left_join(m3t[['tx']], by=c('fid'='tid')) 
+fx3nt = d3nt[['fx']] %>% left_join(m3t[['fx']], by='fid') 
+fx203nt = d3nt_mq20[['fx']] %>% left_join(m3t[['fx']], by='fid') 
 
 # result tables
 results=list()
@@ -468,7 +505,25 @@ ggplot(non_na_counts, aes(x=name, y=frac)) +
   ylim(0,1) +
   coord_flip() 
 
+non_na_counts = count_na_per_column(c(setNames(d3nt, paste0('d_',names(d3t))),setNames(m3t, paste0('m_',names(m3t)))) )
+ggplot(non_na_counts, aes(x=name, y=frac)) +
+  geom_bar(stat='identity') +
+  facet_wrap(table~., scales = 'free') +
+  ggtitle("Fraction of NA counts per table column") + 
+  xlab("") + ylab("") +
+  ylim(0,1) +
+  coord_flip() 
+
 non_na_counts = count_na_per_column(c(setNames(d3g, paste0('d_',names(d3g))),setNames(m3g, paste0('m_',names(m3g)))) )
+ggplot(non_na_counts, aes(x=name, y=frac)) +
+  geom_bar(stat='identity') +
+  facet_wrap(table~., scales = 'free') +
+  ggtitle("Fraction of NA counts per table column") + 
+  xlab("") + ylab("") +
+  ylim(0,1) +
+  coord_flip() 
+
+non_na_counts = count_na_per_column(c(setNames(d3ng, paste0('d_',names(d3g))),setNames(m3g, paste0('m_',names(m3g)))) )
 ggplot(non_na_counts, aes(x=name, y=frac)) +
   geom_bar(stat='identity') +
   facet_wrap(table~., scales = 'free') +
@@ -494,8 +549,6 @@ found_tids=unique(d[['tx']] %>% pull(fid))
 found_tids_3t=unique(d3t[['tx']] %>% pull(fid))
 found_tids_3g=unique(d3g[['tx']] %>% pull(fid))
 all_tids = m[['all_tids']]
-
-upset(fromList(list(all = all_tids, full_length = found_tids, transcriptome = found_tids_3t, genome = found_tids_3g, genome_noise = found_tids_3ng)),order.by="freq")
 
 pdf(paste0(params$out_dir, 'qc_tids_ovlp.pdf'),onefile=FALSE)
 
@@ -754,6 +807,101 @@ hlines=tribble(
   100, 3
 )
 
+cov_tx_3nt = cache({
+  calc_coverage(tx3nt %>% group_by(mapper, conversion_rate, fid, len, classification ) ) 
+}, 'cov_tx_3nt', rerun = F)
+
+cov_tx2_3nt = cache({
+  calc_coverage(tx3nt %>% group_by(mapper, conversion_rate, fid, true_isoform, len, classification ) ) 
+}, 'cov_tx2_3nt', rerun = F)
+
+cov_fx_3nt = cache({
+ calc_coverage(fx3nt %>% group_by(mapper, conversion_rate, fid, true_isoform, ftype, len, classification ))
+}, 'cov_fx_3nt', rerun = F)
+
+cov_fx2_3nt = cache({
+  calc_coverage(fx3nt %>% group_by(mapper, conversion_rate, fid, ftype, len, classification ))
+}, 'cov_fx2_3nt', rerun = F)
+
+
+pdf(paste0(params$out_dir, 'cov_3end_transcriptome_txnoise.pdf'), width=12, height=10)
+
+p1 = cov_tx_3nt %>% 
+  ggplot(aes(x=mapper, y=value, fill=mapper)) + 
+  geom_boxplot() +
+  scale_y_sqrt() +
+  facet_grid(is_converted~., scales = 'free') +
+  geom_hline(data = hlines, aes(yintercept = y, linetype=factor(cat)), color = 'grey', show.legend=FALSE ) +
+  ggtitle('Coverage over tx interval') + theme(legend.position="none") + xlab('') + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+p2 = cov_fx_3nt %>% 
+  ggplot(aes(x=mapper, y=value, fill=mapper)) + geom_boxplot() +
+  scale_y_sqrt() +
+  geom_hline(data = hlines, aes(yintercept = y, linetype=factor(cat)), color = 'grey', show.legend=FALSE ) +
+  ggtitle('Coverage per genomic feature') +
+  facet_grid(is_converted~true_isoform+ftype, scales = 'free') + theme(legend.position="none") + xlab('') + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+p3 = cov_fx2_3nt %>% 
+  ggplot(aes(x=mapper, y=value, fill=mapper)) + geom_boxplot() +
+  scale_y_sqrt() +
+  geom_hline(data = hlines, aes(yintercept = y, linetype=factor(cat)), color = 'grey', show.legend=FALSE ) +
+  ggtitle('Coverage per genomic feature') +
+  facet_grid(is_converted~ftype, scales = 'free') + theme(legend.position="none") + xlab('') + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+p4 = cov_tx2_3nt %>% 
+  ggplot(aes(x=mapper, y=value, fill=mapper)) + geom_boxplot() +
+  scale_y_sqrt() +
+  geom_hline(data = hlines, aes(yintercept = y, linetype=factor(cat)), color = 'grey', show.legend=FALSE ) +
+  ggtitle('Coverage per isoform') +
+  facet_grid(is_converted~true_isoform, scales = 'free') + theme(legend.position="none") + xlab('') + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+my_plot_grid(list(p1,p2,p3,p4), nrow=2, labels=T, 'QC: Coverage for converted and unconverted reads')
+
+# final
+p1 = cov_fx_3nt %>% 
+  filter(is_converted=='no conversions') %>% 
+  ggplot(aes(x=mapper, y=value, fill=mapper)) + geom_boxplot() +
+  scale_y_sqrt() +
+  geom_hline(data = hlines, aes(yintercept = y, linetype=factor(cat)), color = 'grey', show.legend=FALSE ) +
+  ggtitle('Coverage per genomic feature') +
+  facet_grid(is_converted~true_isoform+ftype, scales = 'free') + theme(legend.position="none") + xlab('') + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+p2 = cov_fx_3nt %>% group_by(conversion_rate, ftype, true_isoform, mapper) %>% calc_ci(value) %>% 
+  ggplot(aes(x=conversion_rate, y=col.mean, col=mapper, group=mapper)) + 
+  geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  geom_line() +
+  ggtitle('Mean coverage per condition') +
+  facet_grid(.~true_isoform+ftype)
+
+my_plot_grid(list(p1,p2), labels=T, 'Coverage per mapper', nrow = 1)
+
+
+# calc_coverage(d[['tx']] %>% group_by(mapper, conversion_rate, fid, len, classification ) ) %>% group_by(conversion_rate,mapper) %>% summarise(m=mean(value)) %>% ggplot(aes(conversion_rate,m,fill=mapper)) + geom_bar(stat='identity', position = 'dodge') + ggtitle('Mean tx coverage per mapper and condition')
+
+# NOTE: why is intron/pre coverage so high?
+# I think this is because of an edge effect at intron/exon boundaries. Reads that overlap only 1 bp with intron are counted for their full rl. 
+# The longer the intron, the less this influence gets:
+# tab %>% filter(conversion_rate==0, mapper=='simulated') %>% ggplot(aes(len, value)) + geom_point() + facet_wrap(ftype~true_isoform, scales='free') + geom_vline(xintercept = 100, col='red')
+# for exons, this effect is reduced by the edge effect on the 1st and last exon:
+#tab %>% filter(conversion_rate==0, mapper=='simulated', ftype=='exon') %>% left_join(m[['fx']]) %>% mutate(is_edge=(rnk==1 | rnk==tx_rnk)) %>% 
+#  ggplot(aes(x=is_edge, y=value)) + geom_boxplot() + facet_wrap(ftype~true_isoform, scales='free') 
+
+
+#remove()
+
+dev.off()
+
+```
+
+```{r coverage4, include=T, echo=F, cache=T}
+
+hlines=tribble(
+  ~y,  ~cat,
+  0,   1,
+  50,  2,
+  100, 3
+)
+
 cov_tx_3g = cache({
   calc_coverage(tx3g %>% group_by(mapper, conversion_rate, fid, len, classification ) ) 
 }, 'cov_tx_3g', rerun = F)
@@ -840,6 +988,101 @@ dev.off()
 
 ```
 
+```{r coverage5, include=T, echo=F, cache=T}
+
+hlines=tribble(
+  ~y,  ~cat,
+  0,   1,
+  50,  2,
+  100, 3
+)
+
+cov_tx_3ng = cache({
+  calc_coverage(tx3ng %>% group_by(mapper, conversion_rate, fid, len, classification ) ) 
+}, 'cov_tx_3ng', rerun = F)
+
+cov_tx2_3ng = cache({
+  calc_coverage(tx3ng %>% group_by(mapper, conversion_rate, fid, true_isoform, len, classification ) ) 
+}, 'cov_tx2_3ng', rerun = F)
+
+cov_fx_3ng = cache({
+ calc_coverage(fx3ng %>% group_by(mapper, conversion_rate, fid, true_isoform, ftype, len, classification ))
+}, 'cov_fx_3ng', rerun = F)
+
+cov_fx2_3ng = cache({
+  calc_coverage(fx3ng %>% group_by(mapper, conversion_rate, fid, ftype, len, classification ))
+}, 'cov_fx2_3ng', rerun = F)
+
+
+pdf(paste0(params$out_dir, 'cov_3end_genome_txnoise.pdf'), width=12, height=10)
+
+p1 = cov_tx_3ng %>% 
+  ggplot(aes(x=mapper, y=value, fill=mapper)) + 
+  geom_boxplot() +
+  scale_y_sqrt() +
+  facet_grid(is_converted~., scales = 'free') +
+  geom_hline(data = hlines, aes(yintercept = y, linetype=factor(cat)), color = 'grey', show.legend=FALSE ) +
+  ggtitle('Coverage over tx interval') + theme(legend.position="none") + xlab('') + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+p2 = cov_fx_3ng %>% 
+  ggplot(aes(x=mapper, y=value, fill=mapper)) + geom_boxplot() +
+  scale_y_sqrt() +
+  geom_hline(data = hlines, aes(yintercept = y, linetype=factor(cat)), color = 'grey', show.legend=FALSE ) +
+  ggtitle('Coverage per genomic feature') +
+  facet_grid(is_converted~true_isoform+ftype, scales = 'free') + theme(legend.position="none") + xlab('') + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+p3 = cov_fx2_3ng %>% 
+  ggplot(aes(x=mapper, y=value, fill=mapper)) + geom_boxplot() +
+  scale_y_sqrt() +
+  geom_hline(data = hlines, aes(yintercept = y, linetype=factor(cat)), color = 'grey', show.legend=FALSE ) +
+  ggtitle('Coverage per genomic feature') +
+  facet_grid(is_converted~ftype, scales = 'free') + theme(legend.position="none") + xlab('') + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+p4 = cov_tx2_3ng %>% 
+  ggplot(aes(x=mapper, y=value, fill=mapper)) + geom_boxplot() +
+  scale_y_sqrt() +
+  geom_hline(data = hlines, aes(yintercept = y, linetype=factor(cat)), color = 'grey', show.legend=FALSE ) +
+  ggtitle('Coverage per isoform') +
+  facet_grid(is_converted~true_isoform, scales = 'free') + theme(legend.position="none") + xlab('') + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+my_plot_grid(list(p1,p2,p3,p4), nrow=2, labels=T, 'QC: Coverage for converted and unconverted reads')
+
+# final
+p1 = cov_fx_3ng %>% 
+  filter(is_converted=='no conversions') %>% 
+  ggplot(aes(x=mapper, y=value, fill=mapper)) + geom_boxplot() +
+  scale_y_sqrt() +
+  geom_hline(data = hlines, aes(yintercept = y, linetype=factor(cat)), color = 'grey', show.legend=FALSE ) +
+  ggtitle('Coverage per genomic feature') +
+  facet_grid(is_converted~true_isoform+ftype, scales = 'free') + theme(legend.position="none") + xlab('') + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+p2 = cov_fx_3ng %>% group_by(conversion_rate, ftype, true_isoform, mapper) %>% calc_ci(value) %>% 
+  ggplot(aes(x=conversion_rate, y=col.mean, col=mapper, group=mapper)) + 
+  geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  geom_line() +
+  ggtitle('Mean coverage per condition') +
+  facet_grid(.~true_isoform+ftype)
+
+my_plot_grid(list(p1,p2), labels=T, 'Coverage per mapper', nrow = 1)
+
+
+# calc_coverage(d[['tx']] %>% group_by(mapper, conversion_rate, fid, len, classification ) ) %>% group_by(conversion_rate,mapper) %>% summarise(m=mean(value)) %>% ggplot(aes(conversion_rate,m,fill=mapper)) + geom_bar(stat='identity', position = 'dodge') + ggtitle('Mean tx coverage per mapper and condition')
+
+# NOTE: why is intron/pre coverage so high?
+# I think this is because of an edge effect at intron/exon boundaries. Reads that overlap only 1 bp with intron are counted for their full rl. 
+# The longer the intron, the less this influence gets:
+# tab %>% filter(conversion_rate==0, mapper=='simulated') %>% ggplot(aes(len, value)) + geom_point() + facet_wrap(ftype~true_isoform, scales='free') + geom_vline(xintercept = 100, col='red')
+# for exons, this effect is reduced by the edge effect on the 1st and last exon:
+#tab %>% filter(conversion_rate==0, mapper=='simulated', ftype=='exon') %>% left_join(m[['fx']]) %>% mutate(is_edge=(rnk==1 | rnk==tx_rnk)) %>% 
+#  ggplot(aes(x=is_edge, y=value)) + geom_boxplot() + facet_wrap(ftype~true_isoform, scales='free') 
+
+
+#remove()
+
+dev.off()
+
+```
+
 
 ## Mappability comparison
 
@@ -869,9 +1112,11 @@ txmapcmp %>%
   dplyr::select(mappability, tid, everything()) %>%
   tidyr::gather(type, value, 3:5) %>%
   dplyr::mutate(type = factor(type, levels = c("gn","3end_gn","3end_tx"))) %>%
-  ggplot(aes(x=type, y = value)) +
+  ggplot(aes(x=type, y = value, fill = type)) +
   geom_boxplot() +
+  theme(legend.position="none") +
   facet_grid(~mappability) +
+  scale_fill_brewer(palette = "Set2") +
   ylab("Mappability") + xlab("") +
   ggtitle('Mappabilities across sequencing strategies')
 
@@ -879,8 +1124,33 @@ txmapcmp %>%
   dplyr::select(mappability, tid, everything()) %>%
   tidyr::gather(type, value, 3:5) %>%
   dplyr::mutate(type = factor(type, levels = c("gn","3end_gn","3end_tx"))) %>%
-  ggplot(aes(x=type, y = value)) +
+  ggplot(aes(x=type, y = value, fill = type)) +
+  geom_violin() +
+  theme(legend.position="none") +
+  facet_grid(~mappability) +
+  scale_fill_brewer(palette = "Set2") +
+  ylab("Mappability") + xlab("") +
+  ggtitle('Mappabilities across sequencing strategies')
+
+txmapcmp %>%
+  dplyr::select(mappability, tid, everything()) %>%
+  tidyr::gather(type, value, 3:5) %>%
+  dplyr::mutate(type = factor(type, levels = c("gn","3end_gn","3end_tx"))) %>%
+  ggplot(aes(x=type, y = value, fill = type)) +
   geom_boxplot() +
+  theme(legend.position="none") +
+  scale_fill_brewer(palette = "Set2") +
+  ylab("Mappability") + xlab("") +
+  ggtitle('Mappabilities across sequencing strategies')
+
+txmapcmp %>%
+  dplyr::select(mappability, tid, everything()) %>%
+  tidyr::gather(type, value, 3:5) %>%
+  dplyr::mutate(type = factor(type, levels = c("gn","3end_gn","3end_tx"))) %>%
+  ggplot(aes(x=type, y = value, fill = type)) +
+  geom_violin() +
+  theme(legend.position="none") +
+  scale_fill_brewer(palette = "Set2") +
   ylab("Mappability") + xlab("") +
   ggtitle('Mappabilities across sequencing strategies')
 
@@ -904,8 +1174,10 @@ upset(fromList(list(gn = mappabilityCmp %>% dplyr::filter(type == "gn", mappabil
 
 mappabilityCmp %>%
   dplyr::mutate(type = factor(type, levels = c("gn","3end_gn","3end_tx"))) %>%
-  ggplot(aes(x = type)) +
+  ggplot(aes(x = type, fill = type)) +
   geom_bar() +
+  theme(legend.position="none") +
+  scale_fill_brewer(palette = "Set2") +
   facet_wrap(~mappability) +
   xlab("") + ylab("# transcripts") +
   ggtitle('Transcripts per mappability class across sequencing strategies')
@@ -1071,17 +1343,6 @@ perf_fx = cache({
     ungroup()
 }, 'perf_fx', rerun = F)
 
-perf_fx3g = cache({
-  fx3g %>% 
-    select(-rnk) %>% rename(rnk=tx_rnk) %>% #mappability=tx_mappability; we could also use tx_mappability here?
-    group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
-             num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
-    calc_performance(conf$readlen) %>% 
-    mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
-    filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
-    ungroup()
-}, 'perf_fx3g', rerun = F)
-
 perf_tx3g = cache({
   tx3g %>% 
     group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
@@ -1092,27 +1353,6 @@ perf_tx3g = cache({
     ungroup()
 }, 'perf_tx3g', rerun = F)
 
-perf_fx3t = cache({
-  fx3t %>% 
-    select(-rnk) %>% rename(rnk=tx_rnk) %>% #mappability=tx_mappability; we could also use tx_mappability here?
-    group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
-             num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
-    calc_performance(conf$readlen) %>% 
-    mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
-    filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
-    ungroup()
-}, 'perf_fx3t', rerun = F)
-
-perf_tx3t = cache({
-  tx3t %>% 
-    group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
-             num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
-    calc_performance(conf$readlen) %>% 
-    mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
-    filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
-    ungroup()
-}, 'perf_tx3t', rerun = F)
-
 perf_fx3g = cache({
   fx3g %>% 
     select(-rnk) %>% rename(rnk=tx_rnk) %>% #mappability=tx_mappability; we could also use tx_mappability here?
@@ -1123,6 +1363,41 @@ perf_fx3g = cache({
     filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
     ungroup()
 }, 'perf_fx3g', rerun = F)
+
+perf_tx3g_gn_mappability = cache({
+  tx3g %>% 
+    dplyr::mutate(mappability = case_when(
+      fid %in% (tx %>% dplyr::filter(mappability == "high") %>% .$fid) ~ "high",
+      fid %in% (tx %>% dplyr::filter(mappability == "medium") %>% .$fid) ~ "medium",
+      fid %in% (tx %>% dplyr::filter(mappability == "low") %>% .$fid) ~ "low",
+      TRUE ~ as.character(mappability)
+    )) %>%
+    dplyr::mutate(mappability = factor(mappability, levels = c("high","medium","low"))) %>%
+    group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+             num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+    calc_performance(conf$readlen) %>% 
+    mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+    filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+    ungroup()
+}, 'perf_tx3g_gn_mappability', rerun = F)
+
+perf_fx3g_gn_mappability = cache({
+  fx3g %>% 
+    dplyr::mutate(mappability = case_when(
+      fid %in% (fx %>% dplyr::filter(mappability == "high") %>% .$fid) ~ "high",
+      fid %in% (fx %>% dplyr::filter(mappability == "medium") %>% .$fid) ~ "medium",
+      fid %in% (fx %>% dplyr::filter(mappability == "low") %>% .$fid) ~ "low",
+      TRUE ~ as.character(mappability)
+    )) %>%
+    dplyr::mutate(mappability = factor(mappability, levels = c("high","medium","low"))) %>%
+    select(-rnk) %>% rename(rnk=tx_rnk) %>% #mappability=tx_mappability; we could also use tx_mappability here?
+    group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+             num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+    calc_performance(conf$readlen) %>% 
+    mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+    filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+    ungroup()
+}, 'perf_fx3g_gn_mappability', rerun = F)
 
 perf_tx3ng = cache({
   tx3ng %>% 
@@ -1145,13 +1420,170 @@ perf_fx3ng = cache({
     ungroup()
 }, 'perf_fx3ng', rerun = F)
 
+perf_tx3ng_gn_mappability = cache({
+  tx3ng %>% 
+    dplyr::mutate(mappability = case_when(
+      fid %in% (tx %>% dplyr::filter(mappability == "high") %>% .$fid) ~ "high",
+      fid %in% (tx %>% dplyr::filter(mappability == "medium") %>% .$fid) ~ "medium",
+      fid %in% (tx %>% dplyr::filter(mappability == "low") %>% .$fid) ~ "low",
+      TRUE ~ as.character(mappability)
+    )) %>%
+    dplyr::mutate(mappability = factor(mappability, levels = c("high","medium","low"))) %>%
+    group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+             num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+    calc_performance(conf$readlen) %>% 
+    mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+    filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+    ungroup()
+}, 'perf_tx3ng_gn_mappability', rerun = F)
+
+perf_fx3ng_gn_mappability = cache({
+  fx3ng %>% 
+    dplyr::mutate(mappability = case_when(
+      fid %in% (fx %>% dplyr::filter(mappability == "high") %>% .$fid) ~ "high",
+      fid %in% (fx %>% dplyr::filter(mappability == "medium") %>% .$fid) ~ "medium",
+      fid %in% (fx %>% dplyr::filter(mappability == "low") %>% .$fid) ~ "low",
+      TRUE ~ as.character(mappability)
+    )) %>%
+    dplyr::mutate(mappability = factor(mappability, levels = c("high","medium","low"))) %>%
+    select(-rnk) %>% rename(rnk=tx_rnk) %>% #mappability=tx_mappability; we could also use tx_mappability here?
+    group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+             num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+    calc_performance(conf$readlen) %>% 
+    mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+    filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+    ungroup()
+}, 'perf_fx3ng_gn_mappability', rerun = F)
+
+perf_tx3t = cache({
+  tx3t %>% 
+    group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+             num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+    calc_performance(conf$readlen) %>% 
+    mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+    filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+    ungroup()
+}, 'perf_tx3t', rerun = F)
+
+perf_fx3t = cache({
+  fx3t %>% 
+    select(-rnk) %>% rename(rnk=tx_rnk) %>% #mappability=tx_mappability; we could also use tx_mappability here?
+    group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+             num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+    calc_performance(conf$readlen) %>% 
+    mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+    filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+    ungroup()
+}, 'perf_fx3t', rerun = F)
+
+perf_tx3t_gn_mappability = cache({
+  tx3t %>% 
+    dplyr::mutate(mappability = case_when(
+      fid %in% (tx %>% dplyr::filter(mappability == "high") %>% .$fid) ~ "high",
+      fid %in% (tx %>% dplyr::filter(mappability == "medium") %>% .$fid) ~ "medium",
+      fid %in% (tx %>% dplyr::filter(mappability == "low") %>% .$fid) ~ "low",
+      TRUE ~ as.character(mappability)
+    )) %>%
+    dplyr::mutate(mappability = factor(mappability, levels = c("high","medium","low"))) %>%
+    group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+             num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+    calc_performance(conf$readlen) %>% 
+    mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+    filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+    ungroup()
+}, 'perf_tx3t_gn_mappability', rerun = F)
+
+perf_fx3t_gn_mappability = cache({
+  fx3t %>% 
+    dplyr::mutate(mappability = case_when(
+      fid %in% (fx %>% dplyr::filter(mappability == "high") %>% .$fid) ~ "high",
+      fid %in% (fx %>% dplyr::filter(mappability == "medium") %>% .$fid) ~ "medium",
+      fid %in% (fx %>% dplyr::filter(mappability == "low") %>% .$fid) ~ "low",
+      TRUE ~ as.character(mappability)
+    )) %>%
+    dplyr::mutate(mappability = factor(mappability, levels = c("high","medium","low"))) %>%
+    select(-rnk) %>% rename(rnk=tx_rnk) %>% #mappability=tx_mappability; we could also use tx_mappability here?
+    group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+             num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+    calc_performance(conf$readlen) %>% 
+    mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+    filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+    ungroup()
+}, 'perf_fx3t_gn_mappability', rerun = F)
+
+perf_tx3nt = cache({
+  tx3nt %>% 
+    group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+             num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+    calc_performance(conf$readlen) %>% 
+    mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+    filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+    ungroup()
+}, 'perf_tx3nt', rerun = F)
+
+perf_fx3nt = cache({
+  fx3nt %>% 
+    select(-rnk) %>% rename(rnk=tx_rnk) %>% #mappability=tx_mappability; we could also use tx_mappability here?
+    group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+             num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+    calc_performance(conf$readlen) %>% 
+    mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+    filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+    ungroup()
+}, 'perf_fx3nt', rerun = F)
+
+perf_tx3nt_gn_mappability = cache({
+  tx3nt %>% 
+    dplyr::mutate(mappability = case_when(
+      fid %in% (tx %>% dplyr::filter(mappability == "high") %>% .$fid) ~ "high",
+      fid %in% (tx %>% dplyr::filter(mappability == "medium") %>% .$fid) ~ "medium",
+      fid %in% (tx %>% dplyr::filter(mappability == "low") %>% .$fid) ~ "low",
+      TRUE ~ as.character(mappability)
+    )) %>%
+    dplyr::mutate(mappability = factor(mappability, levels = c("high","medium","low"))) %>%
+    group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+             num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+    calc_performance(conf$readlen) %>% 
+    mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+    filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+    ungroup()
+}, 'perf_tx3nt_gn_mappability', rerun = F)
+
+perf_fx3nt_gn_mappability = cache({
+  fx3nt %>% 
+    dplyr::mutate(mappability = case_when(
+      fid %in% (fx %>% dplyr::filter(mappability == "high") %>% .$fid) ~ "high",
+      fid %in% (fx %>% dplyr::filter(mappability == "medium") %>% .$fid) ~ "medium",
+      fid %in% (fx %>% dplyr::filter(mappability == "low") %>% .$fid) ~ "low",
+      TRUE ~ as.character(mappability)
+    )) %>%
+    dplyr::mutate(mappability = factor(mappability, levels = c("high","medium","low"))) %>%
+    select(-rnk) %>% rename(rnk=tx_rnk) %>% #mappability=tx_mappability; we could also use tx_mappability here?
+    group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+             num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+    calc_performance(conf$readlen) %>% 
+    mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+    filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+    ungroup()
+}, 'perf_fx3nt_gn_mappability', rerun = F)
+
 perf = bind_rows(perf_tx, perf_fx) 
 
 perf3g = bind_rows(perf_tx3g, perf_fx3g)
 
-perf3t = bind_rows(perf_tx3t, perf_fx3t)
+perf3g_gn_mappability = bind_rows(perf_tx3g_gn_mappability, perf_fx3g_gn_mappability)
 
 perf3ng = bind_rows(perf_tx3ng, perf_fx3ng)
+
+perf3ng_gn_mappability = bind_rows(perf_tx3ng_gn_mappability, perf_fx3ng_gn_mappability)
+
+perf3t = bind_rows(perf_tx3t, perf_fx3t)
+
+perf3t_gn_mappability = bind_rows(perf_tx3t_gn_mappability, perf_fx3t_gn_mappability)
+
+perf3nt = bind_rows(perf_tx3nt, perf_fx3nt)
+
+perf3nt_gn_mappability = bind_rows(perf_tx3nt_gn_mappability, perf_fx3nt_gn_mappability)
 
 # Low genome mappability, high 3' end genome mappability
 
@@ -1203,6 +1635,28 @@ perf_low_genome_3end_gn = cache({
   ) %>% dplyr::mutate(tech = "3end_gn")
 }, 'perf_low_genome_3end_gn', rerun = F)
 
+perf_low_genome_3end_gn_txnoise = cache({
+  rbind(
+    tx3ng %>%
+      dplyr::filter(fid %in% toi) %>%
+      group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+               num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+      calc_performance(conf$readlen) %>% 
+      mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+      filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+      ungroup(),
+    fx3ng %>% 
+      dplyr::filter(tid %in% toi) %>%
+      select(-rnk) %>% rename(rnk=tx_rnk) %>% #mappability=tx_mappability; we could also use tx_mappability here?
+      group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+               num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+      calc_performance(conf$readlen) %>% 
+      mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+      filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+      ungroup()
+  ) %>% dplyr::mutate(tech = "3end_gn_txnoise")
+}, 'perf_low_genome_3end_gn_txnoise', rerun = F)
+
 perf_low_genome_3end_tx = cache({
   rbind(
     tx3t %>%
@@ -1224,6 +1678,28 @@ perf_low_genome_3end_tx = cache({
       ungroup()
   ) %>% dplyr::mutate(tech = "3end_tx")
 }, 'perf_low_genome_3end_tx', rerun = F)
+
+perf_low_genome_3end_tx_txnoise = cache({
+  rbind(
+    tx3nt %>%
+      dplyr::filter(fid %in% toi) %>%
+      group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+               num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+      calc_performance(conf$readlen) %>% 
+      mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+      filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+      ungroup(),
+    fx3nt %>% 
+      dplyr::filter(tid %in% toi) %>%
+      select(-rnk) %>% rename(rnk=tx_rnk) %>% #mappability=tx_mappability; we could also use tx_mappability here?
+      group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+               num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+      calc_performance(conf$readlen) %>% 
+      mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+      filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+      ungroup()
+  ) %>% dplyr::mutate(tech = "3end_tx_txnoise")
+}, 'perf_low_genome_3end_tx_txnoise', rerun = F)
 
 # High genome mappability, low 3' end genome mappability
 
@@ -1277,6 +1753,28 @@ perf_low_3end_genome_3end_gn = cache({
   ) %>% dplyr::mutate(tech = "3end_gn")
 }, 'perf_low_3end_genome_3end_gn', rerun = F)
 
+perf_low_3end_genome_3end_gn_txnoise = cache({
+  rbind(
+    tx3ng %>%
+      dplyr::filter(fid %in% toi) %>%
+      group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+               num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+      calc_performance(conf$readlen) %>% 
+      mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+      filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+      ungroup(),
+    fx3ng %>% 
+      dplyr::filter(tid %in% toi) %>%
+      select(-rnk) %>% rename(rnk=tx_rnk) %>% #mappability=tx_mappability; we could also use tx_mappability here?
+      group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+               num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+      calc_performance(conf$readlen) %>% 
+      mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+      filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+      ungroup()
+  ) %>% dplyr::mutate(tech = "3end_gn_txnoise")
+}, 'perf_low_3end_genome_3end_gn_txnoise', rerun = F)
+
 perf_low_3end_genome_3end_tx = cache({
   rbind(
     tx3t %>%
@@ -1298,6 +1796,28 @@ perf_low_3end_genome_3end_tx = cache({
       ungroup()
   ) %>% dplyr::mutate(tech = "3end_tx")
 }, 'perf_low_3end_genome_3end_tx', rerun = F)
+
+perf_low_3end_genome_3end_tx_txnoise = cache({
+  rbind(
+    tx3nt %>%
+      dplyr::filter(fid %in% toi) %>%
+      group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+               num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+      calc_performance(conf$readlen) %>% 
+      mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+      filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+      ungroup(),
+    fx3nt %>% 
+      dplyr::filter(tid %in% toi) %>%
+      select(-rnk) %>% rename(rnk=tx_rnk) %>% #mappability=tx_mappability; we could also use tx_mappability here?
+      group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+               num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+      calc_performance(conf$readlen) %>% 
+      mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+      filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+      ungroup()
+  ) %>% dplyr::mutate(tech = "3end_tx_txnoise")
+}, 'perf_low_3end_genome_3end_tx_txnoise', rerun = F)
 
 # High genome mappability, low 3' end transcriptome mappability
 
@@ -1351,6 +1871,28 @@ perf_low_3end_transcriptome_3end_gn = cache({
   ) %>% dplyr::mutate(tech = "3end_gn")
 }, 'perf_low_3end_transcriptome_3end_gn', rerun = F)
 
+perf_low_3end_transcriptome_3end_gn_txnoise = cache({
+  rbind(
+    tx3ng %>%
+      dplyr::filter(fid %in% toi) %>%
+      group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+               num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+      calc_performance(conf$readlen) %>% 
+      mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+      filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+      ungroup(),
+    fx3ng %>% 
+      dplyr::filter(tid %in% toi) %>%
+      select(-rnk) %>% rename(rnk=tx_rnk) %>% #mappability=tx_mappability; we could also use tx_mappability here?
+      group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+               num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+      calc_performance(conf$readlen) %>% 
+      mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+      filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+      ungroup()
+  ) %>% dplyr::mutate(tech = "3end_gn_txnoise")
+}, 'perf_low_3end_transcriptome_3end_gn_txnoise', rerun = F)
+
 perf_low_3end_transcriptome_3end_tx = cache({
   rbind(
     tx3t %>%
@@ -1372,6 +1914,28 @@ perf_low_3end_transcriptome_3end_tx = cache({
       ungroup()
   ) %>% dplyr::mutate(tech = "3end_tx")
 }, 'perf_low_3end_transcriptome_3end_tx', rerun = F)
+
+perf_low_3end_transcriptome_3end_tx_txnoise = cache({
+  rbind(
+    tx3nt %>%
+      dplyr::filter(fid %in% toi) %>%
+      group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+               num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+      calc_performance(conf$readlen) %>% 
+      mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+      filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+      ungroup(),
+    fx3nt %>% 
+      dplyr::filter(tid %in% toi) %>%
+      select(-rnk) %>% rename(rnk=tx_rnk) %>% #mappability=tx_mappability; we could also use tx_mappability here?
+      group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+               num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+      calc_performance(conf$readlen) %>% 
+      mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+      filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+      ungroup()
+  ) %>% dplyr::mutate(tech = "3end_tx_txnoise")
+}, 'perf_low_3end_transcriptome_3end_tx_txnoise', rerun = F)
 
 # Low genome convertibility, high 3' end genome convertibility
 
@@ -1423,6 +1987,29 @@ perf_conv_low_genome_3end_gn = cache({
   ) %>% dplyr::mutate(tech = "3end_gn")
 }, 'perf_conv_low_genome_3end_gn', rerun = F)
 
+
+perf_conv_low_genome_3end_gn_txnoise = cache({
+  rbind(
+    tx3ng %>%
+      dplyr::filter(fid %in% toi) %>%
+      group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+               num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+      calc_performance(conf$readlen) %>% 
+      mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+      filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+      ungroup(),
+    fx3ng %>% 
+      dplyr::filter(tid %in% toi) %>%
+      select(-rnk) %>% rename(rnk=tx_rnk) %>% #mappability=tx_mappability; we could also use tx_mappability here?
+      group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+               num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+      calc_performance(conf$readlen) %>% 
+      mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+      filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+      ungroup()
+  ) %>% dplyr::mutate(tech = "3end_gn_txnoise")
+}, 'perf_conv_low_genome_3end_gn_txnoise', rerun = F)
+
 perf_conv_low_genome_3end_tx = cache({
   rbind(
     tx3t %>%
@@ -1444,6 +2031,28 @@ perf_conv_low_genome_3end_tx = cache({
       ungroup()
   ) %>% dplyr::mutate(tech = "3end_tx")
 }, 'perf_conv_low_genome_3end_tx', rerun = F)
+
+perf_conv_low_genome_3end_tx_txnoise = cache({
+  rbind(
+    tx3nt %>%
+      dplyr::filter(fid %in% toi) %>%
+      group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+               num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+      calc_performance(conf$readlen) %>% 
+      mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+      filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+      ungroup(),
+    fx3nt %>% 
+      dplyr::filter(tid %in% toi) %>%
+      select(-rnk) %>% rename(rnk=tx_rnk) %>% #mappability=tx_mappability; we could also use tx_mappability here?
+      group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+               num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+      calc_performance(conf$readlen) %>% 
+      mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+      filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+      ungroup()
+  ) %>% dplyr::mutate(tech = "3end_tx_txnoise")
+}, 'perf_conv_low_genome_3end_tx_txnoise', rerun = F)
 
 # High genome convertibility, low 3' end genome convertibility
 
@@ -1497,6 +2106,28 @@ perf_conv_high_genome_3end_gn = cache({
   ) %>% dplyr::mutate(tech = "3end_gn")
 }, 'perf_conv_high_genome_3end_gn', rerun = F)
 
+perf_conv_high_genome_3end_gn_txnoise = cache({
+  rbind(
+    tx3ng %>%
+      dplyr::filter(fid %in% toi) %>%
+      group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+               num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+      calc_performance(conf$readlen) %>% 
+      mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+      filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+      ungroup(),
+    fx3ng %>% 
+      dplyr::filter(tid %in% toi) %>%
+      select(-rnk) %>% rename(rnk=tx_rnk) %>% #mappability=tx_mappability; we could also use tx_mappability here?
+      group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+               num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+      calc_performance(conf$readlen) %>% 
+      mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+      filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+      ungroup()
+  ) %>% dplyr::mutate(tech = "3end_gn_txnoise")
+}, 'perf_conv_high_genome_3end_gn_txnoise', rerun = F)
+
 perf_conv_high_genome_3end_tx = cache({
   rbind(
     tx3t %>%
@@ -1519,6 +2150,28 @@ perf_conv_high_genome_3end_tx = cache({
   ) %>% dplyr::mutate(tech = "3end_tx")
 }, 'perf_conv_high_genome_3end_tx', rerun = F)
 
+perf_conv_high_genome_3end_tx_txnoise = cache({
+  rbind(
+    tx3nt %>%
+      dplyr::filter(fid %in% toi) %>%
+      group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+               num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+      calc_performance(conf$readlen) %>% 
+      mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+      filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+      ungroup(),
+    fx3nt %>% 
+      dplyr::filter(tid %in% toi) %>%
+      select(-rnk) %>% rename(rnk=tx_rnk) %>% #mappability=tx_mappability; we could also use tx_mappability here?
+      group_by(mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+               num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+      calc_performance(conf$readlen) %>% 
+      mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+      filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+      ungroup()
+  ) %>% dplyr::mutate(tech = "3end_tx_txnoise")
+}, 'perf_conv_high_genome_3end_tx_txnoise', rerun = F)
+
 pdf(paste0(params$out_dir, 'map_perf.pdf'), width=8, height=6)
 
 perf %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(precision) %>% 
@@ -1535,7 +2188,7 @@ perf3g %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %
   #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
   facet_grid(mappability~ftype) +
   ylab("") +
-  ggtitle('Median precision per condition 3end genome') 
+  ggtitle('Median precision per condition 3end genome')
 
 perf3ng %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(precision) %>% 
   ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
@@ -1543,7 +2196,7 @@ perf3ng %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) 
   #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
   facet_grid(mappability~ftype) +
   ylab("") +
-  ggtitle('Median precision per condition 3end transcript-noise genome') 
+  ggtitle('Median precision per condition 3end genome tx noise') 
 
 perf3t %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(precision) %>% 
   ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
@@ -1551,7 +2204,15 @@ perf3t %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %
   #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
   facet_grid(mappability~ftype) +
   ylab("") +
-  ggtitle('Median precision per condition 3end transcriptome') 
+  ggtitle('Median precision per condition 3end transcriptome')
+
+perf3nt %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(precision) %>% 
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~ftype) +
+  ylab("") +
+  ggtitle('Median precision per condition 3end transcriptome tx noise')
 
 perf %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(recall) %>% 
   ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
@@ -1569,20 +2230,146 @@ perf3g %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %
   ylab("") +
   ggtitle('Median recall per condition 3end genome')
 
+perf3ng %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(recall) %>% 
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~ftype) +
+  ylab("") +
+  ggtitle('Median recall per condition 3end genome tx noise')
+
 perf3t %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(recall) %>% 
   ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
   geom_line() +
   #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
   facet_grid(mappability~ftype) +
   ylab("") +
-  ggtitle('Median recall per condition 3end transcriptome') 
+  ggtitle('Median recall per condition 3end transcriptome')
+
+perf3nt %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(recall) %>% 
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~ftype) +
+  ylab("") +
+  ggtitle('Median recall per condition 3end transcriptome tx noise') 
+
+techperf = rbind(
+  perf %>% dplyr::mutate(tech = "gn"),
+  perf3g_gn_mappability %>% dplyr::mutate(tech = "3end_gn"),
+  perf3ng_gn_mappability %>% dplyr::mutate(tech = "3end_gn_txnoise"),
+  perf3t_gn_mappability %>% dplyr::mutate(tech = "3end_tx"),
+  perf3nt_gn_mappability %>% dplyr::mutate(tech = "3end_tx_txnoise")
+) %>%
+  dplyr::mutate(tech = factor(tech, levels = c("gn","3end_gn","3end_gn_txnoise","3end_tx","3end_tx_txnoise")))
+
+techperf %>% group_by(ftype, mappability, tech, conversion_rate, mapper, true_isoform) %>% calc_iqr(precision) %>% 
+  dplyr::filter(ftype == "tx") %>%
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~tech, scales = 'free') +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "sequencing strategy", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5))+
+  ylab("precision") +
+  ggtitle('Median precision per mappability per sequencing strategy',subtitle="tx")
+
+techperf %>% group_by(ftype, mappability, tech, conversion_rate, mapper, true_isoform) %>% calc_iqr(recall) %>% 
+  dplyr::filter(ftype == "tx") %>%
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~tech, scales = 'free') +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "sequencing strategy", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5))+
+  ylab("recall") +
+  ggtitle('Median recall per mappability per sequencing strategy',subtitle="tx")
+
+techperf %>% group_by(ftype, mappability, tech, conversion_rate, mapper, true_isoform) %>% calc_iqr(F1) %>% 
+  dplyr::filter(ftype == "tx") %>%
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~tech, scales = 'free') +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "sequencing strategy", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5))+
+  ylab("F1") +
+  ggtitle('Median F1 per mappability per sequencing strategy',subtitle="tx")
+
+techperf %>% group_by(ftype, mappability, tech, conversion_rate, mapper, true_isoform) %>% calc_iqr(precision) %>% 
+  dplyr::filter(ftype == "exon") %>%
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~tech, scales = 'free') +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "sequencing strategy", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5))+
+  ylab("precision") +
+  ggtitle('Median precision per mappability per sequencing strategy',subtitle="exon")
+
+techperf %>% group_by(ftype, mappability, tech, conversion_rate, mapper, true_isoform) %>% calc_iqr(recall) %>% 
+  dplyr::filter(ftype == "exon") %>%
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~tech, scales = 'free') +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "sequencing strategy", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5))+
+  ylab("recall") +
+  ggtitle('Median recall per mappability per sequencing strategy',subtitle="exon")
+
+techperf %>% group_by(ftype, mappability, tech, conversion_rate, mapper, true_isoform) %>% calc_iqr(F1) %>% 
+  dplyr::filter(ftype == "exon") %>%
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~tech, scales = 'free') +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "sequencing strategy", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5))+
+  ylab("F1") +
+  ggtitle('Median F1 per mappability per sequencing strategy',subtitle="exon")
+
+techperf %>% group_by(ftype, mappability, tech, conversion_rate, mapper, true_isoform) %>% calc_iqr(precision) %>% 
+  dplyr::filter(ftype == "intron") %>%
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~tech, scales = 'free') +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "sequencing strategy", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5))+
+  ylab("precision") +
+  ggtitle('Median precision per mappability per sequencing strategy',subtitle="intron")
+
+techperf %>% group_by(ftype, mappability, tech, conversion_rate, mapper, true_isoform) %>% calc_iqr(recall) %>% 
+  dplyr::filter(ftype == "intron") %>%
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~tech, scales = 'free') +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "sequencing strategy", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5))+
+  ylab("recall") +
+  ggtitle('Median recall per mappability per sequencing strategy',subtitle="intron")
+
+techperf %>% group_by(ftype, mappability, tech, conversion_rate, mapper, true_isoform) %>% calc_iqr(F1) %>% 
+  dplyr::filter(ftype == "intron") %>%
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~tech, scales = 'free') +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "sequencing strategy", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5))+
+  ylab("F1") +
+  ggtitle('Median F1 per mappability per sequencing strategy',subtitle="intron")
 
 techperf = rbind(
   perf %>% dplyr::mutate(tech = "gn"),
   perf3g %>% dplyr::mutate(tech = "3end_gn"),
-  perf3t %>% dplyr::mutate(tech = "3end_tx")
+  perf3ng %>% dplyr::mutate(tech = "3end_gn_txnoise"),
+  perf3t %>% dplyr::mutate(tech = "3end_tx"),
+  perf3nt %>% dplyr::mutate(tech = "3end_tx_txnoise")
 ) %>%
-  dplyr::mutate(tech = factor(tech, levels = c("gn","3end_gn","3end_tx")))
+  dplyr::mutate(tech = factor(tech, levels = c("gn","3end_gn","3end_gn_txnoise","3end_tx","3end_tx_txnoise")))
 
 techperf %>% group_by(tech, conversion_rate, mapper, true_isoform, ftype) %>% calc_iqr(F1) %>% 
   ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
@@ -1603,9 +2390,11 @@ mapSummaryPlot %>%
 techperf = rbind(
   perf_low_genome_gn,
   perf_low_genome_3end_gn,
-  perf_low_genome_3end_tx
+  perf_low_genome_3end_gn_txnoise,
+  perf_low_genome_3end_tx,
+  perf_low_genome_3end_tx_txnoise
 ) %>%
-  dplyr::mutate(tech = factor(tech, levels = c("gn","3end_gn","3end_tx")))
+  dplyr::mutate(tech = factor(tech, levels = c("gn","3end_gn","3end_gn_txnoise","3end_tx","3end_tx_txnoise")))
 
 techperf %>% group_by(tech, conversion_rate, mapper, true_isoform, ftype) %>% calc_iqr(F1) %>% 
   ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
@@ -1620,9 +2409,11 @@ techperf %>% group_by(tech, conversion_rate, mapper, true_isoform, ftype) %>% ca
 techperf = rbind(
   perf_low_3end_genome_gn,
   perf_low_3end_genome_3end_gn,
-  perf_low_3end_genome_3end_tx
+  perf_low_3end_genome_3end_gn_txnoise,
+  perf_low_3end_genome_3end_tx,
+  perf_low_3end_genome_3end_tx_txnoise
 ) %>%
-  dplyr::mutate(tech = factor(tech, levels = c("gn","3end_gn","3end_tx")))
+  dplyr::mutate(tech = factor(tech, levels = c("gn","3end_gn","3end_gn_txnoise","3end_tx","3end_tx_txnoise")))
 
 techperf %>% group_by(tech, conversion_rate, mapper, true_isoform, ftype) %>% calc_iqr(F1) %>% 
   ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
@@ -1637,9 +2428,11 @@ techperf %>% group_by(tech, conversion_rate, mapper, true_isoform, ftype) %>% ca
 techperf = rbind(
   perf_low_3end_transcriptome_gn,
   perf_low_3end_transcriptome_3end_gn,
-  perf_low_3end_transcriptome_3end_tx
+  perf_low_3end_transcriptome_3end_gn_txnoise,
+  perf_low_3end_transcriptome_3end_tx,
+  perf_low_3end_transcriptome_3end_tx_txnoise
 ) %>%
-  dplyr::mutate(tech = factor(tech, levels = c("gn","3end_gn","3end_tx")))
+  dplyr::mutate(tech = factor(tech, levels = c("gn","3end_gn","3end_gn_txnoise","3end_tx","3end_tx_txnoise")))
 
 techperf %>% group_by(tech, conversion_rate, mapper, true_isoform, ftype) %>% calc_iqr(F1) %>% 
   ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
@@ -1660,9 +2453,11 @@ convertabilitySummaryPlot %>%
 techperf = rbind(
   perf_conv_low_genome_gn,
   perf_conv_low_genome_3end_gn,
-  perf_conv_low_genome_3end_tx
+  perf_conv_low_genome_3end_gn_txnoise,
+  perf_conv_low_genome_3end_tx,
+  perf_conv_low_genome_3end_tx_txnoise
 ) %>%
-  dplyr::mutate(tech = factor(tech, levels = c("gn","3end_gn","3end_tx")))
+  dplyr::mutate(tech = factor(tech, levels = c("gn","3end_gn","3end_gn_txnoise","3end_tx","3end_tx_txnoise")))
 
 techperf %>% group_by(tech, conversion_rate, mapper, true_isoform, ftype) %>% calc_iqr(F1) %>% 
   ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
@@ -1677,9 +2472,11 @@ techperf %>% group_by(tech, conversion_rate, mapper, true_isoform, ftype) %>% ca
 techperf = rbind(
   perf_conv_high_genome_gn,
   perf_conv_high_genome_3end_gn,
-  perf_conv_high_genome_3end_tx
+  perf_conv_high_genome_3end_gn_txnoise,
+  perf_conv_high_genome_3end_tx,
+  perf_conv_high_genome_3end_tx_txnoise
 ) %>%
-  dplyr::mutate(tech = factor(tech, levels = c("gn","3end_gn","3end_tx")))
+  dplyr::mutate(tech = factor(tech, levels = c("gn","3end_gn","3end_gn_txnoise","3end_tx","3end_tx_txnoise")))
 
 techperf %>% group_by(tech, conversion_rate, mapper, true_isoform, ftype) %>% calc_iqr(F1) %>% 
   ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
@@ -1701,6 +2498,16 @@ perf3g %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %
   ylab("F1") +
   ggtitle('Median F1 per condition 3end genome')
 
+perf3ng %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(F1) %>% 
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~ftype, scales = 'free') +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5))+
+  ylab("F1") +
+  ggtitle('Median F1 per condition 3end genome tx noise')
+
 perf3t %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(F1) %>% 
   ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
   geom_line() +
@@ -1709,7 +2516,17 @@ perf3t %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %
   scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
   theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5))+
   ylab("F1") +
-  ggtitle('Median F1 per condition 3end transcriptome') 
+  ggtitle('Median F1 per condition 3end transcriptome')
+
+perf3nt %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(F1) %>% 
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~ftype, scales = 'free') +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5))+
+  ylab("F1") +
+  ggtitle('Median F1 per condition 3end transcriptome tx noise')
 
 perf_tx %>% filter(mappability=='high') %>% 
   group_by(conversion_rate, mapper, true_isoform, num_exons) %>% calc_iqr(F1) %>% 
@@ -1731,7 +2548,18 @@ perf_tx3g %>% filter(mappability=='high') %>%
   scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
   theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5))+
   ylab("F1") +
-  ggtitle('Median F1 per 3end genome', 'by number of exons (high mappability only)') 
+  ggtitle('Median F1 per 3end genome', 'by number of exons (high mappability only)')
+
+perf_tx3ng %>% filter(mappability=='high') %>% 
+  group_by(conversion_rate, mapper, true_isoform, num_exons) %>% calc_iqr(F1) %>% 
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_wrap(num_exons~.) +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5))+
+  ylab("F1") +
+  ggtitle('Median F1 per 3end genome tx noise', 'by number of exons (high mappability only)') 
 
 perf_tx3t %>% filter(mappability=='high') %>% 
   group_by(conversion_rate, mapper, true_isoform, num_exons) %>% calc_iqr(F1) %>% 
@@ -1742,95 +2570,20 @@ perf_tx3t %>% filter(mappability=='high') %>%
   scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
   theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5))+
   ylab("F1") +
-  ggtitle('Median F1 per 3end transcriptome', 'by number of exons (high mappability only)') 
+  ggtitle('Median F1 per 3end transcriptome', 'by number of exons (high mappability only)')
+
+perf_tx3nt %>% filter(mappability=='high') %>% 
+  group_by(conversion_rate, mapper, true_isoform, num_exons) %>% calc_iqr(F1) %>% 
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_wrap(num_exons~.) +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5))+
+  ylab("F1") +
+  ggtitle('Median F1 per 3end transcriptome tx noise', 'by number of exons (high mappability only)') 
 
 dev.off()
-```
-
-### MAP result tables
-
-TODO: add mq20 F1 values?
-
-```{r map_results, include=F, echo=F, cache=T}
-calc_map_table = function(tab) {
-  tab = tab %>% 
-  select(fid, ftype, mapper, conversion_rate, classification, count) %>% 
-  group_by(fid, ftype, mapper, conversion_rate, classification) %>% 
-  summarise(count=sum(count), .groups='drop') %>%
-  pivot_wider(names_from=classification, values_from=count) %>%
-  mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>% 
-  mutate(F1=ifelse(((2*TP+FP+FN)>0) & (TP+FN>0),2*TP/(2*TP+FP+FN),NA))
-  
-  # calc F1 from conversion_rate==0 only
-  noconv=tab %>% filter(conversion_rate==0) %>% select(fid, mapper, ftype, F1_0=F1)
-  # create final table
-  tab = tab %>% group_by(fid,ftype,mapper) %>% 
-    summarise(TP=sum(TP), FP=sum(FP), FN=sum(FN), .groups='drop') %>% 
-    mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>% 
-    mutate(F1=ifelse(((2*TP+FP+FN)>0) & (TP+FN>0),2*TP/(2*TP+FP+FN),NA)) %>% # set F1 to NA if no reads were simulated for tx (e.g., because too short)
-    left_join(noconv, by=c('fid', 'mapper', 'ftype')) %>% # add F1_0
-    pivot_wider(names_from=mapper, values_from=c(F1_0, F1), id_cols=c('fid', 'ftype'))
-  
-  return(tab)
-}
-
-
-# result tables
-results[['map_tx_tab']] = tx %>% calc_map_table() %>% rename(tid='fid') %>% 
-  mutate(best_mapper_no_conv = ifelse(F1_0_HISAT3N-F1_0_STAR>0.05, 'HISAT3N',
-                               ifelse(F1_0_HISAT3N-F1_0_STAR< -0.05,'STAR','BOTH')),
-         best_mapper_conv = ifelse(F1_HISAT3N-F1_STAR>0.05, 'HISAT3N',
-                            ifelse(F1_HISAT3N-F1_STAR< -0.05,'STAR','BOTH'))) %>% 
-  left_join(m[['tx']], by=c('tid', 'ftype')) %>% 
-  left_join(m[['ga']], by=c('tid')) 
-
-results[['map_ex_tab']] = fx %>% filter(ftype=='exon') %>% calc_map_table() %>% 
-  mutate(best_mapper_no_conv = ifelse(F1_0_HISAT3N-F1_0_STAR>0.05, 'HISAT3N',
-                               ifelse(F1_0_HISAT3N-F1_0_STAR< -0.05,'STAR','BOTH')),
-         best_mapper_conv = ifelse(F1_HISAT3N-F1_STAR>0.05, 'HISAT3N',
-                            ifelse(F1_HISAT3N-F1_STAR< -0.05,'STAR','BOTH'))) %>% 
-  left_join(m[['fx']], by=c('fid', 'ftype')) %>% 
-  left_join(m[['ga']], by=c('tid')) 
-
-results[['map_in_tab']] = fx %>% filter(ftype=='intron') %>% calc_map_table() %>% 
-  mutate(best_mapper_no_conv = ifelse(F1_0_HISAT3N-F1_0_STAR>0.05, 'HISAT3N',
-                               ifelse(F1_0_HISAT3N-F1_0_STAR< -0.05,'STAR','BOTH')),
-         best_mapper_conv = ifelse(F1_HISAT3N-F1_STAR>0.05, 'HISAT3N',
-                            ifelse(F1_HISAT3N-F1_STAR< -0.05,'STAR','BOTH'))) %>% 
-  left_join(m[['fx']], by=c('fid', 'ftype')) %>% 
-  left_join(m[['ga']], by=c('tid')) 
-
-```
-
-
-### MAP Write BED file of best mapper 
-```{r, include=F, echo=F, eval=F}
-# ==============================================
-# write BED file of best mapper
-# ==============================================
-results[['map_tx_tab']] %>%
-  mutate(score=round(pmax(F1_HISAT3N, F1_STAR)*1000),
-         best_mapper=best_mapper_conv,
-         rgb=ifelse(best_mapper=='HISAT3N','255,0,0','0,255,0'),
-         start1=start,
-         end1=end
-         ) %>% 
-  arrange(chromosome, start) %>% 
-      select(chromosome,start,end,best_mapper,score,strand,start1,end1,rgb) %>%
-      write_bed(paste0(params$out_dir,'/best_mapper_map.include_converted.bed'),
-                paste0("best_mapper_map.include_converted"))
-
-results[['map_tx_tab']] %>%
-  mutate(score=round(pmax(F1_0_HISAT3N, F1_0_STAR)*1000),
-         best_mapper=best_mapper_no_conv,
-         rgb=ifelse(best_mapper=='HISAT3N','255,0,0','0,255,0'),
-         start1=start,
-         end1=end
-         ) %>% 
-  arrange(chromosome, start) %>% 
-      select(chromosome,start,end,best_mapper,score,strand,start1,end1,rgb) %>%
-      write_bed(paste0(params$out_dir,'/best_mapper_map.unconverted_only.bed'),
-                paste0("best_mapper_map.unconverted_only"))
 ```
 
 ## FCR
@@ -1985,6 +2738,80 @@ fcr_tab3g = fcr_perf3g %>%
              T ~ 'STAR')
          )
 
+fcr3ng = cache({
+  tx3ng %>% 
+    bind_rows(fx3ng) %>% 
+    group_by(fid, mapper, conversion_rate, classification, true_isoform, mappability, ftype) %>% 
+    summarise(all=sum(count), 
+              tc1=sum(count[cv1==1]), 
+              tc2=sum(count[cv2==1])) %>% 
+    pivot_wider(names_from=classification, values_from=c(all, tc1, tc2), names_sort=T) %>% 
+    mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>% 
+    mutate(
+      all_true =  all_TP+all_FN,
+      all_found = all_TP+all_FP,
+      tc1_true =  tc1_TP+tc1_FN,
+      tc1_found = tc1_TP+tc1_FP,
+      tc2_true =  tc2_TP+tc2_FN,
+      tc2_found = tc2_TP+tc2_FP,
+      true_fcr1 = ifelse(all_true>0,tc1_true/all_true,0),
+      found_fcr1 = ifelse(all_found>0,tc1_found/all_found,0),
+      true_fcr2 = ifelse(all_true>0,tc2_true/all_true,0),
+      found_fcr2 = ifelse(all_found>0,tc2_found/all_found,0),
+      # performance
+      all_precision=ifelse(all_TP+all_FP>0, all_TP/(all_TP+all_FP), NA),
+      all_recall=ifelse(all_TP+all_FN>0,all_TP/(all_TP+all_FN), NA),
+      all_F1=ifelse((2*all_TP+all_FP+all_FN)>0,2*all_TP/(2*all_TP+all_FP+all_FN),NA),
+      tc1_precision=ifelse(tc1_TP+tc1_FP>0, tc1_TP/(tc1_TP+tc1_FP), NA),
+      tc1_recall=ifelse(tc1_TP+tc1_FN>0,tc1_TP/(tc1_TP+tc1_FN), NA),
+      tc1_F1=ifelse((2*tc1_TP+tc1_FP+tc1_FN)>0,2*tc1_TP/(2*tc1_TP+tc1_FP+tc1_FN),NA),
+      tc2_precision=ifelse(tc2_TP+tc2_FP>0, tc2_TP/(tc2_TP+tc2_FP), NA),
+      tc2_recall=ifelse(tc2_TP+tc2_FN>0,tc2_TP/(tc2_TP+tc2_FN), NA),
+      tc2_F1=ifelse((2*tc2_TP+tc2_FP+tc2_FN)>0,2*tc2_TP/(2*tc2_TP+tc2_FP+tc2_FN),NA)
+  ) %>% 
+  mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron')))
+}, 'fcr3ng', rerun=F)
+
+# fcr %>% 
+#   filter(mapper=='STAR') %>% 
+#   ggplot(aes(conversion_rate, true_fcr1, alpha=0.1)) +
+#   geom_boxplot() +
+#   facet_grid(true_isoform~ftype+mappability) +
+#   ggtitle("QC: Simulated fcr per conversion rate")
+
+fcr_perf3ng = cache({
+  fcr3ng %>%
+    select(fid, conversion_rate,true_isoform,ftype,mappability,true_fcr1, found_fcr1) %>% 
+    ungroup() %>% 
+    pivot_wider(names_from=mapper, values_from=c(true_fcr1, found_fcr1)) %>% 
+    mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>%   # replace NA with 0; NA are resulting from mat not having introns. So if there are no FP values then there are no entries!
+    rename(simulated=true_fcr1_HISAT3N, HISAT3N=found_fcr1_HISAT3N, STAR=found_fcr1_STAR) %>%
+    select(-true_fcr1_STAR) %>% 
+    mutate(diff_HISAT3N=HISAT3N-simulated, 
+           diff_STAR=STAR-simulated,
+           best_diff=pmin(abs(diff_HISAT3N), abs(diff_STAR)),
+           best_mapper=case_when(
+             best_diff>0.1 ~ 'None',
+             abs(diff_HISAT3N)<0.05 & abs(diff_STAR)<0.05 ~ 'Both',
+             abs(diff_HISAT3N)<abs(diff_STAR) ~ 'HISAT3N',
+             T ~ 'STAR')
+           )
+}, 'fcr_perf3ng', rerun=F)
+
+# result tables
+fcr_tab3ng = fcr_perf3ng %>% 
+  filter(as.numeric(as.character(conversion_rate))>0) %>% 
+  group_by(fid, ftype) %>% 
+  summarise(m_diff_HISAT3N = mean(diff_HISAT3N,na.rm=T), 
+            m_diff_STAR = mean(diff_STAR,na.rm=T)) %>% 
+  mutate(best_m_diff=pmin(abs(m_diff_HISAT3N), abs(m_diff_STAR)),
+         best_mapper=case_when(
+             best_m_diff>0.1 ~ 'None',
+             abs(m_diff_HISAT3N)<0.05 & abs(m_diff_STAR)<0.05 ~ 'Both',
+             abs(m_diff_HISAT3N)<abs(m_diff_STAR) ~ 'HISAT3N',
+             T ~ 'STAR')
+         )
+
 fcr3t = cache({
   tx3t %>% 
     bind_rows(fx3t) %>% 
@@ -2059,6 +2886,80 @@ fcr_tab3t = fcr_perf3t %>%
              T ~ 'STAR')
          )
 
+fcr3nt = cache({
+  tx3nt %>% 
+    bind_rows(fx3nt) %>% 
+    group_by(fid, mapper, conversion_rate, classification, true_isoform, mappability, ftype) %>% 
+    summarise(all=sum(count), 
+              tc1=sum(count[cv1==1]), 
+              tc2=sum(count[cv2==1])) %>% 
+    pivot_wider(names_from=classification, values_from=c(all, tc1, tc2), names_sort=T) %>% 
+    mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>% 
+    mutate(
+      all_true =  all_TP+all_FN,
+      all_found = all_TP+all_FP,
+      tc1_true =  tc1_TP+tc1_FN,
+      tc1_found = tc1_TP+tc1_FP,
+      tc2_true =  tc2_TP+tc2_FN,
+      tc2_found = tc2_TP+tc2_FP,
+      true_fcr1 = ifelse(all_true>0,tc1_true/all_true,0),
+      found_fcr1 = ifelse(all_found>0,tc1_found/all_found,0),
+      true_fcr2 = ifelse(all_true>0,tc2_true/all_true,0),
+      found_fcr2 = ifelse(all_found>0,tc2_found/all_found,0),
+      # performance
+      all_precision=ifelse(all_TP+all_FP>0, all_TP/(all_TP+all_FP), NA),
+      all_recall=ifelse(all_TP+all_FN>0,all_TP/(all_TP+all_FN), NA),
+      all_F1=ifelse((2*all_TP+all_FP+all_FN)>0,2*all_TP/(2*all_TP+all_FP+all_FN),NA),
+      tc1_precision=ifelse(tc1_TP+tc1_FP>0, tc1_TP/(tc1_TP+tc1_FP), NA),
+      tc1_recall=ifelse(tc1_TP+tc1_FN>0,tc1_TP/(tc1_TP+tc1_FN), NA),
+      tc1_F1=ifelse((2*tc1_TP+tc1_FP+tc1_FN)>0,2*tc1_TP/(2*tc1_TP+tc1_FP+tc1_FN),NA),
+      tc2_precision=ifelse(tc2_TP+tc2_FP>0, tc2_TP/(tc2_TP+tc2_FP), NA),
+      tc2_recall=ifelse(tc2_TP+tc2_FN>0,tc2_TP/(tc2_TP+tc2_FN), NA),
+      tc2_F1=ifelse((2*tc2_TP+tc2_FP+tc2_FN)>0,2*tc2_TP/(2*tc2_TP+tc2_FP+tc2_FN),NA)
+  ) %>% 
+  mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron')))
+}, 'fcr3nt', rerun=F)
+
+# fcr %>% 
+#   filter(mapper=='STAR') %>% 
+#   ggplot(aes(conversion_rate, true_fcr1, alpha=0.1)) +
+#   geom_boxplot() +
+#   facet_grid(true_isoform~ftype+mappability) +
+#   ggtitle("QC: Simulated fcr per conversion rate")
+
+fcr_perf3nt = cache({
+  fcr3nt %>%
+    select(fid, conversion_rate,true_isoform,ftype,mappability,true_fcr1, found_fcr1) %>% 
+    ungroup() %>% 
+    pivot_wider(names_from=mapper, values_from=c(true_fcr1, found_fcr1)) %>% 
+    mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>%   # replace NA with 0; NA are resulting from mat not having introns. So if there are no FP values then there are no entries!
+    rename(simulated=true_fcr1_HISAT3N, HISAT3N=found_fcr1_HISAT3N, STAR=found_fcr1_STAR) %>%
+    select(-true_fcr1_STAR) %>% 
+    mutate(diff_HISAT3N=HISAT3N-simulated, 
+           diff_STAR=STAR-simulated,
+           best_diff=pmin(abs(diff_HISAT3N), abs(diff_STAR)),
+           best_mapper=case_when(
+             best_diff>0.1 ~ 'None',
+             abs(diff_HISAT3N)<0.05 & abs(diff_STAR)<0.05 ~ 'Both',
+             abs(diff_HISAT3N)<abs(diff_STAR) ~ 'HISAT3N',
+             T ~ 'STAR')
+           )
+}, 'fcr_perf3nt', rerun=F)
+
+# result tables
+fcr_tab3nt = fcr_perf3nt %>% 
+  filter(as.numeric(as.character(conversion_rate))>0) %>% 
+  group_by(fid, ftype) %>% 
+  summarise(m_diff_HISAT3N = mean(diff_HISAT3N,na.rm=T), 
+            m_diff_STAR = mean(diff_STAR,na.rm=T)) %>% 
+  mutate(best_m_diff=pmin(abs(m_diff_HISAT3N), abs(m_diff_STAR)),
+         best_mapper=case_when(
+             best_m_diff>0.1 ~ 'None',
+             abs(m_diff_HISAT3N)<0.05 & abs(m_diff_STAR)<0.05 ~ 'Both',
+             abs(m_diff_HISAT3N)<abs(m_diff_STAR) ~ 'HISAT3N',
+             T ~ 'STAR')
+         )
+
 ```
 
 ### FCR per condition
@@ -2099,6 +3000,18 @@ fcr_perf3g %>%
   scale_x_continuous() + xlab("conversion rate [%]") + ylab("Mean FCR") +
   facet_grid(true_isoform~ftype)
 
+fcr_perf3ng %>%
+  pivot_longer(c(simulated,HISAT3N, STAR)) %>% 
+  mutate(name=factor(name, levels=c('simulated', 'STAR', 'HISAT3N'))) %>% 
+  group_by(conversion_rate,true_isoform,ftype, name) %>% 
+  calc_ci(value) %>% 
+  ggplot(aes(x=as.numeric(as.character(conversion_rate))*100, y=col.mean, col=name, group=name, linetype=name)) + 
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  geom_line() +
+  ggtitle('Mean FCR per condition',subtitle="3'end genomic tx-noise") +
+  scale_x_continuous() + xlab("conversion rate [%]") + ylab("Mean FCR") +
+  facet_grid(true_isoform~ftype)
+
 fcr_perf3t %>%
   pivot_longer(c(simulated,HISAT3N, STAR)) %>% 
   mutate(name=factor(name, levels=c('simulated', 'STAR', 'HISAT3N'))) %>% 
@@ -2111,12 +3024,26 @@ fcr_perf3t %>%
   scale_x_continuous() + xlab("conversion rate [%]") + ylab("Mean FCR") +
   facet_grid(true_isoform~ftype)
 
+fcr_perf3nt %>%
+  pivot_longer(c(simulated,HISAT3N, STAR)) %>% 
+  mutate(name=factor(name, levels=c('simulated', 'STAR', 'HISAT3N'))) %>% 
+  group_by(conversion_rate,true_isoform,ftype, name) %>% 
+  calc_ci(value) %>% 
+  ggplot(aes(x=as.numeric(as.character(conversion_rate))*100, y=col.mean, col=name, group=name, linetype=name)) + 
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  geom_line() +
+  ggtitle('Mean FCR per condition',subtitle="3'end transcriptomic tx-noise") +
+  scale_x_continuous() + xlab("conversion rate [%]") + ylab("Mean FCR") +
+  facet_grid(true_isoform~ftype)
+
 fcrCompareTab = rbind(
   fcr_perf %>% dplyr::mutate(tech = "gn"),
   fcr_perf3g %>% dplyr::mutate(tech = "3end_gn"),
-  fcr_perf3t %>% dplyr::mutate(tech = "3end_tx")
+  fcr_perf3ng %>% dplyr::mutate(tech = "3end_gn_txnoise"),
+  fcr_perf3t %>% dplyr::mutate(tech = "3end_tx"),
+  fcr_perf3nt %>% dplyr::mutate(tech = "3end_tx_txnoise")
 ) %>%
-  dplyr::mutate(tech = factor(tech, levels = c("gn","3end_gn","3end_tx")))
+  dplyr::mutate(tech = factor(tech, levels = c("gn","3end_gn","3end_gn_txnoise","3end_tx","3end_tx_txnoise")))
 
 fcrCompareTab %>%
   dplyr::filter(ftype == "tx") %>%
@@ -2136,9 +3063,11 @@ toi = convertibilityClassAlluvia %>% dplyr::filter(gn == "low" & `3end_gn` == "h
 fcrCompareTab = rbind(
   fcr_perf %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "gn"),
   fcr_perf3g %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "3end_gn"),
-  fcr_perf3t %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "3end_tx")
+  fcr_perf3ng %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "3end_gn_txnoise"),
+  fcr_perf3t %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "3end_tx"),
+  fcr_perf3nt %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "3end_tx_txnoise")
 ) %>%
-  dplyr::mutate(tech = factor(tech, levels = c("gn","3end_gn","3end_tx")))
+  dplyr::mutate(tech = factor(tech, levels = c("gn","3end_gn","3end_gn_txnoise","3end_tx","3end_tx_txnoise")))
 
 fcrCompareTab %>%
   dplyr::filter(ftype == "tx") %>%
@@ -2158,9 +3087,11 @@ toi = convertibilityClassAlluvia %>% dplyr::filter(gn == "high" & `3end_gn` == "
 fcrCompareTab = rbind(
   fcr_perf %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "gn"),
   fcr_perf3g %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "3end_gn"),
-  fcr_perf3t %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "3end_tx")
+  fcr_perf3ng %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "3end_gn_txnoise"),
+  fcr_perf3t %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "3end_tx"),
+  fcr_perf3nt %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "3end_tx_txnoise")
 ) %>%
-  dplyr::mutate(tech = factor(tech, levels = c("gn","3end_gn","3end_tx")))
+  dplyr::mutate(tech = factor(tech, levels = c("gn","3end_gn","3end_gn_txnoise","3end_tx","3end_tx_txnoise")))
 
 fcrCompareTab %>%
   dplyr::filter(ftype == "tx") %>%
@@ -2180,9 +3111,11 @@ toi = mappabilityClassAlluvia %>% dplyr::filter(gn == "low" & `3end_gn` == "high
 fcrCompareTab = rbind(
   fcr_perf %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "gn"),
   fcr_perf3g %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "3end_gn"),
-  fcr_perf3t %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "3end_tx")
+  fcr_perf3ng %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "3end_gn_txnoise"),
+  fcr_perf3t %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "3end_tx"),
+  fcr_perf3nt %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "3end_tx_txnoise")
 ) %>%
-  dplyr::mutate(tech = factor(tech, levels = c("gn","3end_gn","3end_tx")))
+  dplyr::mutate(tech = factor(tech, levels = c("gn","3end_gn","3end_gn_txnoise","3end_tx","3end_tx_txnoise")))
 
 fcrCompareTab %>%
   dplyr::filter(ftype == "tx") %>%
@@ -2202,9 +3135,11 @@ toi = mappabilityClassAlluvia %>% dplyr::filter(gn == "high" & `3end_gn` == "low
 fcrCompareTab = rbind(
   fcr_perf %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "gn"),
   fcr_perf3g %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "3end_gn"),
-  fcr_perf3t %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "3end_tx")
+  fcr_perf3ng %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "3end_gn_txnoise"),
+  fcr_perf3t %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "3end_tx"),
+  fcr_perf3nt %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "3end_tx_txnoise")
 ) %>%
-  dplyr::mutate(tech = factor(tech, levels = c("gn","3end_gn","3end_tx")))
+  dplyr::mutate(tech = factor(tech, levels = c("gn","3end_gn","3end_gn_txnoise","3end_tx","3end_tx_txnoise")))
 
 fcrCompareTab %>%
   dplyr::filter(ftype == "tx") %>%
@@ -2224,9 +3159,11 @@ toi = mappabilityClassAlluvia %>% dplyr::filter(gn == "high" & `3end_tx` == "low
 fcrCompareTab = rbind(
   fcr_perf %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "gn"),
   fcr_perf3g %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "3end_gn"),
-  fcr_perf3t %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "3end_tx")
+  fcr_perf3ng %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "3end_gn_txnoise"),
+  fcr_perf3t %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "3end_tx"),
+  fcr_perf3nt %>% dplyr::filter(fid %in% toi) %>% dplyr::mutate(tech = "3end_tx_txnoise")
 ) %>%
-  dplyr::mutate(tech = factor(tech, levels = c("gn","3end_gn","3end_tx")))
+  dplyr::mutate(tech = factor(tech, levels = c("gn","3end_gn","3end_gn_txnoise","3end_tx","3end_tx_txnoise")))
 
 fcrCompareTab %>%
   dplyr::filter(ftype == "tx") %>%
@@ -2242,6 +3179,122 @@ fcrCompareTab %>%
   facet_grid(tech~true_isoform)
 
 dev.off()
+
+f2a = fcr_perf %>% 
+  filter(ftype=='exon') %>% 
+  pivot_longer(cols=c(diff_HISAT3N, diff_STAR)) %>% 
+  group_by(ftype, conversion_rate, true_isoform, mappability, name) %>% 
+  calc_ci(value) %>% 
+  ggplot(aes(x=as.numeric(as.character(conversion_rate))*100, y=col.mean, col=name, group=name, linetype=name)) + 
+  geom_hline(yintercept = 0, col='black') +
+  geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  geom_line() +
+  facet_grid(true_isoform~mappability) +
+  scale_x_continuous() + xlab("conversion rate [%]") + ylab("Mean difference to simulated FCR") +
+  ggtitle("Mean difference to simulated FCR in exonic regions full-length transcripts")
+
+f2b = fcr_perf3g %>% 
+  filter(ftype=='exon') %>% 
+  pivot_longer(cols=c(diff_HISAT3N, diff_STAR)) %>% 
+  group_by(ftype, conversion_rate, true_isoform, mappability, name) %>% 
+  calc_ci(value) %>% 
+  ggplot(aes(x=as.numeric(as.character(conversion_rate))*100, y=col.mean, col=name, group=name, linetype=name)) + 
+  geom_hline(yintercept = 0, col='black') +
+  geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  geom_line() +
+  facet_grid(true_isoform~mappability) +
+  scale_x_continuous() + xlab("conversion rate [%]") + ylab("Mean difference to simulated FCR") +
+  ggtitle("3end genomic")
+
+f2c = fcr_perf3ng %>% 
+  filter(ftype=='exon') %>% 
+  pivot_longer(cols=c(diff_HISAT3N, diff_STAR)) %>% 
+  group_by(ftype, conversion_rate, true_isoform, mappability, name) %>% 
+  calc_ci(value) %>% 
+  ggplot(aes(x=as.numeric(as.character(conversion_rate))*100, y=col.mean, col=name, group=name, linetype=name)) + 
+  geom_hline(yintercept = 0, col='black') +
+  geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  geom_line() +
+  facet_grid(true_isoform~mappability) +
+  scale_x_continuous() + xlab("conversion rate [%]") + ylab("Mean difference to simulated FCR") +
+  ggtitle("3end genomic tx-noise")
+
+f2d = fcr_perf3t %>% 
+  filter(ftype=='exon') %>% 
+  pivot_longer(cols=c(diff_HISAT3N, diff_STAR)) %>% 
+  group_by(ftype, conversion_rate, true_isoform, mappability, name) %>% 
+  calc_ci(value) %>% 
+  ggplot(aes(x=as.numeric(as.character(conversion_rate))*100, y=col.mean, col=name, group=name, linetype=name)) + 
+  geom_hline(yintercept = 0, col='black') +
+  geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  geom_line() +
+  facet_grid(true_isoform~mappability) +
+  scale_x_continuous() + xlab("conversion rate [%]") + ylab("Mean difference to simulated FCR") +
+  ggtitle("3end transcriptomic")
+
+f2e = fcr_perf3nt %>% 
+  filter(ftype=='exon') %>% 
+  pivot_longer(cols=c(diff_HISAT3N, diff_STAR)) %>% 
+  group_by(ftype, conversion_rate, true_isoform, mappability, name) %>% 
+  calc_ci(value) %>% 
+  ggplot(aes(x=as.numeric(as.character(conversion_rate))*100, y=col.mean, col=name, group=name, linetype=name)) + 
+  geom_hline(yintercept = 0, col='black') +
+  geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  geom_line() +
+  facet_grid(true_isoform~mappability) +
+  scale_x_continuous() + xlab("conversion rate [%]") + ylab("Mean difference to simulated FCR") +
+  ggtitle("3end transcriptomic tx-noise")
+
+my_plot_grid(list(f2b, f2c, f2d, f2e), 'Fig2', labels = T)
+
+ggsave(paste0(params$out_dir, 'Fig2a.pdf'), width=12, height=10)
+
+my_plot_grid(list(f2a, f2b, f2c, f2d, f2e), 'Fig2', labels = T)
+
+ggsave(paste0(params$out_dir, 'Fig2b.pdf'), width=18, height=7)
+
+f2a = rbind(
+  fcr_perf %>% filter(ftype=='exon') %>% dplyr::mutate(tech = "gn"),
+  fcr_perf3g %>% filter(ftype=='exon') %>% dplyr::mutate(tech = "3end_gn"),
+  fcr_perf3ng %>% filter(ftype=='exon') %>% dplyr::mutate(tech = "3end_gn_txnoise"),
+  fcr_perf3t %>% filter(ftype=='exon') %>% dplyr::mutate(tech = "3end_tx"),
+  fcr_perf3nt %>% filter(ftype=='exon') %>% dplyr::mutate(tech = "3end_tx_txnoise")
+  ) %>%
+  dplyr::mutate(tech = factor(tech, levels = c("gn","3end_gn","3end_gn_txnoise","3end_tx","3end_tx_txnoise"))) %>%
+  group_by(ftype, conversion_rate, true_isoform, mappability, tech) %>% 
+  calc_ci(diff_STAR) %>% 
+  ggplot(aes(x=as.numeric(as.character(conversion_rate))*100, y=col.mean, col=tech, group=tech, linetype=tech)) + 
+  geom_hline(yintercept = 0, col='black') +
+  geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  geom_line() +
+  scale_color_brewer(palette = "Set1") +
+  facet_grid(true_isoform~mappability) +
+  scale_x_continuous() + xlab("conversion rate [%]") + ylab("Mean difference to simulated FCR") +
+  ggtitle("Mean difference to simulated FCR in exonic regions STAR") +
+  ylim(-0.37,0.047)
+
+f2b = rbind(
+  fcr_perf %>% filter(ftype=='exon') %>% dplyr::mutate(tech = "gn"),
+  fcr_perf3g %>% filter(ftype=='exon') %>% dplyr::mutate(tech = "3end_gn"),
+  fcr_perf3ng %>% filter(ftype=='exon') %>% dplyr::mutate(tech = "3end_gn_txnoise"),
+  fcr_perf3t %>% filter(ftype=='exon') %>% dplyr::mutate(tech = "3end_tx"),
+  fcr_perf3nt %>% filter(ftype=='exon') %>% dplyr::mutate(tech = "3end_tx_txnoise")
+  ) %>%
+  dplyr::mutate(tech = factor(tech, levels = c("gn","3end_gn","3end_gn_txnoise","3end_tx","3end_tx_txnoise"))) %>%
+  group_by(ftype, conversion_rate, true_isoform, mappability, tech) %>% 
+  calc_ci(diff_HISAT3N) %>% 
+  ggplot(aes(x=as.numeric(as.character(conversion_rate))*100, y=col.mean, col=tech, group=tech, linetype=tech)) + 
+  geom_hline(yintercept = 0, col='black') +
+  geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  geom_line() +
+  scale_color_brewer(palette = "Set1") +
+  facet_grid(true_isoform~mappability) +
+  scale_x_continuous() + xlab("conversion rate [%]") + ylab("Mean difference to simulated FCR") +
+  ggtitle("Mean difference to simulated FCR in exonic regions HISAT-3N") +
+  ylim(-0.37,0.047)
+
+my_plot_grid(list(f2a, f2b), 'Fig2', labels = T)
+ggsave(paste0(params$out_dir, 'Fig2c.pdf'), width=14, height=5)
 
 ```
 
@@ -2262,14 +3315,22 @@ cross_fcr_perf = fcr_perf %>%
                      dplyr::select(fid, conversion_rate, true_isoform, ftype,best_diff) %>%
                      dplyr::rename(best_diff_3gn = best_diff)
   ) %>%
+  dplyr::full_join(fcr_perf3ng %>%
+                     dplyr::select(fid, conversion_rate, true_isoform, ftype,best_diff) %>%
+                     dplyr::rename(best_diff_3gn_txnoise = best_diff)
+  ) %>%
   dplyr::full_join(fcr_perf3t %>%
                      dplyr::select(fid, conversion_rate, true_isoform, ftype,best_diff) %>%
                      dplyr::rename(best_diff_3t = best_diff)
+  ) %>%
+  dplyr::full_join(fcr_perf3nt %>%
+                     dplyr::select(fid, conversion_rate, true_isoform, ftype,best_diff) %>%
+                     dplyr::rename(best_diff_3t_txnoise = best_diff)
   )
 
 cross_fcr_perf %>% 
   filter(ftype=='tx', true_isoform=='mat') %>% 
-  pivot_longer(c(best_diff_gn, best_diff_3gn, best_diff_3t)) %>% 
+  pivot_longer(c(best_diff_gn, best_diff_3gn, best_diff_3gn_txnoise, best_diff_3t, best_diff_3t_txnoise)) %>% 
   ggplot(aes(x=conversion_rate, y=value, col=name)) +
   geom_boxplot() +
   facet_zoom(ylim=c(-0.01, 0.01)) +
@@ -2280,7 +3341,7 @@ toi = convertibilityClassAlluvia %>% dplyr::filter(gn == "low" & `3end_gn` == "h
 cross_fcr_perf %>% 
   dplyr::filter(fid %in% toi) %>%
   filter(ftype=='tx', true_isoform=='mat') %>% 
-  pivot_longer(c(best_diff_gn, best_diff_3gn, best_diff_3t)) %>% 
+  pivot_longer(c(best_diff_gn, best_diff_3gn, best_diff_3gn_txnoise, best_diff_3t, best_diff_3t_txnoise)) %>% 
   ggplot(aes(x=conversion_rate, y=value, col=name)) +
   geom_boxplot() +
   facet_zoom(ylim=c(-0.001, 0.001)) +
@@ -2291,7 +3352,7 @@ toi = convertibilityClassAlluvia %>% dplyr::filter(gn == "high" & `3end_gn` == "
 cross_fcr_perf %>% 
   dplyr::filter(fid %in% toi) %>%
   filter(ftype=='tx', true_isoform=='mat') %>% 
-  pivot_longer(c(best_diff_gn, best_diff_3gn, best_diff_3t)) %>% 
+  pivot_longer(c(best_diff_gn, best_diff_3gn, best_diff_3gn_txnoise, best_diff_3t, best_diff_3t_txnoise)) %>% 
   ggplot(aes(x=conversion_rate, y=value, col=name)) +
   geom_boxplot() +
   facet_zoom(ylim=c(-0.01, 0.01)) +
@@ -2302,7 +3363,7 @@ toi = mappabilityClassAlluvia %>% dplyr::filter(gn == "low" & `3end_gn` == "high
 cross_fcr_perf %>% 
   dplyr::filter(fid %in% toi) %>%
   filter(ftype=='tx', true_isoform=='mat') %>% 
-  pivot_longer(c(best_diff_gn, best_diff_3gn, best_diff_3t)) %>% 
+  pivot_longer(c(best_diff_gn, best_diff_3gn, best_diff_3gn_txnoise, best_diff_3t, best_diff_3t_txnoise)) %>% 
   ggplot(aes(x=conversion_rate, y=value, col=name)) +
   geom_boxplot() +
   facet_zoom(ylim=c(-0.01, 0.01)) +
@@ -2313,7 +3374,7 @@ toi = mappabilityClassAlluvia %>% dplyr::filter(gn == "high" & `3end_gn` == "low
 cross_fcr_perf %>% 
   dplyr::filter(fid %in% toi) %>%
   filter(ftype=='tx', true_isoform=='mat') %>% 
-  pivot_longer(c(best_diff_gn, best_diff_3gn, best_diff_3t)) %>% 
+  pivot_longer(c(best_diff_gn, best_diff_3gn, best_diff_3gn_txnoise, best_diff_3t, best_diff_3t_txnoise)) %>% 
   ggplot(aes(x=conversion_rate, y=value, col=name)) +
   geom_boxplot() +
   facet_zoom(ylim=c(-0.1, 0.1)) +
@@ -2324,7 +3385,7 @@ toi = mappabilityClassAlluvia %>% dplyr::filter(gn == "high" & `3end_tx` == "low
 cross_fcr_perf %>% 
   dplyr::filter(fid %in% toi) %>%
   filter(ftype=='tx', true_isoform=='mat') %>% 
-  pivot_longer(c(best_diff_gn, best_diff_3gn, best_diff_3t)) %>% 
+  pivot_longer(c(best_diff_gn, best_diff_3gn, best_diff_3gn_txnoise, best_diff_3t, best_diff_3t_txnoise)) %>% 
   ggplot(aes(x=conversion_rate, y=value, col=name)) +
   geom_boxplot() +
   facet_zoom(ylim=c(-0.1, 0.1)) +
@@ -2332,256 +3393,4 @@ cross_fcr_perf %>%
 
 dev.off()
 
-```
-
-### FCR result tables
-```{r fcr_results, include=T, echo=F, cache=T}
-results[['fcr_tx_tab']] = fcr_tab %>% filter(ftype=='tx') %>%
-  rename(tid=fid) %>% 
-  left_join(m[['tx']], by=c('tid', 'ftype')) %>% 
-  left_join(m[['ga']], by=c('tid')) 
-
-results[['fcr_ex_tab']] = fcr_tab %>% filter(ftype=='exon') %>% 
-  left_join(m[['fx']], by=c('fid', 'ftype')) %>% 
-  left_join(m[['ga']], by=c('tid')) 
-
-results[['fcr_in_tab']] = fcr_tab %>% filter(ftype=='intron') %>% 
-  left_join(m[['fx']], by=c('fid', 'ftype')) %>% 
-  left_join(m[['ga']], by=c('tid')) 
-```
-
-# Special analyses
-
-## Performance of converted vs unconverted reads
-
-
-<div class = "blue">
-<b>Fraction of false positive/negative reads stratified by nucleotide mismatches.</b>
-We expected the fraction of FP/FN reads to increase with increasing mismatches to the reference sequence that can stem from simulated nucleotide conversions or sequencing errors. 
-
-The plots show an increased rate of FP/FN reads in HISAT3N vs STAR.
-
-HISAT3N should be less/not influenced by nucleotide conversions (as these are masked from the reference genome).
-</div>
-
-```{r, include = F}
-calc_fcr_cvsu = function(tab) {
-  tab %>% 
-    group_by( mapper, classification, ftype, mappability) %>% 
-    summarise(all=sum(count),
-              cv_0=sum(count[(cv1==0) & (cv2==0)]), # reads with no tc conv
-              cv_1=sum(count[(cv1==1) & (cv2==0)]), # reads with 1 tc conv
-              cv_2=sum(count[cv2==1]), # reads with 2+ tc conv
-              se_0=sum(count[(se1==0) & (se2==0)]), # reads with no seq err
-              se_1=sum(count[(se1==1) & (se2==0)]), # reads with 1 seq err
-              se_2=sum(count[(se2==1)])) %>% # reads with 2+ seq err
-    pivot_wider(names_from=classification, 
-                values_from=c(all, cv_0,cv_1,cv_2, se_0,se_1,se_2), 
-                names_sort=T) %>% 
-    mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>% 
-    mutate(
-      cv_0_fn_frac=ifelse(cv_0_TP+cv_0_FN>0,cv_0_FN/(cv_0_TP+cv_0_FN),NA),
-      cv_1_fn_frac=ifelse(cv_1_TP+cv_1_FN>0,cv_1_FN/(cv_1_TP+cv_1_FN),NA),
-      cv_2_fn_frac=ifelse(cv_2_TP+cv_2_FN>0,cv_2_FN/(cv_2_TP+cv_2_FN),NA),
-      se_0_fn_frac=ifelse(se_0_TP+se_0_FN>0,se_0_FN/(se_0_TP+se_0_FN),NA),
-      se_1_fn_frac=ifelse(se_1_TP+se_1_FN>0,se_1_FN/(se_1_TP+se_1_FN),NA),
-      se_2_fn_frac=ifelse(se_2_TP+se_2_FN>0,se_2_FN/(se_2_TP+se_2_FN),NA),
-      # FP rate
-      cv_0_fp_frac=ifelse(cv_0_TP+cv_0_FP>0,cv_0_FP/(cv_0_TP+cv_0_FP),NA),
-      cv_1_fp_frac=ifelse(cv_1_TP+cv_1_FP>0,cv_1_FP/(cv_1_TP+cv_1_FP),NA),
-      cv_2_fp_frac=ifelse(cv_2_TP+cv_2_FP>0,cv_2_FP/(cv_2_TP+cv_2_FP),NA),
-      se_0_fp_frac=ifelse(se_0_TP+se_0_FP>0,se_0_FP/(se_0_TP+se_0_FP),NA),
-      se_1_fp_frac=ifelse(se_1_TP+se_1_FP>0,se_1_FP/(se_1_TP+se_1_FP),NA),
-      se_2_fp_frac=ifelse(se_2_TP+se_2_FP>0,se_2_FP/(se_2_TP+se_2_FP),NA)
-  ) %>% 
-#  filter_at(vars(tc_0_fn_frac, tc_1_fn_frac, tc_2_fn_frac), all_vars(!is.na(.))) %>% # values in all categories
-  pivot_longer(cols=ends_with('frac')) %>%
-  separate(name, into=c('cat','n_conv','class',NA), sep ='_')  %>% 
-  mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
-  mutate(n_conv=factor(ifelse(n_conv==2, '2+', as.character(n_conv)), levels=c('0','1','2+')))
-}
-
-fcr_cvsu = calc_fcr_cvsu(tx)
-
-
-p1=fcr_cvsu %>% 
-  filter(cat=='se', class=='fn') %>% 
-  ggplot(aes(n_conv, value, col=mapper, group=mapper)) +
-  geom_line() +
-  facet_grid(mappability~mapper, scales = 'free') +
-  ggtitle('sequencing errors, FN') +
-  ylab("#FN / (#TP + #FN)")
-p2=fcr_cvsu %>% 
-  filter(cat=='se', class=='fp') %>% 
-  ggplot(aes(n_conv, value, col=mapper, group=mapper)) +
-  geom_line() +
-  facet_grid(mappability~mapper, scales = 'free') +
-  ggtitle('sequencing errors, FP') +
-  ylab("#FP / (#TP + #FP)")
-p3=fcr_cvsu %>% 
-  filter(cat=='cv', class=='fn') %>% 
-  ggplot(aes(n_conv, value, col=mapper, group=mapper)) +
-  geom_line() +
-  facet_grid(mappability~mapper, scales = 'free') +
-  ggtitle('nucleotide conversions, FN') +
-  ylab("#FN / (#TP + #FN)")
-p4=fcr_cvsu %>% 
-  filter(cat=='cv', class=='fp') %>% 
-  ggplot(aes(n_conv, value, col=mapper, group=mapper)) +
-  geom_line() +
-  facet_grid(mappability~mapper, scales = 'free') +
-  ggtitle('nucleotide conversions, FP') +
-  ylab("#FP / (#TP + #FP)")
-my_plot_grid(list(p1,p2,p3,p4), nrow=2, 'FN/FP fraction dependence on mismatches')
-
-ggsave(paste0(params$out_dir, 'special_conv_unconv_reads.pdf'), width=12, height=10)
-```
-
-## MQ20 Mapping quality filtering
-
-Demonstrate effect of mq20 filtering on coverage and mapping F1.
-
-```{r, include=F}
-
-comp_cov=function(a,b, grp_vars) {
-  sel_vars=grp_vars[grp_vars!='classification']
-  calc_coverage(a %>% group_by_at(grp_vars) ) %>% 
-    select(any_of(c(sel_vars, 'value'))) %>% 
-    left_join(
-      calc_coverage(b %>% group_by_at(grp_vars) ) %>% 
-        select(any_of(c(sel_vars, 'value'))),
-      by=sel_vars, suffix = c(".mq0", ".mq20"),
-    )
-}
-
-cov_comp_tx = comp_cov(tx, tx20, c('mapper', 'conversion_rate', 'fid', 'len', 'classification' ))
-cov_comp_fx = comp_cov(fx, fx20, c('mapper', 'conversion_rate', 'fid', 'true_isoform', 'ftype', 'len', 'classification' )) 
-# sanity check: 
-#testthat::expect_that(cov_comp_tx %>% filter(value.mq20>value.mq0) %>% nrow(), equals(0))
-#testthat::expect_that(cov_comp_fx %>% filter(value.mq20>value.mq0) %>% nrow(), equals(0))
-#cov_comp_fx %>% mutate(comp=(value.mq0 > value.mq20) - (value.mq0 < value.mq20)) %>% count(comp)
-
-
-p1 = cov_comp_tx %>% 
-  pivot_longer(c(value.mq0, value.mq20), names_prefix='value.', names_to='mq') %>% 
-  replace_na(list(value = 0)) %>% 
-  ggplot(aes(x=mapper, y=value, fill=factor(mq))) + geom_boxplot() +
-  scale_y_sqrt() +
-  #facet_grid(conversion_rate~., scales = 'free') +
-  ggtitle('Coverage over tx interval') + 
-  xlab('') + ylab('coverage') +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
-  guides(fill=guide_legend(title="Min mapping quality"))
-
-
-p2 = cov_comp_fx %>% 
-  pivot_longer(c(value.mq0, value.mq20), names_prefix='value.', names_to='mq') %>% 
-  replace_na(list(value = 0)) %>% # some mq20 entries have no counts in any classification leading to NAs
-  ggplot(aes(x=mapper, y=value, fill=factor(mq))) + geom_boxplot() +
-  scale_y_sqrt() +
-  ggtitle('Coverage per genomic feature') +
-  facet_grid(true_isoform~ftype, scales = 'free') + 
-  xlab('') + ylab('coverage') +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  guides(fill=guide_legend(title="Min mapping quality"))
-
-p3=cov_comp_fx %>% 
-  group_by(mapper, conversion_rate, true_isoform, ftype ) %>% 
-  summarise(mq0=sum(value.mq0),
-            mq20=sum(value.mq20, na.rm = T),
-            frac_fil=ifelse(mq0>0,(mq0-mq20)/mq0,0)) %>% 
-  ggplot(aes(conversion_rate, frac_fil, col=mapper, group=mapper)) +
-  geom_line() +
-  facet_grid(true_isoform~ftype, scales = 'free') +
-  ggtitle("Fraction of mq20 filtered reads per genomic feature")
-
-
-perf_comp = tx %>% bind_rows(fx) %>% 
-  group_by(mapper, conversion_rate, mappability, len, classification,true_isoform,ftype) %>% 
-  calc_performance(conf$readlen) %>% 
-  mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
-  filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
-  ungroup() %>% 
-  select(mapper, conversion_rate, mappability,true_isoform,ftype,F1.mq0=F1) %>% 
-  left_join(
-    tx20 %>% bind_rows(fx20) %>% 
-    group_by(mapper, conversion_rate, mappability, len, classification,true_isoform,ftype) %>% 
-    calc_performance(conf$readlen) %>% 
-    mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
-    filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
-    ungroup() %>% 
-    select(mapper, conversion_rate, mappability,true_isoform,ftype,F1.mq20=F1),
-    by=c('mapper', 'conversion_rate', 'mappability', 'true_isoform','ftype')
-  )
-
-p4 = perf_comp %>% 
-  pivot_longer(c(F1.mq0, F1.mq20), names_prefix='F1.', names_to='mq', values_to='F1') %>% 
-  group_by(conversion_rate, mapper, mappability, true_isoform, ftype, mq) %>% 
-  calc_ci(F1) %>% 
-  ggplot(aes(conversion_rate, col.mean, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
-  geom_line() +
-  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
-  facet_grid(mappability~ftype+mq, scales = 'free') +
-  scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
-  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5))+
-  ylab("F1") +
-  ggtitle('Mean F1 for mature isoforms per condition based on mq20/unfiltered read counts') 
-
-
-p4 = perf_comp %>% 
-  pivot_longer(c(F1.mq0, F1.mq20), names_prefix='F1.', names_to='mq', values_to='F1') %>% 
-  group_by(conversion_rate, mapper, mappability, true_isoform, ftype, mq) %>% 
-  calc_ci(F1) %>% 
-  ggplot(aes(mapper, col.mean, col=mq, group=paste0(mapper,mq))) +
-  geom_boxplot() +
-  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
-  facet_grid(mappability~ftype+true_isoform, scales = 'free') +
-  scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
-  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5))+
-  ylab("F1") +
-  ggtitle('Mean F1 for mature isoforms per condition based on mq20/unfiltered read counts') 
-
- my_plot_grid(list(p1,p2,p3,p4), labels = T, 'Coverage of mapping-quality filtered reads')
- 
-```
-
-# Write results tables
-```{r, include=F}
-
-# build summary table per tx
-tab_summary =
-  results[['map_tx_tab']] %>% select(gene_name, tid, mappability,
-                                     map_best_no_conv=best_mapper_no_conv, 
-                                     map_best_conv=best_mapper_conv) %>% 
-  full_join(
-    results[['fcr_tx_tab']] %>% select(gene_name, tid, 
-                                       fcr_best=best_mapper), 
-    by=c('gene_name', 'tid' )) %>% 
-  full_join(
-    results[['spl_tx_tab']] %>% select(gene_name, tid, 
-                                       spl_best=best_mapper_fmat), 
-    by=c('gene_name', 'tid' )) 
-  
-results=c(list('summary'=tab_summary), results)
-
-tab_summary %>% 
-  rename(MAP=map_best_no_conv, MAP_CONV=map_best_conv, FCR=fcr_best, FMAT=spl_best) %>% 
-  pivot_longer(c(MAP, MAP_CONV, FCR, FMAT), values_to='mapper' ) %>% 
-  group_by(name, mapper, mappability) %>% 
-  count() %>% 
-  mutate(name=factor(name, levels=c('MAP', 'MAP_CONV', 'FCR', 'FMAT')),
-         mapper=factor(toupper(mapper), levels=c('BOTH', 'STAR', 'HISAT3N'))) %>% 
-  ggplot(aes(mapper, n, fill=mapper)) +
-    geom_bar(stat='identity') +
-    facet_grid(mappability~name, scales = 'free') +
-    ggtitle('Best mapper per category') +
-    scale_x_discrete(drop = FALSE) +
-    scale_fill_discrete(drop=FALSE) +
-    ylab("number of transcripts") +
-    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
-
-ggsave(paste0(params$out_dir, 'Best_mapper_summary.pdf'), width=12, height=10)
-
-# write excel result file
-write_xlsx(results, path=paste0(params$out_dir, 'map.xlsx'))
 ```

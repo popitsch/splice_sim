@@ -17,9 +17,9 @@ output:
     fig_caption: true
 params:
     splice_sim_config:
-       value: "/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/big4_human_slamseq_nf/splice_sim.config.json"
+       value: "/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/big5_slamseq_nf/splice_sim.config.json"
     out_dir:
-       value: "/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/big4_human_slamseq_nf/analysis/"
+       value: "/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/big5_slamseq_nf/analysis/"
 ---
 <style type="text/css">
 body, td {
@@ -514,12 +514,13 @@ perf_tx %>% filter(mappability=='high') %>%
   ylab("F1") +
   ggtitle('Median F1 per tx', 'by number of exons (high mappability only)') 
 
-
 dev.off()
+
 ```
 ### MAP Correlation of F1 and genomic mappability
 
 ```{r map_corr, include=T, echo=F, cache=T}
+
 pdf(paste0(params$out_dir, 'map_corr.pdf'), width=12, height=10)
 
 perf %>% 
@@ -572,11 +573,13 @@ perf_fx %>%
   ggtitle('Mean exonic F1 per convertibility class', 'cr=10%') 
 
 dev.off()
+
 ```
 ### MAP result tables
 
 
 ```{r map_results, include=T, echo=F, cache=T}
+
 calc_map_table = function(tab) {
   tab = tab %>% 
   select(fid, ftype, mapper, conversion_rate, classification, count) %>% 
@@ -627,10 +630,8 @@ results[['map_in_tab']] = fx %>% filter(ftype=='intron') %>% calc_map_table() %>
 
 ```
 
-
-
-
 ### MAP Write BED file of best mapper 
+
 ```{r, include=F, echo=F, eval=F}
 # ==============================================
 # write BED file of best mapper
@@ -814,7 +815,9 @@ dev.off()
 ```
 
 ### FCR result tables
+
 ```{r fcr_results, include=T, echo=F, cache=T}
+
 results[['fcr_tx_tab']] = fcr_tab %>% filter(ftype=='tx') %>%
   rename(tid=fid) %>% 
   left_join(m[['tx']], by=c('tid', 'ftype')) %>% 
@@ -826,10 +829,12 @@ results[['fcr_ex_tab']] = fcr_tab %>% filter(ftype=='exon') %>%
 
 results[['fcr_in_tab']] = fcr_tab %>% filter(ftype=='intron') %>% 
   left_join(m[['fx']], by=c('fid', 'ftype')) %>% 
-  left_join(m[['ga']], by=c('tid')) 
+  left_join(m[['ga']], by=c('tid'))
+
 ```
 
 ### FCR Write BED file of best mapper 
+
 ```{r, include=F, echo=F, eval=F}
 # ==============================================
 # write BED file of best FCR mapper
@@ -882,6 +887,7 @@ Number of filtered introns including or excluding converted datasets.
 </div>
 
 ```{r sj_pre, include=T, echo=F, cache=T}
+
 sj_per = cache({
   sj %>% 
     group_by(mapper, conversion_rate, fid, class_type, classification) %>% 
@@ -990,6 +996,7 @@ ggsave(paste0(params$out_dir, 'sj_intron_filtering.pdf'), width=12, height=10)
 ```
 
 ```{r sj_sfrac, include=T, echo=F, cache=T}
+
 # Table to compare frac_spliced w/wo intron filtering
 
 sfrac_conv = cache({
@@ -1085,6 +1092,7 @@ dev.off()
 - calc for each tx: which mapper has smallest diff to sim truth after correction
 
 ```{r sj_corr_best_tx, include=T, echo=F, cache=T}
+
 best_mapper_fmat = cache({
   sfrac %>% 
     select(mapper, tid, conversion_rate,filter_type, n_fil, n_overlapping, 
@@ -1139,6 +1147,7 @@ ggsave(paste0(params$out_dir, 'sj_bst_mapper.pdf'), width=12, height=10)
 ### FMAT correlation with F1
 
 Does F1 neg correlate with difference to true FCR?
+
 ```{r}
 
 tab1 = best_mapper_fmat %>% 
@@ -1193,7 +1202,9 @@ my_plot_grid(list(p1,p2), 'Negative correlation between F1 (mat isoform)\nand di
 
 
 ### FMAT result tables
+
 ```{r}
+
 results[['spl_tx_tab']] = best_mapper_fmat %>% 
   left_join(m[['tx']] %>% select(-n_overlapping), by='tid') %>% 
   left_join(m[['ga']], by='tid')
@@ -1201,6 +1212,7 @@ results[['spl_tx_tab']] = best_mapper_fmat %>%
 ```
 
 ### FMAT Write BED file of filtered introns per mapper
+
 ```{r, include=F, echo=F, eval=F}
 # ==============================================
 # write BED file of filtered introns per mapper
@@ -1225,6 +1237,7 @@ for ( filter_type in c('include_converted', 'unconverted_only')) {
 ```
 
 ### FMAT Write BED file of best mapper
+
 ```{r, include=F, echo=F, eval=F}
 # ==============================================
 # write BED file of tx per best mapper
@@ -1271,6 +1284,7 @@ HISAT3N should be less/not influenced by nucleotide conversions (as these are ma
 </div>
 
 ```{r}
+
 calc_fcr_cvsu = function(tab) {
   tab %>% 
     group_by( mapper, classification, ftype) %>% 
@@ -1338,6 +1352,7 @@ p2= fcr_cvsu %>%
 my_plot_grid(list(p1,p2), nrow=1, 'FDR/FNR dependence on mismatches')
 
 ggsave(paste0(params$out_dir, 'special_conv_unconv_reads.pdf'), width=12, height=10)
+
 ```
 ## MQ20 Mapping quality filtering
 
@@ -1480,6 +1495,7 @@ B) Mean mappability vs feature length  for protein coding genes only.
 </div>
 
 ```{r, include=F, echo=F, eval=F}
+
 # top_gene_type_cat = m[['ga']] %>% count(gene_type) %>% arrange(desc(n)) %>% head(4) %>% pull(gene_type)
 top_gene_type_cat=c('protein_coding', 'lincRNA', 'processed_pseudogene', 'other')
 tab = m[['fx']] %>% select(tid, fid, ftype, mean_map, len) %>% 
@@ -1508,6 +1524,7 @@ p2 = tab %>%
   ylab("feature length [kb]")
 
 my_plot_grid(list(p1,p2), labels = T, 'mappability ')
+
 ```
 
 # Examples
@@ -1540,6 +1557,7 @@ p1=calc_fcr_cvsu(tx %>% filter(fid==!!tid)) %>%
 ```
 
 # Write results tables
+
 ```{r}
 
 # build summary table per tx
@@ -1597,6 +1615,21 @@ D) Number of annotations with high (>0.9), low (<0.2) and medium genomic mappabi
 </div>
 
 ```{r}
+
+upsetlist = list(mat = perf %>%
+  dplyr::filter(mapper == "HISAT3N", mappability == "medium",ftype == "exon",true_isoform == "mat") %>% .$fid,
+  pre = perf %>%
+  dplyr::filter(mapper == "HISAT3N", mappability == "medium",ftype == "exon",true_isoform == "pre") %>% .$fid
+)
+
+perf %>%
+  dplyr::group_by(mapper, mappability, ftype, true_isoform) %>%
+  dplyr::summarise(NAs = sum(is.na(F1))) %>%
+  ggplot(aes(x = ftype, y = NAs, fill = true_isoform)) +
+  geom_bar(stat= "identity") +
+  facet_grid(mappability~mapper, scales = 'free_y')
+
+upset(fromList(upsetlist))
 
 f1a = perf %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(F1) %>% 
   ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
@@ -1696,6 +1729,7 @@ The plot shows that FMAT improvement increases with higher fractions of filtered
 </div>
 
 ```{r}
+
 f2a = fcr_perf %>% 
   filter(ftype=='exon') %>% 
   pivot_longer(cols=c(diff_HISAT3N, diff_STAR)) %>% 
@@ -1763,4 +1797,5 @@ f2d = sfrac %>%
 
 my_plot_grid(list(f2a, f2b, f2c, f2d), 'Fig2', labels = T)
 ggsave(paste0(params$out_dir, 'Fig2.pdf'), width=12, height=10)
+
 ```

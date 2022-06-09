@@ -102,6 +102,7 @@ process map_star {
 	tag "$fq" 
 	module 'star/2.7.1a-foss-2018b:sambamba/0.6.6'
     publishDir "sim/bams_star", mode: 'copy'
+    label "long"
     
     when: 
     	params.mappers.STAR && params.create_bams

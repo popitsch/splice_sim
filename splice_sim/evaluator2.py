@@ -427,7 +427,6 @@ def extract_feature_metadata(config, m, out_dir):
                             ]]), file=out_tx)
     print("All done.")
 
-
 def extract_bam_stats(bam_file, out_dir):
     """ Extract stats per BAM file """
     stats=Counter()
@@ -481,3 +480,94 @@ def extract_bam_stats(bam_file, out_dir):
         for chrom in list(dict_chr2len.keys())+['unmapped']:
             print("\t".join([str(x) for x in [
                 chrom, mapper, cr, ftype] + [stats[chrom, col] for col in cols]]), file=out)
+def extract_bam_stats(bam_file, out_dir):
+    """ Extract stats per BAM file """
+    stats=Counter()
+    logging.info("extract_bam_stats for %s" % bam_file)
+    assert os.path.exists(bam_file) and os.path.exists(bam_file+'.bai'), "Could not find bam file (or idx) for %s" % (bam_file)
+    # parse cr/mapper from file name    
+    assert '.cr' in bam_file, "Cannot parse bam file name %s" % (bam_file)
+    if bam_file.endswith('.eval.bam'):
+        tmp = bam_file[:-9]
+        tmp,ftype=tmp.rsplit('.', 1)
+    elif bam_file.endswith('.final.bam'):
+        ftype='NA'
+        tmp = bam_file[:-10]
+    else:
+        ftype='NA'
+        tmp = bam_file[:-4]
+    cr,mapper=tmp[tmp.find('.cr')+3:].rsplit('.', 1)
+    cr=float(cr)
+    samin = pysam.AlignmentFile(bam_file, "rb")
+    dict_chr2idx, dict_idx2chr, dict_chr2len=get_chrom_dicts_from_bam(bam_file)    
+    cols=['n_reads','n_spliced_reads','n_softclipped_reads','mean_span_reads','len_spliced_reads', 'n_unmapped']
+    with open(out_dir+'/'+Path(bam_file).stem+'.bamstats.tsv', 'w') as out:
+        print("\t".join([str(x) for x in ['chromosome', 'mapper', 'cr', 'ftype'] + cols]), file=out)
+        for chrom, chrlen in dict_chr2len.items():        
+            rit = ReadIterator(samin, dict_chr2idx, reference=chrom, start=1, end=chrlen, max_span=None, flag_filter=0) # max_span=m.max_ilen
+            stats[chrom, 'mean_span_reads']=[]
+            stats[chrom, 'len_spliced_reads']=[]
+            for loc, r in rit:
+                stats[chrom, 'n_reads']+=1
+                stats[chrom, 'mean_span_reads'].append(r.reference_end-r.reference_start+1)
+                maxn=0
+                is_spliced=0
+                is_softclipped=0
+                for op,l in r.cigartuples:
+                    if op==3:
+                        maxn = max(l, maxn) # N
+                        is_spliced=1
+                    if op==4:
+                        is_softclipped=1
+                if maxn>0:
+                    stats[chrom, 'len_spliced_reads'].append(maxn)
+                stats[chrom, 'n_spliced_reads']+=is_spliced
+                stats[chrom, 'n_softclipped_reads']+=is_softclipped
+            stats[chrom, 'mean_span_reads']=statistics.mean(stats[chrom, 'mean_span_reads']) if len(stats[chrom, 'mean_span_reads'])>0 else 'NA'
+            stats[chrom, 'len_spliced_reads']=statistics.mean(stats[chrom, 'len_spliced_reads']) if len(stats[chrom, 'len_spliced_reads'])>0 else 'NA'
+        # unmapped reads
+        for unmapped_read in samin.fetch(contig=None, until_eof=True):
+            if unmapped_read.is_unmapped:
+                stats['unmapped', 'n_unmapped']+=1
+        # write results
+        for chrom in list(dict_chr2len.keys())+['unmapped']:
+            print("\t".join([str(x) for x in [
+                chrom, mapper, cr, ftype] + [stats[chrom, col] for col in cols]]), file=out)
+            
+def special_count_HISAT3N_strand_stats(bam_file, out_dir):
+    """ Extract HISAT3N specific stats """
+    stats=Counter()
+    logging.info("extract_bam_stats for %s" % bam_file)
+    assert os.path.exists(bam_file) and os.path.exists(bam_file+'.bai'), "Could not find bam file (or idx) for %s" % (bam_file)
+    # parse cr/mapper from file name    
+    assert '.cr' in bam_file, "Cannot parse bam file name %s" % (bam_file)
+    if bam_file.endswith('.eval.bam'):
+        tmp = bam_file[:-9]
+        tmp,ftype=tmp.rsplit('.', 1)
+    elif bam_file.endswith('.final.bam'):
+        ftype='NA'
+        tmp = bam_file[:-10]
+    else:
+        ftype='NA'
+        tmp = bam_file[:-4]
+    cr,mapper=tmp[tmp.find('.cr')+3:].rsplit('.', 1)
+    cr=float(cr)
+    samin = pysam.AlignmentFile(bam_file, "rb")
+    dict_chr2idx, dict_idx2chr, dict_chr2len=get_chrom_dicts_from_bam(bam_file)    
+    cols=['n_reads','n_softclipped_reads']
+    with open(out_dir+'/'+Path(bam_file).stem+'.bamstats.tsv', 'w') as out:
+        print("\t".join([str(x) for x in ['chromosome', 'mapper', 'cr', 'ftype', 'matching_strand'] + cols]), file=out)
+        for chrom, chrlen in dict_chr2len.items():        
+            rit = ReadIterator(samin, dict_chr2idx, reference=chrom, start=1, end=chrlen, max_span=None, flag_filter=0) # max_span=m.max_ilen
+            for loc, r in rit:
+                true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted_read = r.query_name.split('_')
+                matching_strand=((r.is_reverse) and (true_strand=='-')) or ( (not r.is_reverse) and (true_strand=='+'))
+                is_softclipped=4 in [x for x,_ in r.cigartuples]
+                stats[chrom, matching_strand, 'n_reads']+=1
+                stats[chrom, matching_strand, 'n_softclipped_reads']+=is_softclipped
+        # write results
+        for chrom in list(dict_chr2len.keys()):
+            for matching_strand in [True, False]:
+                print("\t".join([str(x) for x in [
+                    chrom, mapper, cr, ftype, 1 if matching_strand else 0] + [stats[chrom, matching_strand, col] for col in cols]]), file=out)
+                

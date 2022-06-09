@@ -17,11 +17,11 @@ output:
     fig_caption: true
 params:
     big3_config:
-       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/splice_sim.config.json"
-    big4_config:
-       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/splice_sim.config.json"
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/splice_sim.config.json"
+    big4_data_file:
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/splice_sim_paper/replicate_data/data.pooled.rds"
     out_dir:
-       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/analysis/"
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/splice_sim_paper/analysis/"
 ---
 <style type="text/css">
 body, td {
@@ -290,8 +290,6 @@ clean_cache = function() {
 
 big3_home_dir=paste0(dirname(params$big3_config),'/')
 big3_conf=fromJSON(paste(readLines(params$big3_config), collapse=""))
-big4_home_dir=paste0(dirname(params$big4_config),'/')
-big4_conf=fromJSON(paste(readLines(params$big4_config), collapse=""))
 
 # create result dir?
 if (!dir.exists(params$out_dir)) {
@@ -306,21 +304,21 @@ if (!dir.exists(paste0(params$out_dir,'/cache/'))) {
 
 
 # results files (~45 G) 
-big3_data_file=paste0(big3_home_dir,'/eva/results/data.rds')
-big4_data_file=paste0(big4_home_dir,'/eva/results/data.rds')
-big3_meta_file=paste0(big3_home_dir,'/eva/results/meta.rds')
+big3_data_file=paste0(big3_home_dir,'/results/data.rds')
+big3_meta_file=paste0(big3_home_dir,'/results/meta.rds')
 
 d3=readRDS(big3_data_file)
-#d4=readRDS(big4_data_file)
+d4=readRDS(big4_data_file)
 m3=readRDS(big3_meta_file)
 
 # shortcuts
-tx3 = d3[['tx']] %>% left_join(m[['tx']], by=c('fid'='tid')) 
+tx3 = d3[['tx']]
 all_tids=unique(tx3 %>% pull(fid))
-tx4 = d4[['tx']] %>% filter(fid %in% all_tids) %>% left_join(m[['tx']], by=c('fid'='tid')) 
+tx4 = d4[['tx']] %>% filter(fid %in% all_tids) 
 
 # result tables
 results=list()
+remove(d3, d4)
 ```
 
 
@@ -353,13 +351,23 @@ perf_tx34 = cache({
 
 perf_tx34_corr = perf_tx34 %>% 
   select(fid, mapper, conversion_rate, dataset, F1, recall, TP, FP, FN) %>% 
-  pivot_wider(names_from=dataset, values_from = c(F1, recall, TP, FP, FN)) 
+  pivot_wider(names_from=dataset, values_from = c(F1, recall, TP, FP, FN)) %>% 
+  mutate(F1_diff=F1_big3-F1_big4)
 
 
-p1 = perf_tx34 %>% 
-  ggplot(aes(dataset, F1, fill=dataset)) + 
+# p1 = perf_tx34 %>% 
+#   ggplot(aes(dataset, F1, fill=dataset)) + 
+#   geom_boxplot() +
+#   facet_grid(mapper~.) +
+#   xlab("Dataset")
+
+p1 = perf_tx34_corr %>% 
+  group_by(mapper) %>% 
+  pivot_longer(c(F1_big3, F1_big4, F1_diff)) %>% 
+  ggplot(aes(name, value, fill=name)) + 
   geom_boxplot() +
-  facet_grid(mapper~conversion_rate)
+  facet_wrap(mapper~., scales = 'free', nrow=1) + 
+  ylab("") + xlab("") + theme(legend.position="none") 
 
 p2.1=plot_grid(plotlist=list(
       perf_tx34_corr %>% 

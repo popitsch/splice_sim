@@ -307,7 +307,7 @@ script:
 
 /*
  * Calculate rseqc genebody profile
- */
+ *
 process rseqc_genebody_profile {
 	tag "${params.dataset_name}"
 	time='8.h'
@@ -330,6 +330,7 @@ process rseqc_genebody_profile {
 		geneBody_coverage.py -r $reference -i . -o ${params.dataset_name}
 	"""
 }
+*/
 
 /*
  * MultiQC
@@ -354,7 +355,7 @@ process multiqc {
 			//file(rseqc_read_quality) from rseqc_read_quality_output.collect().ifEmpty([])
 			file(rseqc_junction_annotation) from rseqc_junction_annotation_output.collect().ifEmpty([])
 			file(rseqc_junction_saturation) from rseqc_junction_saturation_output.collect().ifEmpty([])
-			file(rseqc_genebody_profile) from rseqc_genebody_output.collect().ifEmpty([])
+			//file(rseqc_genebody_profile) from rseqc_genebody_output.collect().ifEmpty([])
 
 	output:
 	file "*multiqc_report.html" into ch_multiqc_report

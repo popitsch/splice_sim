@@ -5,6 +5,7 @@ from collections import *
 import csv, datetime, time, logging, sys, os, json, pickle
 from pathlib import Path
 import pysam
+import pyBigWig
 import numpy as np
 from genomic_iterators import Location, get_chrom_dicts_from_bam, get_chrom_dicts
 from genomic_iterators.bam_iterators import ReadIterator
@@ -12,7 +13,7 @@ from genomic_iterators.grouped_iterators import BlockedIterator, BlockLocationIt
 from splice_sim.utils import *
 from splice_sim.model import *
 import statistics
-import concurrent.futures   
+import concurrent.futures
 
 read_colors={
     'fn': '200,200,200',
@@ -40,7 +41,7 @@ def read_envelops_loc(iloc, read):
     return (read.reference_start < iloc.start) and (read.reference_end>=iloc.end) and ('N' in read.cigarstring)
 
 def read_splices_intron(iloc, read, max_diff=5):
-    """ Tests whether the passed read splices the passed intronic) location. 
+    """ Tests whether the passed read splices the passed intronic) location.
     The maximum difference in coordinates between the intron and the splicing block (N section) can be configured.
     A value>0 allows for some fuzziness """
     os,oe=None,None
@@ -62,13 +63,13 @@ def get_class(read, features):
         'acc':set(),
         'spl':set()}
     for feat_loc,(tid,ftype,fid) in features: # NB: chrom is not checked, must be matched beforehand!
-        strand_match = feat_loc.strand=='-' if read.is_reverse else feat_loc.strand=='+' 
+        strand_match = feat_loc.strand=='-' if read.is_reverse else feat_loc.strand=='+'
         if not strand_match:
             continue
         # does read align into feature?
         if read_aligns_to_loc(feat_loc, read): # NB no need to check chr here
-            classification['tx'].add(tid) 
-            classification['fx'].add(fid) 
+            classification['tx'].add(tid)
+            classification['fx'].add(fid)
             if ftype=='intron':
                 if read.reference_start < feat_loc.start and read.reference_end >= feat_loc.start:
                     classification['don' if feat_loc.strand=='+' else 'acc'].add(fid)
@@ -81,7 +82,7 @@ def get_class(read, features):
 
 def set_compare(truth, truth_ext, found):
     """ Compares two sets and returns TP, FP, FNs.
-    truth contains the classification of the true read wrt. features of the true tx, 
+    truth contains the classification of the true read wrt. features of the true tx,
     found contains the classification of the found read wrt. overlapping features and
     truth_ext contains the classification of the true read wrt. the union of features overlapping the found read and true tx features. """
     TP = truth & found
@@ -96,7 +97,7 @@ classtype2cat={
     'acc': 'sj',
     'spl': 'sj'}
 empty_class={'tx' : set(),'fx' : set(),'don': set(),'acc': set(),'spl': set()}
- 
+
 def classify_read(found_read, found_overlapping_raw, tid2feat, performance, dict_samout, dict_chr2idx, min_mapq=20):
     # recreate true read
     true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted_read = found_read.query_name.split('_')
@@ -109,13 +110,13 @@ def classify_read(found_read, found_overlapping_raw, tid2feat, performance, dict
     cv2=1 if int(n_converted)>1 else 0
     se1=1 if int(n_seqerr)>0 else 0
     se2=1 if int(n_seqerr)>1 else 0
-    # which features does the true read overlap with and whats the true iclass   
-    true_features=set(tid2feat[true_tid]) 
+    # which features does the true read overlap with and whats the true iclass
+    true_features=set(tid2feat[true_tid])
     true_class=get_class(true_read, true_features)
     true_features_ext=set(tid2feat[true_tid] + found_overlapping_raw)
     true_class_ext=true_class if true_features_ext==true_features else get_class(true_read, true_features_ext)
     found_class={}
-    found_class[0]=empty_class if found_read.is_unmapped else get_class(found_read, found_overlapping_raw) 
+    found_class[0]=empty_class if found_read.is_unmapped else get_class(found_read, found_overlapping_raw)
     found_class[1]=empty_class if ((found_read.is_unmapped) or (found_read.mapping_quality<min_mapq)) else found_class[0]
     # calculate TP,FP,FN (+/- mq filtering)
     for mq_fil in [0,1]:
@@ -165,7 +166,7 @@ def classify_region(target_region, config, bam_file, chrom2feat, tid2feat, out_f
         for unmapped_read in samin.fetch(contig=None, until_eof=True):
             if not unmapped_read.is_unmapped:
                 continue
-            performance=classify_read(unmapped_read, [], tid2feat, performance, dict_samout, dict_chr2idx, min_mapq)        
+            performance=classify_read(unmapped_read, [], tid2feat, performance, dict_samout, dict_chr2idx, min_mapq)
     else:
         chrom = dict_idx2chr[target_region.chr_idx]
         if chrom in samin.references: # there are reads on this chrom
@@ -176,11 +177,11 @@ def classify_region(target_region, config, bam_file, chrom2feat, tid2feat, out_f
                 wr+=1
                 overlapping_annos = annos[0] # select 1st entry as theree is only one ait
                 performance=classify_read(read, overlapping_annos, tid2feat, performance, dict_samout, dict_chr2idx, min_mapq)
-    # close SAM files    
-    samin.close()   
+    # close SAM files
+    samin.close()
     if dict_samout is not None:
         for cat,samout in dict_samout.items():
-            samout.close() 
+            samout.close()
             dict_samout[cat]=out_file_prefix+'.%s.eval.%s.bam' % (cat, slugify(str(target_region)))
     return performance, dict_samout, wr
 
@@ -190,18 +191,18 @@ def classify_region(target_region, config, bam_file, chrom2feat, tid2feat, out_f
 # --model /Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/sim/reference_model/big3_slamseq_nf.model
 # --outdir /Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/eva/debug/
 
-def evaluate(config, m, bam_file, threads, out_dir): 
+def evaluate(config, m, bam_file, threads, out_dir):
     """ evaluate the passed BAM file """
     logging.info("Evaluating %s" % bam_file)
     assert os.path.exists(bam_file) and os.path.exists(bam_file+'.bai'), "Could not find bam file (or idx) for %s" % (bam_file)
-    # parse cr/mapper from file name    
+    # parse cr/mapper from file name
     assert '.cr' in bam_file, "Cannot parse bam file name %s" % (bam_file)
     tmp = bam_file[:-10] if bam_file.endswith('.final.bam') else bam_file[:-4] # file ends with .bam or .final.bam
     cr,mapper=tmp[tmp.find('.cr')+3:].rsplit('.', 1)
     out_file_prefix=out_dir+'/'+config['dataset_name']+'.cr'+cr+'.'+mapper
     cr=float(cr)
     min_mapq=config['min_mapq'] if 'min_mapq' in config else 20
-    
+
     # get config params
     dict_chr2idx, dict_idx2chr, dict_chr2len=get_chrom_dicts_from_bam(bam_file)
     chromosomes = config['chromosomes'] if 'chromosomes' in config else dict_chr2len.keys()
@@ -232,8 +233,8 @@ def evaluate(config, m, bam_file, threads, out_dir):
     if 'target_region' in config:
         target_regions=[Location.from_str(config['debug_region'], dict_chr2idx)]
     else:
-        target_regions=[Location(dict_chr2idx[c], 1, c_len) for c, c_len in dict_chr2len.items() if c in chromosomes] + ['unmapped'] # unmapped reads    
-    print("Target regions: ", target_regions)        
+        target_regions=[Location(dict_chr2idx[c], 1, c_len) for c, c_len in dict_chr2len.items() if c in chromosomes] + ['unmapped'] # unmapped reads
+    print("Target regions: ", target_regions)
     # run parallel
     performance=Counter()
     dict_samout=None
@@ -254,7 +255,7 @@ def evaluate(config, m, bam_file, threads, out_dir):
                     dict_samout[k]+=[region_dict_samout[k]]
             pbar.set_description('Classified reads: %i' % (wr))
             pbar.update(1)
-        pbar.close()             
+        pbar.close()
     # write performance data
     with open(out_file_prefix+'.counts.tsv', 'w') as out_raw:
         with open(out_file_prefix+'.counts.mq%i.tsv' % min_mapq, 'w') as out_fil:
@@ -268,7 +269,7 @@ def evaluate(config, m, bam_file, threads, out_dir):
                 print('\t'.join(str(x) for x in [
                     mapper, cr, mq_fil, class_type, fid, true_isoform, cv1, cv2, se1, se2, classification, count
                     ]), file=out)
-    # merge, sort and index BAM files    
+    # merge, sort and index BAM files
     if dict_samout is not None:
         for cat,bam_files in dict_samout.items():
             out_file = out_file_prefix+'.%s.eval.bam' % str(cat)
@@ -277,7 +278,7 @@ def evaluate(config, m, bam_file, threads, out_dir):
 
 
 def calc_mappability(genomeMappability, chrom, start, end):
-    """ Calculate genomic mappability for giveen window """
+    """ Calculate genomic mappability for given window """
     try:
         map = flatten([[float(x[3])]*(min(end+1,int(x[2]))-max(start,int(x[1]))) for x in genomeMappability.fetch('chr'+chrom, start, end, parser=pysam.asTuple())])
         map=map+[0]*(end-start+1-len(map)) # pad with missing zeros
@@ -287,6 +288,15 @@ def calc_mappability(genomeMappability, chrom, start, end):
         mea_map = np.nan
     return mea_map
 
+def calc_conservation(genomeConservation, chrom, start, end):
+    """ Calculate genomic conservation for given window """
+    try:
+        cons = genomeConservation.stats('chr'+chrom, start, end + 1).pop()
+    except RuntimeError as re:
+        #print(re)
+        cons = np.nan
+    return cons
+
 
 # extract_feature_metadata
 # --config /Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/eva/debug/config.json
@@ -295,6 +305,7 @@ def calc_mappability(genomeMappability, chrom, start, end):
 def extract_feature_metadata(config, m, out_dir):
     """ extract metadata fox tx/fx/sj """
     genomeMappability = pysam.TabixFile(config['genome_mappability'], mode="r")
+    genomeConservation = pyBigWig.open(config['genome_conservation'])
     readlen=config['readlen']
     # calculate transcript overlap
     tid2info={}
@@ -303,29 +314,31 @@ def extract_feature_metadata(config, m, out_dir):
         with open(out_dir+'/'+config['dataset_name']+'.fx.metadata.tsv', 'w') as out_fx:
             with open(out_dir+'/'+config['dataset_name']+'.sj.metadata.tsv', 'w') as out_sj:
                 print("""tid\tftype\trnk\tchromosome\tstart\tend\tstrand\t""" +
-                      """A\tC\tT\tG\tmean_map\texon_len\tintron_len\tn_overlapping\toverlapping_tids""",
+                      """A\tC\tT\tG\tmean_map\tmean_cons\texon_len\tintron_len\tn_overlapping\toverlapping_tids""",
                                                   file=out_tx)
                 print("""tid\tfid\tftype\trnk\tchromosome\tstart\tend\tstrand\t""" +
-                      """A\tC\tT\tG\tmean_map""",
+                      """A\tC\tT\tG\tmean_map\tmean_cons""",
                                                   file=out_fx)
                 print("""tid\tfid\tftype\trnk\tchromosome\tstart\tend\tstrand\t""" +
-                      """don_ex_A\tdon_ex_C\tdon_ex_T\tdon_ex_G\tdon_in_A\tdon_in_C\tdon_in_T\tdon_in_G\tdon_win_map\t""" +
-                      """acc_ex_A\tacc_ex_C\tacc_ex_T\tacc_ex_G\tacc_in_A\tacc_in_C\tacc_in_T\tacc_in_G\tacc_win_map""",
+                      """don_ex_A\tdon_ex_C\tdon_ex_T\tdon_ex_G\tdon_in_A\tdon_in_C\tdon_in_T\tdon_in_G\tdon_win_map\tdon_win_cons\t""" +
+                      """acc_ex_A\tacc_ex_C\tacc_ex_T\tacc_ex_G\tacc_in_A\tacc_in_C\tacc_in_T\tacc_in_G\tacc_win_map\tacc_win_cons""",
                                                   file=out_sj)
-                for tid, t in m.transcripts.items():                    
+                for tid, t in m.transcripts.items():
                     # get RNA subseq from transcript seq. NOTE: may be shorter than 2xreadlen
                     rna_seq=reverse_complement(t.transcript_seq) if t.strand == "-" else t.transcript_seq
                     # calc mean mappability
                     tx_map = calc_mappability(genomeMappability, t.chromosome, t.start, t.end)
+                    tx_cons = calc_conservation(genomeConservation, t.chromosome, t.start, t.end)
                     # get overlapping tids
                     overlapping=[x.data.tid for x in tiv[t.chromosome].overlap(t.start, t.end) if x.data.tid != tid]
                     l=len(rna_seq)
-                    exon_len, intron_len=0,0   
-                    # exons                 
+                    exon_len, intron_len=0,0
+                    # exons
                     for exon in t.exons:
                         rnk=exon['exon_number']
                         fid = tid + "_ex" + str(rnk)
                         ex_map = calc_mappability(genomeMappability, t.chromosome, exon['start'], exon['end'])
+                        ex_cons = calc_conservation(genomeConservation, t.chromosome, exon['start'], exon['end'])
                         ex_rna = rna_seq[exon['start']-t.start:exon['end']-t.start+1]
                         exon_len+=exon['end']-exon['start']+1
                         print("\t".join([str(x) for x in [
@@ -341,7 +354,8 @@ def extract_feature_metadata(config, m, out_dir):
                             ex_rna.count("C"),
                             ex_rna.count("T"),
                             ex_rna.count("G"),
-                            ex_map
+                            ex_map,
+                            ex_cons
                         ]]), file=out_fx)
                     # introns
                     for intron in t.introns:
@@ -349,11 +363,12 @@ def extract_feature_metadata(config, m, out_dir):
                         fid = tid + "_in" + str(rnk)
                         # tx
                         in_map = calc_mappability(genomeMappability, t.chromosome, intron['start'], intron['end'])
+                        in_cons = calc_conservation(genomeConservation, t.chromosome, intron['start'], intron['end'])
                         in_rna = rna_seq[intron['start']-t.start:intron['end']-t.start+1]
                         intron_len+=intron['end']-intron['start']+1
                         print("\t".join([str(x) for x in [
                             tid,
-                            fid,                            
+                            fid,
                             'intron',
                             rnk,
                             t.chromosome,
@@ -364,7 +379,8 @@ def extract_feature_metadata(config, m, out_dir):
                             in_rna.count("C"),
                             in_rna.count("T"),
                             in_rna.count("G"),
-                            in_map
+                            in_map,
+                            in_cons
                         ]]), file=out_fx)
                         # SJ
                         # note that win can be shorter than readlen if we run out of sequence!
@@ -372,6 +388,8 @@ def extract_feature_metadata(config, m, out_dir):
                         acc_win_genomic = [intron['start'] - readlen, intron['start'] + readlen] if intron['strand'] == "-" else [intron['end'] - readlen, intron['end'] + readlen]
                         don_win_map = calc_mappability(genomeMappability, t.chromosome, don_win_genomic[0], don_win_genomic[1])
                         acc_win_map = calc_mappability(genomeMappability, t.chromosome, acc_win_genomic[0], acc_win_genomic[1])
+                        don_win_cons = calc_conservation(genomeConservation, t.chromosome, don_win_genomic[0], don_win_genomic[1])
+                        acc_win_cons = calc_conservation(genomeConservation, t.chromosome, acc_win_genomic[0], acc_win_genomic[1])
                         don_seq_rna_ex = rna_seq[max(0,t.end-intron['end']-readlen):min(t.end-intron['end'],l)] if intron['strand'] == "-" else rna_seq[max(0,intron['start']-readlen-t.start):min(l,intron['start']-t.start)]
                         don_seq_rna_in = rna_seq[max(0,t.end-intron['end']):min(t.end-intron['end']+readlen,l)] if intron['strand'] == "-" else rna_seq[max(0,intron['start']-t.start):min(l,intron['start']+readlen-t.start)]
                         acc_seq_rna_in = rna_seq[max(0,t.end-intron['start']-readlen+1):min(t.end-intron['start']+1,l)] if intron['strand'] == "-" else rna_seq[max(0,intron['end']-readlen-t.start+1):min(l,intron['end']-t.start+1)]
@@ -395,6 +413,7 @@ def extract_feature_metadata(config, m, out_dir):
                             don_seq_rna_in.count("T"),
                             don_seq_rna_in.count("G"),
                             don_win_map,
+                            don_win_cons,
                             # acceptor
                             acc_seq_rna_ex.count("A"),
                             acc_seq_rna_ex.count("C"),
@@ -403,8 +422,9 @@ def extract_feature_metadata(config, m, out_dir):
                             acc_seq_rna_in.count("A"),
                             acc_seq_rna_in.count("C"),
                             acc_seq_rna_in.count("T"),
-                            acc_seq_rna_in.count("G"),  
-                            acc_win_map
+                            acc_seq_rna_in.count("G"),
+                            acc_win_map,
+                            acc_win_cons
                         ]]), file=out_sj)
                     # tx info
                     print("\t".join([str(x) for x in [
@@ -420,6 +440,7 @@ def extract_feature_metadata(config, m, out_dir):
                                 rna_seq.count("T"),
                                 rna_seq.count("G"),
                                 tx_map,
+                                tx_cons,
                                 exon_len,
                                 intron_len,
                                 len(overlapping),
@@ -432,7 +453,7 @@ def extract_bam_stats(bam_file, out_dir):
     stats=Counter()
     logging.info("extract_bam_stats for %s" % bam_file)
     assert os.path.exists(bam_file) and os.path.exists(bam_file+'.bai'), "Could not find bam file (or idx) for %s" % (bam_file)
-    # parse cr/mapper from file name    
+    # parse cr/mapper from file name
     assert '.cr' in bam_file, "Cannot parse bam file name %s" % (bam_file)
     if bam_file.endswith('.eval.bam'):
         tmp = bam_file[:-9]
@@ -446,11 +467,11 @@ def extract_bam_stats(bam_file, out_dir):
     cr,mapper=tmp[tmp.find('.cr')+3:].rsplit('.', 1)
     cr=float(cr)
     samin = pysam.AlignmentFile(bam_file, "rb")
-    dict_chr2idx, dict_idx2chr, dict_chr2len=get_chrom_dicts_from_bam(bam_file)    
+    dict_chr2idx, dict_idx2chr, dict_chr2len=get_chrom_dicts_from_bam(bam_file)
     cols=['n_reads','n_spliced_reads','n_softclipped_reads','mean_span_reads','len_spliced_reads', 'n_unmapped']
     with open(out_dir+'/'+Path(bam_file).stem+'.bamstats.tsv', 'w') as out:
         print("\t".join([str(x) for x in ['chromosome', 'mapper', 'cr', 'ftype'] + cols]), file=out)
-        for chrom, chrlen in dict_chr2len.items():        
+        for chrom, chrlen in dict_chr2len.items():
             rit = ReadIterator(samin, dict_chr2idx, reference=chrom, start=1, end=chrlen, max_span=None, flag_filter=0) # max_span=m.max_ilen
             stats[chrom, 'mean_span_reads']=[]
             stats[chrom, 'len_spliced_reads']=[]
@@ -485,7 +506,7 @@ def extract_bam_stats(bam_file, out_dir):
     stats=Counter()
     logging.info("extract_bam_stats for %s" % bam_file)
     assert os.path.exists(bam_file) and os.path.exists(bam_file+'.bai'), "Could not find bam file (or idx) for %s" % (bam_file)
-    # parse cr/mapper from file name    
+    # parse cr/mapper from file name
     assert '.cr' in bam_file, "Cannot parse bam file name %s" % (bam_file)
     if bam_file.endswith('.eval.bam'):
         tmp = bam_file[:-9]
@@ -499,11 +520,11 @@ def extract_bam_stats(bam_file, out_dir):
     cr,mapper=tmp[tmp.find('.cr')+3:].rsplit('.', 1)
     cr=float(cr)
     samin = pysam.AlignmentFile(bam_file, "rb")
-    dict_chr2idx, dict_idx2chr, dict_chr2len=get_chrom_dicts_from_bam(bam_file)    
+    dict_chr2idx, dict_idx2chr, dict_chr2len=get_chrom_dicts_from_bam(bam_file)
     cols=['n_reads','n_spliced_reads','n_softclipped_reads','mean_span_reads','len_spliced_reads', 'n_unmapped']
     with open(out_dir+'/'+Path(bam_file).stem+'.bamstats.tsv', 'w') as out:
         print("\t".join([str(x) for x in ['chromosome', 'mapper', 'cr', 'ftype'] + cols]), file=out)
-        for chrom, chrlen in dict_chr2len.items():        
+        for chrom, chrlen in dict_chr2len.items():
             rit = ReadIterator(samin, dict_chr2idx, reference=chrom, start=1, end=chrlen, max_span=None, flag_filter=0) # max_span=m.max_ilen
             stats[chrom, 'mean_span_reads']=[]
             stats[chrom, 'len_spliced_reads']=[]
@@ -533,13 +554,13 @@ def extract_bam_stats(bam_file, out_dir):
         for chrom in list(dict_chr2len.keys())+['unmapped']:
             print("\t".join([str(x) for x in [
                 chrom, mapper, cr, ftype] + [stats[chrom, col] for col in cols]]), file=out)
-            
+
 def special_count_HISAT3N_strand_stats(bam_file, out_dir):
     """ Extract HISAT3N specific stats """
     stats=Counter()
     logging.info("extract_bam_stats for %s" % bam_file)
     assert os.path.exists(bam_file) and os.path.exists(bam_file+'.bai'), "Could not find bam file (or idx) for %s" % (bam_file)
-    # parse cr/mapper from file name    
+    # parse cr/mapper from file name
     assert '.cr' in bam_file, "Cannot parse bam file name %s" % (bam_file)
     if bam_file.endswith('.eval.bam'):
         tmp = bam_file[:-9]
@@ -553,11 +574,11 @@ def special_count_HISAT3N_strand_stats(bam_file, out_dir):
     cr,mapper=tmp[tmp.find('.cr')+3:].rsplit('.', 1)
     cr=float(cr)
     samin = pysam.AlignmentFile(bam_file, "rb")
-    dict_chr2idx, dict_idx2chr, dict_chr2len=get_chrom_dicts_from_bam(bam_file)    
+    dict_chr2idx, dict_idx2chr, dict_chr2len=get_chrom_dicts_from_bam(bam_file)
     cols=['n_reads','n_softclipped_reads']
     with open(out_dir+'/'+Path(bam_file).stem+'.bamstats.tsv', 'w') as out:
         print("\t".join([str(x) for x in ['chromosome', 'mapper', 'cr', 'ftype', 'matching_strand'] + cols]), file=out)
-        for chrom, chrlen in dict_chr2len.items():        
+        for chrom, chrlen in dict_chr2len.items():
             rit = ReadIterator(samin, dict_chr2idx, reference=chrom, start=1, end=chrlen, max_span=None, flag_filter=0) # max_span=m.max_ilen
             for loc, r in rit:
                 true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted_read = r.query_name.split('_')
@@ -570,4 +591,3 @@ def special_count_HISAT3N_strand_stats(bam_file, out_dir):
             for matching_strand in [True, False]:
                 print("\t".join([str(x) for x in [
                     chrom, mapper, cr, ftype, 1 if matching_strand else 0] + [stats[chrom, matching_strand, col] for col in cols]]), file=out)
-                

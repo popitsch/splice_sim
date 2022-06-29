@@ -219,7 +219,7 @@ def transcript2genome_bam(m, transcript_bam_file, out_bam, overwrite=False):
     return(stats)
     
     
-def modify_bases(chrom, start, ref, alt, seq, is_reverse, conversion_rate, conversion_mask_prob, masked_positions ):
+def modify_bases(chrom, start, ref, alt, seq, is_reverse, conversion_rate, conversion_mask_prob, tested_positions, masked_positions ):
     """ introduces nucleotide conversions.
         returns the new sequence and the converted positions (always! 5'-3' as shown in genome browser)
         positions are 0-based """
@@ -233,17 +233,21 @@ def modify_bases(chrom, start, ref, alt, seq, is_reverse, conversion_rate, conve
         if c == ref:
             n_convertible+=1
             # is this a masked position?
-            if conversion_mask_prob is not None:
+            if conversion_mask_prob is not None:                
                 pos=chrom+':'+str(int(start)+i)
-                if pos in masked_positions:
+                if pos in tested_positions and pos in masked_positions:
                     convseq+=c
                     continue # skip conversion
-                masked_positions.add(pos)
+                tested_positions.add(pos)
+                if random.uniform(0, 1) < conversion_mask_prob:
+                    masked_positions.add(pos)
+                    convseq+=c
+                    continue # skip conversion
             if random.uniform(0, 1) < conversion_rate:
                 c=alt.lower()
                 n_modified+=1
         convseq+=c
-    return convseq, n_convertible, n_modified, masked_positions
+    return convseq, n_convertible, n_modified, tested_positions, masked_positions
 
 def add_read_modifications(in_bam, out_bam, ref, alt, conversion_rate, conversion_mask_prob, threads, tag_tc="xc", tag_isconvread="xm", overwrite=False):
     """ modify single nucleotides in reads. 
@@ -253,14 +257,17 @@ def add_read_modifications(in_bam, out_bam, ref, alt, conversion_rate, conversio
         return
     sam = pysam.AlignmentFile(in_bam, "rb")
     masked_positions = set()
+    tested_positions = set()
     with pysam.AlignmentFile(out_bam+'.tmp.bam', "wb", header=sam.header) as bam_out:
         for r in sam.fetch(until_eof=True):
             quals=r.query_qualities # save qualities as they will be deleted if query sequence is set
             true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted_read  = r.query_name.split('_')
             is_converted_read=int(is_converted_read)
             if is_converted_read==1: # read chosen from binomial; modify its bases
-                r.query_sequence, n_convertible, n_modified, masked_positions=modify_bases(true_chr, true_start, ref, alt, r.query_sequence, r.is_reverse, 
-                                                                         conversion_rate, conversion_mask_prob, masked_positions)
+                r.query_sequence, n_convertible, n_modified, tested_positions, masked_positions=modify_bases(true_chr, 
+                                                                                                             true_start, ref, alt, r.query_sequence, 
+                                                                                                             r.is_reverse, conversion_rate, 
+                                                                                                             conversion_mask_prob, tested_positions, masked_positions)
             else:
                 n_convertible=r.query_sequence.count(ref)
                 n_modified=0
@@ -284,7 +291,7 @@ def add_read_modifications(in_bam, out_bam, ref, alt, conversion_rate, conversio
             r.query_qualities=quals
             bam_out.write(r)
         if conversion_mask_prob is not None:
-            print("masked_positions: ", str(len(masked_positions)))
+            print("masked_positions %i/%i : " % ( str(len(masked_positions)),  str(len(tested_positions)) ) )
     try:
         pysam.sort("-@", str(threads), "-o", out_bam, out_bam+'.tmp.bam') # @UndefinedVariable
         os.remove(out_bam+'.tmp.bam')

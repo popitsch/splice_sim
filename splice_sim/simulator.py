@@ -234,7 +234,7 @@ def modify_bases(chrom, start, ref, alt, seq, is_reverse, conversion_rate, conve
             n_convertible+=1
             # is this a masked position?
             if conversion_mask_prob is not None:
-                pos=chrom+':'+str(start+i)
+                pos=chrom+':'+str(int(start)+i)
                 if pos in masked_positions:
                     continue # skip conversion
                 masked_positions.add(pos)

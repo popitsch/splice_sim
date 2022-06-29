@@ -236,6 +236,7 @@ def modify_bases(chrom, start, ref, alt, seq, is_reverse, conversion_rate, conve
             if conversion_mask_prob is not None:
                 pos=chrom+':'+str(int(start)+i)
                 if pos in masked_positions:
+                    convseq+=c
                     continue # skip conversion
                 masked_positions.add(pos)
             if random.uniform(0, 1) < conversion_rate:

@@ -291,7 +291,7 @@ def add_read_modifications(in_bam, out_bam, ref, alt, conversion_rate, conversio
             r.query_qualities=quals
             bam_out.write(r)
         if conversion_mask_prob is not None:
-            print("masked_positions %i/%i : " % ( str(len(masked_positions)),  str(len(tested_positions)) ) )
+            print("masked_positions %i/%i : " % ( len(masked_positions),  len(tested_positions) ) )
     try:
         pysam.sort("-@", str(threads), "-o", out_bam, out_bam+'.tmp.bam') # @UndefinedVariable
         os.remove(out_bam+'.tmp.bam')

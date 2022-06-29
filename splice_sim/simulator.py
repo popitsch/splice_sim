@@ -219,7 +219,7 @@ def transcript2genome_bam(m, transcript_bam_file, out_bam, overwrite=False):
     return(stats)
     
     
-def modify_bases(ref, alt, seq, is_reverse, conversion_rate ):
+def modify_bases(chrom, start, ref, alt, seq, is_reverse, conversion_rate, conversion_mask_prob, masked_positions ):
     """ introduces nucleotide conversions.
         returns the new sequence and the converted positions (always! 5'-3' as shown in genome browser)
         positions are 0-based """
@@ -229,29 +229,37 @@ def modify_bases(ref, alt, seq, is_reverse, conversion_rate ):
     convseq=""
     n_modified=0
     n_convertible=0
-    for i,c in enumerate(seq):
+    for i,c in enumerate(seq):        
         if c == ref:
             n_convertible+=1
+            # is this a masked position?
+            if conversion_mask_prob is not None:
+                pos=chrom+':'+str(start+i)
+                if pos in masked_positions:
+                    continue # skip conversion
+                masked_positions.add(pos)
             if random.uniform(0, 1) < conversion_rate:
                 c=alt.lower()
                 n_modified+=1
         convseq+=c
-    return convseq, n_convertible, n_modified
+    return convseq, n_convertible, n_modified, masked_positions
 
-def add_read_modifications(in_bam, out_bam, ref, alt, conversion_rate, threads, tag_tc="xc", tag_isconvread="xm", overwrite=False):
+def add_read_modifications(in_bam, out_bam, ref, alt, conversion_rate, conversion_mask_prob, threads, tag_tc="xc", tag_isconvread="xm", overwrite=False):
     """ modify single nucleotides in reads. 
     """
     if not overwrite and os.path.isfile(out_bam):
         print("Pre-existing file %s, will not recreate" % out_bam)
         return
     sam = pysam.AlignmentFile(in_bam, "rb")
+    masked_positions = set()
     with pysam.AlignmentFile(out_bam+'.tmp.bam', "wb", header=sam.header) as bam_out:
         for r in sam.fetch(until_eof=True):
             quals=r.query_qualities # save qualities as they will be deleted if query sequence is set
             true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted_read  = r.query_name.split('_')
             is_converted_read=int(is_converted_read)
             if is_converted_read==1: # read chosen from binomial; modify its bases
-                r.query_sequence, n_convertible, n_modified=modify_bases(ref, alt, r.query_sequence, r.is_reverse, conversion_rate)
+                r.query_sequence, n_convertible, n_modified, masked_positions=modify_bases(true_chr, true_start, ref, alt, r.query_sequence, r.is_reverse, 
+                                                                         conversion_rate, conversion_mask_prob, masked_positions)
             else:
                 n_convertible=r.query_sequence.count(ref)
                 n_modified=0
@@ -274,6 +282,8 @@ def add_read_modifications(in_bam, out_bam, ref, alt, conversion_rate, threads, 
             r.query_name='_'.join([str(x) for x in [true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted_read]])
             r.query_qualities=quals
             bam_out.write(r)
+        if conversion_mask_prob is not None:
+            print("masked_positions: ", str(len(conversion_mask_prob)))
     try:
         pysam.sort("-@", str(threads), "-o", out_bam, out_bam+'.tmp.bam') # @UndefinedVariable
         os.remove(out_bam+'.tmp.bam')
@@ -306,7 +316,7 @@ def bam_to_fastq(in_bam, out_fastq, overwrite=False):
 def create_genome_bam(m, art_sam_file, threads, out_dir):
     """ create genome bam files per condition and export to fastq """
     config=m.config
-    
+
     # file names
     if not os.path.exists(out_dir):
         os.mkdirs(out_dir)
@@ -330,6 +340,7 @@ def create_genome_bam(m, art_sam_file, threads, out_dir):
                                m.condition.ref, 
                                m.condition.alt,
                                cr, 
+                               m.conversion_mask_prob,
                                threads)            
             
         # convert to FASTQ

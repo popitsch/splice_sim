@@ -337,6 +337,7 @@ class Model():
         self.transcripts=OrderedDict()
         self.max_ilen = config["max_ilen"] if 'max_ilen' in config else None
         self.readlen = config["readlen"] if 'readlen' in config else None
+        self.conversion_mask_prob = config["conversion_mask_prob"] if 'conversion_mask_prob' in config else None
         for tid in tid_meta.keys():
             t = Transcript(config, tid, tid_meta[tid], tid_exon[tid], genome, self.condition, max_ilen=self.max_ilen) 
             if t.is_valid:

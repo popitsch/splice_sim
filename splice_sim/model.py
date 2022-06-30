@@ -337,11 +337,25 @@ class Model():
         self.transcripts=OrderedDict()
         self.max_ilen = config["max_ilen"] if 'max_ilen' in config else None
         self.readlen = config["readlen"] if 'readlen' in config else None
-        self.conversion_mask_prob = config["conversion_mask_prob"] if 'conversion_mask_prob' in config else None
         for tid in tid_meta.keys():
             t = Transcript(config, tid, tid_meta[tid], tid_exon[tid], genome, self.condition, max_ilen=self.max_ilen) 
             if t.is_valid:
                 self.transcripts[tid] = t
+        self.snps=None
+        if 'snp_file' in config:
+            self.snp_pos_per_chr={}
+            self.snps={}
+            self.snp_file = config['snp_file']
+            ti = TabixIterator(self.snp_file )
+            for (CHROM,POS,ID,REF,ALT,_,_,INFO) in ti:
+                if CHROM.startswith("#"):
+                    continue
+                if CHROM not in self.snp_pos_per_chr:
+                    self.snp_pos_per_chr[CHROM]=set()
+                self.snp_pos_per_chr[CHROM].add(POS)
+                prob=max([float(p.split('=')[1]) for p in [tag for tag in INFO.split(';')] if p.split('=')[0]=='prob']) # parse from info
+                self.snps[CHROM+':'+pos]=(ALT,prob)
+            logging.info("Loaded %i SNPs" % (sum([len(x) for x in snp_pos_per_chr.values()])))
         logging.info("Instantiated %i transcripts" % len(self.transcripts))      
     def write_gff(self, outdir):
         """ Write a filtered GFF file containing all kept/simulated transcripts """

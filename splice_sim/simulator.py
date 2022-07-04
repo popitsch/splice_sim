@@ -219,7 +219,7 @@ def transcript2genome_bam(m, transcript_bam_file, out_bam, overwrite=False):
     return(stats)
     
     
-def modify_bases(ref, alt, seq, is_reverse, conversion_rate ):
+def modify_bases(chrom, start, ref, alt, seq, is_reverse, conversion_rate, ref_pos=None, snp_pos=None, snps=None ):
     """ introduces nucleotide conversions.
         returns the new sequence and the converted positions (always! 5'-3' as shown in genome browser)
         positions are 0-based """
@@ -229,29 +229,43 @@ def modify_bases(ref, alt, seq, is_reverse, conversion_rate ):
     convseq=""
     n_modified=0
     n_convertible=0
-    for i,c in enumerate(seq):
+    for i,c in enumerate(seq):        
         if c == ref:
             n_convertible+=1
-            if random.uniform(0, 1) < conversion_rate:
+            # is this a SNP position?
+            if ref_pos is not None and ref_pos[i] in snp_pos:
+                snp_alt, snp_prob = snps[chrom+':'+str(ref_pos[i])]
+                if random.uniform(0, 1) < conversion_mask_prob:
+                    c=snp_alt.lower()
+                    n_modified+=1                    
+            elif random.uniform(0, 1) < conversion_rate:
                 c=alt.lower()
                 n_modified+=1
         convseq+=c
-    return convseq, n_convertible, n_modified
+    return convseq, n_convertible, n_modified, tested_positions, masked_positions
 
-def add_read_modifications(in_bam, out_bam, ref, alt, conversion_rate, threads, tag_tc="xc", tag_isconvread="xm", overwrite=False):
+def add_read_modifications(m, in_bam, out_bam, conversion_rate, threads, tag_tc="xc", tag_isconvread="xm", overwrite=False):
     """ modify single nucleotides in reads. 
     """
+    ref=m.condition.ref
+    alt=m.condition.alt
+
     if not overwrite and os.path.isfile(out_bam):
         print("Pre-existing file %s, will not recreate" % out_bam)
         return
     sam = pysam.AlignmentFile(in_bam, "rb")
+    masked_positions = set()
+    tested_positions = set()
     with pysam.AlignmentFile(out_bam+'.tmp.bam', "wb", header=sam.header) as bam_out:
         for r in sam.fetch(until_eof=True):
             quals=r.query_qualities # save qualities as they will be deleted if query sequence is set
             true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted_read  = r.query_name.split('_')
             is_converted_read=int(is_converted_read)
             if is_converted_read==1: # read chosen from binomial; modify its bases
-                r.query_sequence, n_convertible, n_modified=modify_bases(ref, alt, r.query_sequence, r.is_reverse, conversion_rate)
+                ref_pos, snp_pos, snps = r.get_reference_positions(), m.snp_pos[true_chr] if true_chr in m.snp_pos else None, m.snps if m.snps is not None else None,None,None
+                r.query_sequence, n_convertible, n_modified, tested_positions, masked_positions=modify_bases(true_chr, 
+                                                                                                             true_start, ref, alt, r.query_sequence, 
+                                                                                                             r.is_reverse, conversion_rate, ref_pos, snp_pos, snps)
             else:
                 n_convertible=r.query_sequence.count(ref)
                 n_modified=0
@@ -274,6 +288,8 @@ def add_read_modifications(in_bam, out_bam, ref, alt, conversion_rate, threads, 
             r.query_name='_'.join([str(x) for x in [true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted_read]])
             r.query_qualities=quals
             bam_out.write(r)
+        if conversion_mask_prob is not None:
+            print("masked_positions %i/%i : " % ( len(masked_positions),  len(tested_positions) ) )
     try:
         pysam.sort("-@", str(threads), "-o", out_bam, out_bam+'.tmp.bam') # @UndefinedVariable
         os.remove(out_bam+'.tmp.bam')
@@ -306,7 +322,7 @@ def bam_to_fastq(in_bam, out_fastq, overwrite=False):
 def create_genome_bam(m, art_sam_file, threads, out_dir):
     """ create genome bam files per condition and export to fastq """
     config=m.config
-    
+
     # file names
     if not os.path.exists(out_dir):
         os.mkdirs(out_dir)
@@ -325,10 +341,9 @@ def create_genome_bam(m, art_sam_file, threads, out_dir):
     for cr in m.condition.conversion_rates:
         f_bam_mod = out_dir+'/'+config["dataset_name"]+".cr"+str(cr)+".truth.bam"
         f_fq_mod = out_dir+'/'+config["dataset_name"]+".cr"+str(cr)+".truth.fq"
-        add_read_modifications(f_bam_ori, 
+        add_read_modifications(m,
+                               f_bam_ori, 
                                f_bam_mod, 
-                               m.condition.ref, 
-                               m.condition.alt,
                                cr, 
                                threads)            
             

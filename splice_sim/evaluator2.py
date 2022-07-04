@@ -13,7 +13,7 @@ from genomic_iterators.grouped_iterators import BlockedIterator, BlockLocationIt
 from splice_sim.utils import *
 from splice_sim.model import *
 import statistics
-import concurrent.futures
+import concurrent.futures   
 
 read_colors={
     'fn': '200,200,200',
@@ -591,3 +591,29 @@ def special_count_HISAT3N_strand_stats(bam_file, out_dir):
             for matching_strand in [True, False]:
                 print("\t".join([str(x) for x in [
                     chrom, mapper, cr, ftype, 1 if matching_strand else 0] + [stats[chrom, matching_strand, col] for col in cols]]), file=out)
+                
+def special_extract_sc_reads(bam_file, region, outdir):
+    """ Extract soft-clipped reads """
+    assert os.path.exists(bam_file) and os.path.exists(bam_file+'.bai'), "Could not find bam file (or idx) for %s" % (bam_file)
+    out_file = outdir+'/softclipped_' + os.path.basename(bam_file)
+    dict_chr2idx, dict_idx2chr, dict_chr2len=get_chrom_dicts_from_bam(bam_file)    
+    samin = pysam.AlignmentFile(bam_file, "rb")
+    samout=pysam.AlignmentFile(out_file, "wb", template=samin)
+    reg=Location.from_str(region, dict_chr2idx)
+    rit = ReadIterator(samin, dict_chr2idx, reference=dict_idx2chr[reg.chr_idx], start=reg.start, end=reg.end, max_span=None, flag_filter=0) # max_span=m.max_ilen
+    for loc, r in rit:
+        is_softclipped=4 in [x for x,_ in r.cigartuples]
+        if is_softclipped:
+            samout.write(r)
+    samout.close()
+    # index
+    try:
+        pysam.index(out_file)  # @UndefinedVariable
+    except Exception as e:
+        print("error indexing bam: %s" % e)
+    print("All done.")
+    
+    
+
+
+    

@@ -80,7 +80,9 @@ require(ggforce)
 require(writexl)
 require(xfun)
 require(forcats)
-require(glue)
+library(ExperimentHub)
+library(GSEABase)
+library(msigdbr)
 
 rename=dplyr::rename
 select=dplyr::select
@@ -207,7 +209,7 @@ top_genes = top_genes %>%
 #   #facet_wrap(cat~., scales = 'free_x') +
 #   ggtitle("Mappability category distributions for expressed/transcribed genes")
 
-top_genes %>% group_by(cat, ds, mappability) %>% count() %>% 
+p1 <- top_genes %>% group_by(cat, ds, mappability) %>% count() %>% 
   group_by(cat, ds) %>% mutate(s=sum(n), frac=n/s) %>% 
   group_by(cat, mappability) %>% 
   summarise(frac=mean(frac)) %>% 
@@ -219,13 +221,160 @@ top_genes %>% group_by(cat, ds, mappability) %>% count() %>%
   ggtitle("Mappability category distributions for expressed/transcribed genes") +
   ylab("Fraction of genes") + xlab("")
 
+ribozero_genes = top_genes %>%
+  dplyr::filter(cat == "RiboZero", mappability %in% c("medium","low")) %>%
+  dplyr::mutate(gene_id = sub("\\..*","",gene_id)) %>%
+  .$gene_id %>% 
+  unique
 
+all_gene_sets = msigdbr(species = "Mus musculus")
+#all_gene_sets = msigdbr(species = "Mus musculus", category = "H")
+#all_gene_sets = msigdbr(species = "Mus musculus", category = "C2")
 
-ggsave(paste0(params$out_dir,'/qc_map_cat_dist.pdf'), width = 10, height = 6)
+ribozero_gene_sets = all_gene_sets %>%
+  dplyr::filter(ensembl_gene %in% ribozero_genes)
+
+plotTab = all_gene_sets %>%
+  dplyr::group_by(gs_cat, gs_subcat) %>%
+  dplyr::summarise(total = length(unique(gs_name))) %>%
+  dplyr::mutate(name = paste0(gs_cat," ", gs_subcat)) %>%
+  dplyr::left_join(
+    ribozero_gene_sets %>%
+      dplyr::group_by(gs_cat, gs_subcat) %>%
+      dplyr::summarise(ribozero = length(unique(gs_name))) %>%
+      dplyr::mutate(name = paste0(gs_cat," ", gs_subcat))
+  )
+
+pal = brewer.pal(3,"Set1")[c(2,1)]
+
+p2 <- plotTab %>%
+  ungroup %>%
+  dplyr::mutate(name = factor(name, levels = c("H ",setdiff(plotTab$name,"H ")))) %>%
+  dplyr::arrange(name) %>%
+  dplyr::mutate(percentage_ribozero = ribozero / total * 100, percentage_rest = (total - ribozero) / total * 100) %>%
+  dplyr::select(name, percentage_rest, percentage_ribozero) %>%
+  gather(class, values, 2:3) %>%
+  dplyr::mutate(class = case_when(
+    class == "percentage_rest" ~ "other genes only",
+    class == "percentage_ribozero" ~ "ribozero-containing",
+  )) %>%
+  dplyr::mutate(class = factor(class, levels = c("other genes only","ribozero-containing"))) %>%
+  ggplot(aes(x = name, y = values, fill = class)) +
+  geom_bar(stat="identity") + 
+  scale_fill_manual(values = pal) +
+  theme_linedraw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.title=element_blank(),
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+  ) +
+  xlab("") + ylab("Percentage of gene sets covered [%]") +
+  ggtitle("MSigDb gene set coverage")
+
+my_plot_grid(list(p1,p2), 'Ribo-zero gene statistics', labels = T)
+ggsave(paste0(params$out_dir,'/qc_map_cat_dist.pdf'), width = 15, height = 6)
 #+scale_y_log10()
 
 # Distribution of mappability categories for expressed genes (TPM>10) in (i) regular RNAseq data (TPM value tables downloaded from EBI ExpressionAtlas project E-MTAB-6798; plot shows mean category fractions over 94 datasets), (ii) Ribo-zero RNAseq data from mESC cells, (iii) all transcripts used in this study. Ribo-zero data contains a considerably higher fraction of low and medium mappability transcripts (>50%)
 
+
+```
+
+# MSigDb
+
+```{r}
+
+plotTab = all_gene_sets %>%
+  dplyr::group_by(gs_cat, gs_subcat) %>%
+  dplyr::summarise(total = length(unique(gs_name))) %>%
+  dplyr::mutate(name = paste0(gs_cat," ", gs_subcat)) %>%
+  dplyr::left_join(
+    ribozero_gene_sets %>%
+      dplyr::group_by(gs_cat, gs_subcat) %>%
+      dplyr::summarise(ribozero = length(unique(gs_name))) %>%
+      dplyr::mutate(name = paste0(gs_cat," ", gs_subcat))
+  )
+
+pal = brewer.pal(3,"Set1")[c(2,1)]
+
+plotTab %>%
+  ungroup %>%
+  dplyr::mutate(name = factor(name, levels = c("H ",setdiff(plotTab$name,"H ")))) %>%
+  dplyr::arrange(name) %>%
+  dplyr::mutate(total = total - ribozero) %>%
+  dplyr::select(name, total, ribozero) %>%
+  gather(class, values, 2:3) %>%
+  dplyr::mutate(class = factor(class, levels = c("total","ribozero"))) %>%
+  ggplot(aes(x = name, y = values, fill = class)) +
+  geom_bar(stat="identity") + 
+  scale_fill_manual(values = pal) +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+  ) +
+  xlab("") + ylab("# Gene sets")
+
+plotTab %>%
+  ungroup %>%
+  dplyr::mutate(name = factor(name, levels = c("H ",setdiff(plotTab$name,"H ")))) %>%
+  dplyr::arrange(name) %>%
+  dplyr::mutate(percentage_ribozero = ribozero / total * 100, percentage_rest = (total - ribozero) / total * 100) %>%
+  dplyr::select(name, percentage_rest, percentage_ribozero) %>%
+  gather(class, values, 2:3) %>%
+  dplyr::mutate(class = factor(class, levels = c("percentage_rest","percentage_ribozero"))) %>%
+  ggplot(aes(x = name, y = values, fill = class)) +
+  geom_bar(stat="identity") + 
+  scale_fill_manual(values = pal) +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+  ) +
+  xlab("") + ylab("Percentage of gene sets covered [%]")
+
+
+plotTab = all_gene_sets %>%
+  dplyr::group_by(gs_cat, gs_subcat) %>%
+  dplyr::summarise(total = length(unique(gene_symbol))) %>%
+  dplyr::mutate(name = paste0(gs_cat," ", gs_subcat)) %>%
+  dplyr::left_join(
+    ribozero_gene_sets %>%
+      dplyr::group_by(gs_cat, gs_subcat) %>%
+      dplyr::summarise(ribozero = length(unique(gene_symbol))) %>%
+      dplyr::mutate(name = paste0(gs_cat," ", gs_subcat))
+  )
+
+pal = brewer.pal(3,"Set1")[c(2,1)]
+
+plotTab %>%
+  ungroup %>%
+  dplyr::mutate(name = factor(name, levels = c("H ",setdiff(plotTab$name,"H ")))) %>%
+  dplyr::arrange(name) %>%
+  dplyr::mutate(total = total - ribozero) %>%
+  dplyr::select(name, total, ribozero) %>%
+  gather(class, values, 2:3) %>%
+  dplyr::mutate(class = factor(class, levels = c("total","ribozero"))) %>%
+  ggplot(aes(x = name, y = values, fill = class)) +
+  geom_bar(stat="identity") + 
+  scale_fill_manual(values = pal) +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+  ) +
+  xlab("") + ylab("# Genes")
+
+plotTab %>%
+  ungroup %>%
+  dplyr::mutate(name = factor(name, levels = c("H ",setdiff(plotTab$name,"H ")))) %>%
+  dplyr::arrange(name) %>%
+  dplyr::mutate(percentage_ribozero = ribozero / total * 100, percentage_rest = (total - ribozero) / total * 100) %>%
+  dplyr::select(name, percentage_rest, percentage_ribozero) %>%
+  gather(class, values, 2:3) %>%
+  dplyr::mutate(class = factor(class, levels = c("percentage_rest","percentage_ribozero"))) %>%
+  ggplot(aes(x = name, y = values, fill = class)) +
+  geom_bar(stat="identity") + 
+  scale_fill_manual(values = pal) +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+  ) +
+  xlab("") + ylab("Percentage of genes covered [%]")
 
 ```
 

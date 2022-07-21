@@ -17,9 +17,9 @@ output:
     fig_caption: true
 params:
     splice_sim_config_r1:
-       value: "/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/big4_slamseq_nf/splice_sim.config.json"
+       value: "/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/big4_slamseq_nf_kss/splice_sim.config.json"
     data_dir:
-       value: "/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/replicate_data_no_kss/"
+       value: "/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/replicate_data_kss/"
     out_dir:
        value: "/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/mosaic_analysis/"
 ---
@@ -96,6 +96,7 @@ options(scipen=10000) # to avoid scientific notation y axis
 
 # load resources/functions
 source('splice_sim_resources.R')
+
 ```
 
 

@@ -17,9 +17,9 @@ output:
     fig_caption: true
 params:
     splice_sim_config:
-       value: "/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/big4_biseq_nf/splice_sim.config.json"
+       value: "/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/big4_biseq_nf_kss/splice_sim.config.json"
     out_dir:
-       value: "/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/big4_biseq_nf/analysis/"
+       value: "/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/big4_biseq_nf_kss/analysis/"
 ---
 <style type="text/css">
 body, td {
@@ -1675,89 +1675,4 @@ f1d = m[['tx']] %>% group_by(ftype) %>% count(mappability) %>%
 my_plot_grid(list(f1a, f1b, f1c, f1d), 'Fig1', labels = T)
 ggsave(paste0(params$out_dir, 'Fig1.pdf'), width=12, height=10)
 
-```
-
-## Fig 2
-
-<div class = "blue">
-<b>Fig 2: FCR and FMAT reconstruction.</b>
-A) Mean difference to simulated FCR. The plot demonstrates that FCR of high mappability transcripts is robustly reconstructed by both mappers.
-
-B) Based on the abolute difference to the simulated FCR, we selected the best mapper per tx. If the difference is close to the truth (<0.05) then Both mappers are selected, if the difference is greater than 0.1 then None is selected.
-
-C) Difference to simulated FMAT for unfiltered and intron-filtered data. Intron filtering is descibed in the main text. STAR shows increasing difference with increasing NC. Intron filtering improves the results particularly in the low mappability segement.
-
-D) Median FMAT improvement, stratified by the percentage of filtered introns.
-The plot shows that FMAT improvement increases with higher fractions of filtered introns.
-
-</div>
-
-```{r}
-f2a = fcr_perf %>% 
-  filter(ftype=='exon') %>% 
-  pivot_longer(cols=c(diff_HISAT3N, diff_STAR)) %>% 
-  group_by(ftype, conversion_rate, true_isoform, mappability, name) %>% 
-  calc_ci(value) %>% 
-  ggplot(aes(x=as.numeric(as.character(conversion_rate))*100, y=col.mean, col=name, group=name, linetype=name)) + 
-  geom_hline(yintercept = 0, col='black') +
-  geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
-  geom_line() +
-  facet_grid(true_isoform~mappability) +
-  scale_x_continuous() + xlab("conversion rate [%]") + ylab("Mean difference to simulated FCR") +
-  ggtitle("Mean difference to simulated FCR in exonic regions")
-
-
-f2b = fcr_perf %>% 
-  mutate(best_mapper=factor(best_mapper, levels = c('None', 'Both', 'STAR', 'HISAT3N')),
-         conversion_rate_perc=factor(as.numeric(as.character(conversion_rate))*100) ) %>% 
-  group_by(conversion_rate_perc, ftype, mappability, true_isoform) %>% 
-  count(best_mapper, .drop=F) %>% 
-  group_by(conversion_rate_perc, ftype, true_isoform, mappability) %>% 
-  mutate(frac = n / sum(n)) %>% 
-  ungroup() %>% 
-  #filter(best_mapper %in% c('STAR','HISAT3N')) %>% 
-  ggplot(aes(conversion_rate_perc, frac, fill=best_mapper)) + 
-  geom_col() + 
-  facet_grid(mappability~ftype+true_isoform) +
-  ggtitle('Best mapper wrt. FCR per conversion rate/isoform') +
-  ylab("Fraction") + xlab("Conversion rate [%]") +
-  my_scales() + guides(fill=guide_legend(title="Best Mapper"))
-
-
-f2c = sfrac %>% 
-  filter(filter_type=='include_converted') %>%
-  group_by(mapper, tx_mappability, conversion_rate) %>% 
-  pivot_longer(c(diff_spliced, diff_spliced_fil)) %>% 
-  group_by(mapper, tx_mappability, conversion_rate, name) %>% 
-  calc_iqr(value) %>% 
-  ungroup() %>% 
-  ggplot(aes(as.numeric(as.character(conversion_rate))*100, col.median, col=name, group=paste(name))) +
-  geom_line() +
-  geom_ribbon(aes(ymin=col.lower, ymax=col.upper, fill=name), linetype=0, alpha=0.2) +
-  facet_grid(tx_mappability~mapper) +
-  ylab("Difference to simulated FMAT") + 
-  xlab("Conversion rate [%]") +
-  scale_colour_manual(name = '', 
-         values =c('diff_spliced'='blue',
-                   'diff_spliced_fil'='red'), labels = c('unfiltered','filtered')) +
-  ggtitle("Median difference to simulated FMAT")
-
-f2d = sfrac %>%
-  filter(filter_type=='include_converted') %>%
-  mutate(frac_filtered=round(n_fil/(rnk-1),1)) %>%
-  group_by(mapper, frac_filtered, tx_mappability, conversion_rate ) %>% 
-  calc_iqr(improvement) %>%
-  #filter(col.n>10) %>% 
-  ggplot(aes(x=frac_filtered*100, y=col.median, col=mapper, group=mapper)) +
-  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=3, alpha=0.05) +
-  geom_line() +
-  facet_grid(tx_mappability~conversion_rate) +
-  ggtitle('Median FMAT improvement per fraction introns filtered') +
-  ylab("FMAT improvement") +
-  xlab("Fraction introns filtered [%]") + 
-  my_scales()
-
-
-my_plot_grid(list(f2a, f2b, f2c, f2d), 'Fig2', labels = T)
-ggsave(paste0(params$out_dir, 'Fig2.pdf'), width=12, height=10)
 ```

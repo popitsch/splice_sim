@@ -135,8 +135,8 @@ if (file.exists(meta_bsfile)) {
   stop("Could not find meta_file")
 }
 
-high = m[["tx"]] %>% dplyr::group_by(mappability) %>% dplyr::summarise(tx = n())  %>% dplyr::filter(mappability == "high") %>% .$tx
-medium = m[["tx"]] %>% dplyr::group_by(mappability) %>% dplyr::summarise(tx = n())  %>% dplyr::filter(mappability == "medium") %>% .$tx
+high = m[["tx"]] %>% dplyr::group_by(mappability) %>% dplyr::summarise(tx = n()) %>% dplyr::filter(mappability == "high") %>% as_tibble %>% .$tx
+medium = m[["tx"]] %>% dplyr::group_by(mappability) %>% dplyr::summarise(tx = n())  %>% dplyr::filter(mappability == "medium") %>% as_tibble %>% .$tx
 
 mbs[["tx"]] = mbs[["tx"]] %>%
   dplyr::arrange(desc(mean_map)) %>%
@@ -144,10 +144,10 @@ mbs[["tx"]] = mbs[["tx"]] %>%
     row_number() <= high ~ "high",
     row_number() <= high + medium ~ "medium",
     TRUE ~ "low"
-  ))
+  )) %>% as_tibble
 
-high = m[["fx"]] %>% dplyr::group_by(mappability) %>% dplyr::summarise(tx = n())  %>% dplyr::filter(mappability == "high") %>% .$tx
-medium = m[["fx"]] %>% dplyr::group_by(mappability) %>% dplyr::summarise(tx = n())  %>% dplyr::filter(mappability == "medium") %>% .$tx
+high = m[["fx"]] %>% dplyr::group_by(mappability) %>% dplyr::summarise(tx = n())  %>% dplyr::filter(mappability == "high") %>% as_tibble %>% .$tx
+medium = m[["fx"]] %>% dplyr::group_by(mappability) %>% dplyr::summarise(tx = n())  %>% dplyr::filter(mappability == "medium") %>% as_tibble %>% .$tx
 
 mbs[["fx"]] = mbs[["fx"]] %>%
   dplyr::arrange(desc(mean_map)) %>%
@@ -155,7 +155,7 @@ mbs[["fx"]] = mbs[["fx"]] %>%
     row_number() <= high ~ "high",
     row_number() <= high + medium ~ "medium",
     TRUE ~ "low"
-  ))
+  )) %>% as_tibble
 
 # to calc performance data
 # d[['fx']] %>% 
@@ -187,6 +187,7 @@ if (dir.exists(paste0(home_dir,'/eva_umap/bamstats'))) {
 
 # result tables
 results=list()
+
 ```
 
 
@@ -194,6 +195,7 @@ results=list()
 ## QC
 
 ### BAM stats
+
 ```{r bam_stats, include=T, echo=F, cache=T}
 bam_stats = d[['bam_stats']] %>% 
   rename(conversion_rate=cr) %>% 
@@ -291,6 +293,7 @@ ggplot(non_na_counts, aes(x=name, y=frac)) +
   coord_flip() 
 
 ggsave(paste0(params$out_dir, 'qc_non_na_counts.pdf'), width=12, height=10)
+
 ```
 
 ### Missing tids
@@ -312,7 +315,8 @@ print(paste0("We have data for ", length(found_tids), '/', length(m[['all_tids']
 missing_tx=load_table('/groups/ameres/Niko/projects/Ameres/splicing/data/slamstr/pooled.mm10.all/pooled.mm10.all.Slamstr.stats.trans.final.tsv.gz') %>% 
   select(tid=transcript_id, gene_type, len, ilen) %>% 
   filter(tid %in% m[['all_tids']]) %>% 
-  mutate(cat=ifelse(tid %in% found_tids, 'recovered','missing')) 
+  mutate(cat=ifelse(tid %in% found_tids, 'recovered','missing')) %>%
+  as_tibble()
 p1=missing_tx %>% ggplot(aes(x=factor(cat), y=len)) + 
   geom_boxplot()  +scale_y_log10() + ggtitle("Length distribution of recovered vs missing tx") +
   geom_hline(yintercept = conf$readlen, col='red')
@@ -504,18 +508,28 @@ plotTab = m[["tx"]] %>%
   dplyr::inner_join(
      mbs[["tx"]] %>%
        dplyr::select(tid, mean_map) %>%
-       dplyr::rename(bsmap = mean_map) 
+       dplyr::rename(bismap = mean_map) 
   ) %>%
   dplyr::mutate(
-    dens = densCols(umap, bsmap, nbin = 100,
+    dens = densCols(umap, bismap, nbin = 100,
                 colramp = colorRampPalette((brewer.pal(9,"Greys")[-c(1:5)])))
   )
 
+pearsonR = cor(plotTab$umap,plotTab$bismap)
+
 plotTab %>%
-  ggplot(aes(x = umap, y = bsmap, col = dens)) +
+  as_tibble %>%
+  ggplot(aes(x = umap, y = bismap, col = dens)) +
   geom_point(size=0.5,alpha=0.8) +
   scale_color_identity() + 
-  ggtitle("Umap vs Bismap [transcript]")
+  ggtitle("Umap vs Bismap [transcript]",subtitle=paste0("Pearson's r: ",round(pearsonR,digits=3)))
+
+pBismapCor <- plotTab %>%
+  as_tibble %>%
+  ggplot(aes(x = umap, y = bismap, col = dens)) +
+  geom_point(size=0.5,alpha=0.8) +
+  scale_color_identity() + 
+  ggtitle("Umap vs Bismap [transcript]",subtitle=paste0("Pearson's r: ",round(pearsonR,digits=3)))
 
 plotTab = m[["fx"]] %>%
   dplyr::select(fid, mean_map) %>%
@@ -530,11 +544,14 @@ plotTab = m[["fx"]] %>%
                 colramp = colorRampPalette((brewer.pal(9,"Greys")[-c(1:5)])))
   )
 
+pearsonR = cor(plotTab$umap,plotTab$bsmap)
+
 plotTab %>%
+  as_tibble %>%
   ggplot(aes(x = umap, y = bsmap, col = dens)) +
   geom_point(size=0.5,alpha=0.8) +
-  scale_color_identity() +
-  ggtitle("Umap vs Bismap [features]")
+  scale_color_identity() + 
+  ggtitle("Umap vs Bismap [features]",subtitle=paste0("Pearson's r: ",round(pearsonR,digits=3)))
 
 plotTab = m[["sj"]] %>%
   dplyr::select(fid, don_win_map) %>%
@@ -549,11 +566,14 @@ plotTab = m[["sj"]] %>%
                 colramp = colorRampPalette((brewer.pal(9,"Greys")[-c(1:5)])))
   )
 
+pearsonR = cor(plotTab$umap,plotTab$bsmap)
+
 plotTab %>%
+  as_tibble %>%
   ggplot(aes(x = umap, y = bsmap, col = dens)) +
   geom_point(size=0.5,alpha=0.8) +
-  scale_color_identity() +
-  ggtitle("Umap vs Bismap [SJ donor]")
+  scale_color_identity() + 
+  ggtitle("Umap vs Bismap [SJ donor]",subtitle=paste0("Pearson's r: ",round(pearsonR,digits=3)))
 
 plotTab = m[["sj"]] %>%
   dplyr::select(fid, acc_win_map) %>%
@@ -568,18 +588,22 @@ plotTab = m[["sj"]] %>%
                 colramp = colorRampPalette((brewer.pal(9,"Greys")[-c(1:5)])))
   )
 
+pearsonR = cor(plotTab$umap,plotTab$bsmap)
+
 plotTab %>%
+  as_tibble %>%
   ggplot(aes(x = umap, y = bsmap, col = dens)) +
   geom_point(size=0.5,alpha=0.8) +
-  scale_color_identity() +
-  ggtitle("Umap vs Bismap [SJ acceptor]")
+  scale_color_identity() + 
+  ggtitle("Umap vs Bismap [SJ acceptor]",subtitle=paste0("Pearson's r: ",round(pearsonR,digits=3)))
 
 plotTab = rbind(
-  mbs[["tx"]] %>% dplyr::mutate(class = "bsmap") %>% dplyr::select(class, mappability, mean_map),
-  m[["tx"]] %>% dplyr::mutate(class = "umap") %>% dplyr::select(class, mappability, mean_map)
+  mbs[["tx"]] %>% dplyr::mutate(class = "bsmap") %>% dplyr::select(class, mappability, mean_map) %>% as_tibble,
+  m[["tx"]] %>% dplyr::mutate(class = "umap") %>% dplyr::select(class, mappability, mean_map) %>% as_tibble
 )
 
 plotTab %>%
+  as_tibble %>%
   ggplot(aes(x = mappability, y = mean_map)) +
   geom_boxplot() +
   facet_wrap(~class) +
@@ -656,7 +680,8 @@ perf %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>%
   scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
   theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5)) +
   ylab("Precision") +
-  ggtitle('Median precision per condition')
+  ggtitle('Median precision per condition') +
+  my_scales()
 
 perf %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(recall) %>% 
   ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
@@ -666,7 +691,19 @@ perf %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>%
   scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
   theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5)) +
   ylab("Recall") +
-  ggtitle('Median recall per condition')
+  ggtitle('Median recall per condition') +
+  my_scales()
+
+pf1 <- perf %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(F1) %>% 
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~ftype, scales = 'free') +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5)) +
+  ylab("F1") +
+  ggtitle('Median F1 per condition') +
+  my_scales()
 
 perf %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(F1) %>% 
   ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
@@ -676,7 +713,8 @@ perf %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>%
   scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
   theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5)) +
   ylab("F1") +
-  ggtitle('Median F1 per condition')
+  ggtitle('Median F1 per condition') +
+  my_scales()
 
 perf_Bs %>% group_by(conversion_rate, mapper, bs_mappability, true_isoform, ftype) %>% calc_iqr(precision) %>% 
   ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
@@ -686,7 +724,8 @@ perf_Bs %>% group_by(conversion_rate, mapper, bs_mappability, true_isoform, ftyp
   scale_y_continuous(sec.axis = sec_axis(~ . , name = "bs mappability", breaks = NULL, labels = NULL)) +
   theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5)) +
   ylab("Precision") +
-  ggtitle('Median precision per condition bismap')
+  ggtitle('Median precision per condition bismap') +
+  my_scales()
 
 perf_Bs %>% group_by(conversion_rate, mapper, bs_mappability, true_isoform, ftype) %>% calc_iqr(recall) %>% 
   ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
@@ -696,7 +735,8 @@ perf_Bs %>% group_by(conversion_rate, mapper, bs_mappability, true_isoform, ftyp
   scale_y_continuous(sec.axis = sec_axis(~ . , name = "bs mappability", breaks = NULL, labels = NULL)) +
   theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5)) +
   ylab("Recall") +
-  ggtitle('Median recall per condition bismap')
+  ggtitle('Median recall per condition bismap') +
+  my_scales()
 
 perf_Bs %>% group_by(conversion_rate, mapper, bs_mappability, true_isoform, ftype) %>% calc_iqr(F1) %>% 
   ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
@@ -706,7 +746,8 @@ perf_Bs %>% group_by(conversion_rate, mapper, bs_mappability, true_isoform, ftyp
   scale_y_continuous(sec.axis = sec_axis(~ . , name = "bs mappability", breaks = NULL, labels = NULL)) +
   theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5)) +
   ylab("F1") +
-  ggtitle('Median F1 per condition bismap')
+  ggtitle('Median F1 per condition bismap') +
+  my_scales()
 
 perf %>%
   dplyr::filter(conversion_rate == 0) %>%
@@ -1007,6 +1048,52 @@ perf %>%
   xlab("") +
   scale_fill_brewer(palette = "Set1") +
   ggtitle('98% CR F1 umap - F1 bismap')
+
+perf %>%
+  group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(F1) %>%
+  dplyr::select(conversion_rate, mapper, mappability, true_isoform, ftype, col.median) %>%
+  dplyr::rename(F1_umap = col.median) %>%
+  dplyr::inner_join(
+    perf_Bs %>%
+      dplyr::rename(mappability = bs_mappability) %>%
+      group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(F1) %>%
+      dplyr::select(conversion_rate, mapper, mappability, true_isoform, ftype, col.median) %>%
+      dplyr::rename(F1_bismap = col.median)
+  ) %>%
+  dplyr::mutate(F1_diff = F1_umap - F1_bismap) %>%
+  dplyr::mutate(mappability = factor(mappability, levels = c("high","medium","low"))) %>%
+  ggplot(aes(conversion_rate, F1_diff, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~ftype, scales = 'free') +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5)) +
+  ylab("F1 umap - F1 bismap") +
+  ggtitle('F1 umap - F1 bismap') +
+  my_scales()
+
+pf1diff <- perf %>%
+  group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(F1) %>%
+  dplyr::select(conversion_rate, mapper, mappability, true_isoform, ftype, col.median) %>%
+  dplyr::rename(F1_umap = col.median) %>%
+  dplyr::inner_join(
+    perf_Bs %>%
+      dplyr::rename(mappability = bs_mappability) %>%
+      group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(F1) %>%
+      dplyr::select(conversion_rate, mapper, mappability, true_isoform, ftype, col.median) %>%
+      dplyr::rename(F1_bismap = col.median)
+  ) %>%
+  dplyr::mutate(F1_diff = F1_umap - F1_bismap) %>%
+  dplyr::mutate(mappability = factor(mappability, levels = c("high","medium","low"))) %>%
+  ggplot(aes(conversion_rate, F1_diff, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~ftype, scales = 'free') +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5)) +
+  ylab("F1 umap - F1 bismap") +
+  ggtitle('F1 umap - F1 bismap') +
+  my_scales()
 
 dev.off()
 ```
@@ -1332,6 +1419,15 @@ tibble(
   ,method="spearman")
 )
 )
+
+pF1Cor <- corTab %>%
+  dplyr::mutate(ftype = factor(ftype, levels = c("tx","exon","intron"))) %>%
+  ggplot(aes(x = ftype, y = cor, fill = mappability)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  facet_grid(true_isoform~mapper) +
+  scale_fill_brewer(palette = "Set1") +
+  xlab("") + ylab("Pearson's r") +
+  ggtitle("Correlation of mappability scores with F1")
 
 corTab %>%
   dplyr::mutate(ftype = factor(ftype, levels = c("tx","exon","intron"))) %>%
@@ -1674,5 +1770,26 @@ f1d = m[['tx']] %>% group_by(ftype) %>% count(mappability) %>%
 
 my_plot_grid(list(f1a, f1b, f1c, f1d), 'Fig1', labels = T)
 ggsave(paste0(params$out_dir, 'Fig1.pdf'), width=12, height=10)
+
+```
+
+
+## Fig Bismap
+
+<div class = "blue">
+<b>Fig Bismap: F1 score and correlation with bismap mappability.</b>
+A) Median F1 measure per mapper for different genomic annotation (tx: whole transcript), stratified by originating isoform (pre: premature, mat: mature) and genomic mappability.
+
+B) Correlation of umap and bismap mappability scores per transcript. 
+
+C) Correlation of bsmap and umap mappability scores with F1 performance
+
+D) Delta of F1 umap vs bismap scores across features and mappability classes.
+</div>
+
+```{r}
+
+my_plot_grid(list(pf1, pBismapCor, pF1Cor, pf1diff), 'Figure Biseq4 performance + bismap correlation', labels = T)
+ggsave(paste0(params$out_dir, 'Fig_biseq_overview.pdf'), width=12, height=10)
 
 ```

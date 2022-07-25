@@ -926,6 +926,10 @@ my_plot_grid(list(p0,p1,p2), 'Best mapper per tx wrt. FMAT')
 
 ggsave(paste0(params$out_dir, 'sj_bst_mapper.pdf'), width=10, height=6)
 
+my_plot_grid(list(p0), '')
+
+ggsave(paste0(params$out_dir, 'sj_mosaic_bst_mapper.pdf'), width=10, height=6)
+
 ```
 
 

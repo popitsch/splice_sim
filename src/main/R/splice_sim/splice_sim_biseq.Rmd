@@ -694,7 +694,7 @@ perf %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>%
   ggtitle('Median recall per condition') +
   my_scales()
 
-pf1 <- perf %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(F1) %>% 
+pf1 <- perf %>% dplyr::filter(mapper != "STAR") %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(F1) %>% 
   ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
   geom_line() +
   #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
@@ -1072,7 +1072,7 @@ perf %>%
   ggtitle('F1 umap - F1 bismap') +
   my_scales()
 
-pf1diff <- perf %>%
+pf1diff <- perf %>% dplyr::filter(mapper != "STAR") %>%
   group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(F1) %>%
   dplyr::select(conversion_rate, mapper, mappability, true_isoform, ftype, col.median) %>%
   dplyr::rename(F1_umap = col.median) %>%
@@ -1425,7 +1425,7 @@ pF1Cor <- corTab %>%
   ggplot(aes(x = ftype, y = cor, fill = mappability)) +
   geom_bar(stat = "identity", position = position_dodge()) +
   facet_grid(true_isoform~mapper) +
-  scale_fill_brewer(palette = "Set1") +
+  scale_fill_brewer(palette = "Pastel1") +
   xlab("") + ylab("Pearson's r") +
   ggtitle("Correlation of mappability scores with F1")
 
@@ -1434,7 +1434,7 @@ corTab %>%
   ggplot(aes(x = ftype, y = cor, fill = mappability)) +
   geom_bar(stat = "identity", position = position_dodge()) +
   facet_grid(true_isoform~mapper) +
-  scale_fill_brewer(palette = "Set1") +
+  scale_fill_brewer(palette = "Pastel1") +
   xlab("") + ylab("Pearson's r") +
   ggtitle("Correlation of mappability scores with F1")
 

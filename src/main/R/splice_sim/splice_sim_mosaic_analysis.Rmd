@@ -603,6 +603,22 @@ Mean difference to simulated FCR. The plot shows the expected gain in FCR accura
 
 pdf(paste0(params$out_dir, 'fcr_simulated_difference.pdf'), width=12, height=10)
 
+pMosaicFCR <- mosaic %>% 
+  filter(ftype=='exon') %>% 
+  select(ftype, conversion_rate, true_isoform, mappability, HISAT3N=diff_HISAT3N, STAR=diff_STAR, MOSAIC = diff_MOSAIC) %>% 
+  pivot_longer(cols=c(HISAT3N, STAR, MOSAIC), names_to = 'mapper') %>% 
+  group_by(ftype, conversion_rate, true_isoform, mappability, mapper) %>% 
+  calc_ci(value) %>% 
+  ggplot(aes(x=as.numeric(as.character(conversion_rate))*100, y=col.mean, col=mapper, group=mapper)) + 
+  geom_hline(yintercept = 0, col='black') +
+  geom_ribbon(aes(ymin=col.lower, ymax=col.upper, fill=mapper), linetype=0, alpha=0.2) +
+  geom_line() +
+  facet_grid(true_isoform~mappability) +
+  xlab("Conversion rate [%]") + ylab("Mean difference to simulated FCR") +
+  ggtitle("Difference to simulated FCR in exonic regions") +
+  my_scales() +
+  scale_x_continuous(labels = label_number(accuracy = 1))
+
 mosaic %>% 
   filter(ftype=='exon') %>% 
   select(ftype, conversion_rate, true_isoform, mappability, HISAT3N=diff_HISAT3N, STAR=diff_STAR, MOSAIC = diff_MOSAIC) %>% 
@@ -926,9 +942,9 @@ my_plot_grid(list(p0,p1,p2), 'Best mapper per tx wrt. FMAT')
 
 ggsave(paste0(params$out_dir, 'sj_bst_mapper.pdf'), width=10, height=6)
 
-my_plot_grid(list(p0), '')
+my_plot_grid(list(pMosaicFCR, p0), 'MOSAIC FCR and FMAT improvement')
 
-ggsave(paste0(params$out_dir, 'sj_mosaic_bst_mapper.pdf'), width=10, height=6)
+ggsave(paste0(params$out_dir, 'sj_mosaic_bst_mapper.pdf'), width=12, height=6)
 
 ```
 

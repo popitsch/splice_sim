@@ -1421,6 +1421,11 @@ tibble(
 )
 
 pF1Cor <- corTab %>%
+  dplyr::filter(mapper != "STAR") %>%
+  dplyr::mutate(mappability = case_when(
+    mappability == "umap" ~ mappability,
+    TRUE ~ "bismap"
+  )) %>%
   dplyr::mutate(ftype = factor(ftype, levels = c("tx","exon","intron"))) %>%
   ggplot(aes(x = ftype, y = cor, fill = mappability)) +
   geom_bar(stat = "identity", position = position_dodge()) +

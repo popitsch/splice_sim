@@ -914,7 +914,7 @@ p0 = mosaic %>%
   geom_violin() +
   geom_boxplot(width = 0.1, outlier.shape = NA) +
   facet_wrap(~tx_mappability) +
-  xlab("Conversion rate [%]") + ylab("Difference to simulated FMAT") +
+  xlab("Mapper") + ylab("Difference to simulated FMAT") +
   ggtitle("Difference to simulated FMAT") +
   my_scales()
 
@@ -942,7 +942,15 @@ my_plot_grid(list(p0,p1,p2), 'Best mapper per tx wrt. FMAT')
 
 ggsave(paste0(params$out_dir, 'sj_bst_mapper.pdf'), width=10, height=6)
 
-my_plot_grid(list(pMosaicFCR, p0), 'MOSAIC FCR and FMAT improvement')
+pFMATMosaicImprovement = p0 +
+  theme(
+    axis.text.x=element_blank(),
+    axis.ticks.x=element_blank(),
+    legend.position="none"
+  )
+
+upper = plot_grid(pMosaicFCR,pFMATMosaicImprovement, labels = c('A', 'B'), rel_widths = c(2,1), nrow=1 )
+my_plot_grid(list(upper), 'MOSAIC FCR and FMAT improvement', nrow = 1)
 
 ggsave(paste0(params$out_dir, 'sj_mosaic_bst_mapper.pdf'), width=12, height=6)
 

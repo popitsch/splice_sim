@@ -24,6 +24,7 @@ from pathlib import Path
 from splice_sim.utils import *
 import tqdm
 from intervaltree import IntervalTree, Interval
+from genomic_iterators.tabix_iterators import TabixIterator
 
 # Necessary for including python modules from a parent directory
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -342,6 +343,7 @@ class Model():
             if t.is_valid:
                 self.transcripts[tid] = t
         self.snps=None
+        self.snp_pos_per_chr=None
         if 'snp_file' in config:
             self.snp_pos_per_chr={}
             self.snps={}
@@ -352,11 +354,17 @@ class Model():
                     continue
                 if CHROM not in self.snp_pos_per_chr:
                     self.snp_pos_per_chr[CHROM]=set()
-                self.snp_pos_per_chr[CHROM].add(POS)
-                prob=max([float(p.split('=')[1]) for p in [tag for tag in INFO.split(';')] if p.split('=')[0]=='prob']) # parse from info
-                self.snps[CHROM+':'+pos]=(ALT,prob)
-            logging.info("Loaded %i SNPs" % (sum([len(x) for x in snp_pos_per_chr.values()])))
+                self.snp_pos_per_chr[CHROM].add(int(POS))
+                info=self.parse_info(INFO)
+                prob=float(info['prob']) if 'prob' in info else 1 # parse from info
+                strand_specific=info['strand'] if 'strand' in info else None
+                enable_nc=info['enable_nc']=='yes' if 'enable_nc' in info else True
+                self.snps[CHROM+':'+POS]=(ALT,prob,strand_specific,enable_nc)
+            logging.info("Loaded %i SNPs" % (sum([len(x) for x in self.snp_pos_per_chr.values()])))
         logging.info("Instantiated %i transcripts" % len(self.transcripts))      
+    def parse_info(self, info):
+        """ parse GFF3 info section """
+        return {k:v for k,v in [a.split('=') for a in info.split(';') if '=' in a]}
     def write_gff(self, outdir):
         """ Write a filtered GFF file containing all kept/simulated transcripts """
         logging.info("Writing filtered gene GFF")

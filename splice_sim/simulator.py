@@ -229,43 +229,48 @@ def modify_bases(chrom, start, ref, alt, seq, is_reverse, conversion_rate, ref_p
     convseq=""
     n_modified=0
     n_convertible=0
-    for i,c in enumerate(seq):        
-        if c == ref:
-            n_convertible+=1
-            # is this a SNP position?
-            if ref_pos is not None and ref_pos[i] in snp_pos:
-                snp_alt, snp_prob = snps[chrom+':'+str(ref_pos[i])]
-                if random.uniform(0, 1) < conversion_mask_prob:
+    for i,c in enumerate(seq):
+        #print(i, c, snp_pos, ref_pos) 
+        apply_nc=True
+        num_modified=0       
+        if (snp_pos is not None) and (ref_pos is not None) and (ref_pos[i] in snp_pos): 
+            # this is a SNP position
+            snp_alt, snp_prob, snp_strand, snp_enable_nc = snps[chrom+':'+str(ref_pos[i])]
+            apply_nc=snp_enable_nc
+            if (not snp_strand) or (snp_strand=='NA') or (is_reverse and (snp_strand=='-')) or ((not is_reverse) and (snp_strand=='+')):
+                if random.uniform(0, 1) < snp_prob:
                     c=snp_alt.lower()
-                    n_modified+=1                    
-            elif random.uniform(0, 1) < conversion_rate:
+                    num_modified=1             
+        # FIXME add flag to vcf info to allow NC of (convertible) SNPs 
+        if (c == ref) and (apply_nc):
+            n_convertible+=1               
+            if random.uniform(0, 1) < conversion_rate:
                 c=alt.lower()
-                n_modified+=1
+                num_modified=1
+        n_modified+=num_modified
         convseq+=c
-    return convseq, n_convertible, n_modified, tested_positions, masked_positions
+    return convseq, n_convertible, n_modified
 
 def add_read_modifications(m, in_bam, out_bam, conversion_rate, threads, tag_tc="xc", tag_isconvread="xm", overwrite=False):
     """ modify single nucleotides in reads. 
     """
     ref=m.condition.ref
     alt=m.condition.alt
-
     if not overwrite and os.path.isfile(out_bam):
         print("Pre-existing file %s, will not recreate" % out_bam)
         return
     sam = pysam.AlignmentFile(in_bam, "rb")
-    masked_positions = set()
-    tested_positions = set()
     with pysam.AlignmentFile(out_bam+'.tmp.bam', "wb", header=sam.header) as bam_out:
         for r in sam.fetch(until_eof=True):
             quals=r.query_qualities # save qualities as they will be deleted if query sequence is set
             true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted_read  = r.query_name.split('_')
             is_converted_read=int(is_converted_read)
             if is_converted_read==1: # read chosen from binomial; modify its bases
-                ref_pos, snp_pos, snps = r.get_reference_positions(), m.snp_pos[true_chr] if true_chr in m.snp_pos else None, m.snps if m.snps is not None else None,None,None
-                r.query_sequence, n_convertible, n_modified, tested_positions, masked_positions=modify_bases(true_chr, 
-                                                                                                             true_start, ref, alt, r.query_sequence, 
-                                                                                                             r.is_reverse, conversion_rate, ref_pos, snp_pos, snps)
+                ref_pos, snp_pos, snps = ([x+1 if x is not None else x for x in r.get_reference_positions(full_length=True)], m.snp_pos_per_chr[true_chr] if true_chr in m.snp_pos_per_chr else None, m.snps) if (m.snps is not None) else (None,None,None) # note ref_pos are 0-based
+                
+                #print(ref_pos, snp_pos, snps, m.snp_pos_per_chr, m.snps)
+                r.query_sequence, n_convertible, n_modified=modify_bases(true_chr, true_start, ref, alt, r.query_sequence, 
+                                                                         r.is_reverse, conversion_rate, ref_pos, snp_pos, snps)
             else:
                 n_convertible=r.query_sequence.count(ref)
                 n_modified=0
@@ -288,8 +293,6 @@ def add_read_modifications(m, in_bam, out_bam, conversion_rate, threads, tag_tc=
             r.query_name='_'.join([str(x) for x in [true_tid, true_strand, true_isoform, read_tag, true_chr, true_start, true_cigar, n_seqerr, n_converted, is_converted_read]])
             r.query_qualities=quals
             bam_out.write(r)
-        if conversion_mask_prob is not None:
-            print("masked_positions %i/%i : " % ( len(masked_positions),  len(tested_positions) ) )
     try:
         pysam.sort("-@", str(threads), "-o", out_bam, out_bam+'.tmp.bam') # @UndefinedVariable
         os.remove(out_bam+'.tmp.bam')

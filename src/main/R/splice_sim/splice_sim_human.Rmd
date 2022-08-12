@@ -16,12 +16,6 @@ output:
     fig_height: 10
     fig_caption: true
 params:
-<<<<<<< HEAD
-    splice_sim_config:
-       value: "/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/big5_slamseq_nf/splice_sim.config.json"
-    out_dir:
-       value: "/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/big5_slamseq_nf/analysis/"
-=======
     splice_sim_config_r1:
        value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big5_slamseq_nf/splice_sim.config.json"
     data_dir:
@@ -30,7 +24,6 @@ params:
        value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/splice_sim_paper/replicate_data/"
     out_dir:
        value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/splice_sim_paper/analysis_human/"
->>>>>>> ff29178d9b9386f51781952c0b0e9ab76473cb3b
 ---
 <style type="text/css">
 body, td {
@@ -636,17 +629,12 @@ tab %>% ggplot(aes(as.numeric(as.character(conversion_rate))*100, col.median, co
   guides(linetype=guide_legend(title="originating Isoform")) + 
   ggtitle("Median precision + recall per tx, pooled data")
 
-<<<<<<< HEAD
-dev.off()
-=======
 ggsave(paste0(params$out_dir, 'map_per.pdf'), width=12, height=6)
->>>>>>> ff29178d9b9386f51781952c0b0e9ab76473cb3b
 
 ```
 ### MAP Correlation of F1 and genomic mappability
 
 ```{r map_corr, include=T, echo=F, cache=T}
-
 pdf(paste0(params$out_dir, 'map_corr.pdf'), width=12, height=10)
 
 txfx %>% 
@@ -700,7 +688,6 @@ dp[['tx']] %>%
   geom_label(aes(5, Inf, label = paste0('n=',col.n), vjust = 5, col='grey'))
 
 dev.off()
-
 ```
 ### MAP result tables
 
@@ -718,7 +705,6 @@ F) Gene type categories for transcripts where either STAR or HISAT3N was chosen 
 </div>
 
 ```{r map_results, include=T, echo=F, cache=T}
-
 calc_map_table = function(tab) {
   map_tx_cr0 = tab %>% 
   filter(conversion_rate==0) %>% # unconverted only!
@@ -824,8 +810,10 @@ ggsave(paste0(params$out_dir, 'f1_corr_best_mapper.pdf'), width=13, height=10)
 
 ```
 
-### MAP Write BED file of best mapper 
 
+
+
+### MAP Write BED file of best mapper 
 ```{r, include=F, echo=F, eval=F}
 # ==============================================
 # write BED file of best mapper
@@ -977,13 +965,9 @@ dev.off()
 
 ### FCR result tables
 
-<<<<<<< HEAD
-=======
 Calculated across all rep
 
->>>>>>> ff29178d9b9386f51781952c0b0e9ab76473cb3b
 ```{r fcr_results, include=T, echo=F, cache=T}
-
 results[['fcr_tx_tab']] = fcr_tab %>% filter(ftype=='tx') %>%
   rename(tid=fid) %>% 
   left_join(m[['tx']], by=c('tid', 'ftype')) %>% 
@@ -995,12 +979,10 @@ results[['fcr_ex_tab']] = fcr_tab %>% filter(ftype=='exon') %>%
 
 results[['fcr_in_tab']] = fcr_tab %>% filter(ftype=='intron') %>% 
   left_join(m[['fx']], by=c('fid', 'ftype')) %>% 
-  left_join(m[['ga']], by=c('tid'))
-
+  left_join(m[['ga']], by=c('tid')) 
 ```
 
 ### FCR Write BED file of best mapper 
-
 ```{r, include=F, echo=F, eval=F}
 # ==============================================
 # write BED file of best FCR mapper
@@ -1033,7 +1015,6 @@ Number of filtered introns including or excluding converted datasets.
 </div>
 
 ```{r sj_pre, include=T, echo=F, cache=T}
-
 sj_per = cache({
   dp[['sj']] %>% 
     group_by( mapper, conversion_rate, fid, class_type) %>% 
@@ -1126,7 +1107,6 @@ ggsave(paste0(params$out_dir, 'sj_intron_filtering.pdf'), width=10, height=6)
 
 
 ```{r sj_sfrac, include=T, echo=F, cache=T}
-
 # Table to compare frac_spliced w/wo intron filtering
 
 sfrac_conv = cache({
@@ -1255,7 +1235,6 @@ ggsave(paste0(params$out_dir, 'sj_fmat.pdf'), width=8, height=6)
 - calc for each tx: which mapper has smallest diff to sim truth after correction
 
 ```{r sj_corr_best_tx, include=T, echo=F, cache=T}
-
 best_mapper_fmat = cache({
   sfrac %>% 
     select(mapper, tid, conversion_rate,filter_type, n_fil, n_overlapping, 
@@ -1312,7 +1291,6 @@ ggsave(paste0(params$out_dir, 'sj_bst_mapper.pdf'), width=10, height=6)
 ### FMAT correlation with F1
 
 Does F1 neg correlate with difference to true FCR?
-
 ```{r}
 
 tab1 = best_mapper_fmat %>% 
@@ -1432,13 +1410,8 @@ ggsave(paste0(params$out_dir, 'sj_read_classification.pdf'), width=12, height=6)
 ### FMAT result tables
 
 ```{r}
-<<<<<<< HEAD
-
-results[['spl_tx_tab']] = best_mapper_fmat %>% 
-=======
 results[['spl_tx_tab_no_conv']] = best_mapper_fmat %>% 
   filter(filter_type=='unconverted_only') %>% 
->>>>>>> ff29178d9b9386f51781952c0b0e9ab76473cb3b
   left_join(m[['tx']] %>% select(-n_overlapping), by='tid') %>% 
   left_join(m[['ga']], by='tid') 
 
@@ -1449,7 +1422,6 @@ results[['spl_tx_tab_conv']] = best_mapper_fmat %>%
 ```
 
 ### FMAT Write BED file of filtered introns per mapper
-
 ```{r, include=F, echo=F, eval=F}
 # ==============================================
 # write BED file of filtered introns per mapper
@@ -1478,7 +1450,6 @@ for ( filter_type in c('include_converted', 'unconverted_only')) {
 ```
 
 ### FMAT Write BED file of best mapper
-
 ```{r, include=F, echo=F, eval=F}
 # ==============================================
 # write BED file of tx per best mapper
@@ -1529,20 +1500,6 @@ HISAT3N should be less/not influenced by nucleotide conversions (as these are ma
 </div>
 
 ```{r}
-<<<<<<< HEAD
-
-calc_fcr_cvsu = function(tab) {
-  tab %>% 
-    group_by( mapper, classification, ftype) %>% 
-    summarise(all=sum(count),
-              nc_0=sum(count[(cv1==0) & (cv2==0) & (se1+se2==0)]), # reads with no tc conv
-              nc_1=sum(count[(cv1==1) & (cv2==0) & (se1+se2==0)]), # reads with 1 tc conv
-              nc_2=sum(count[(cv2==1) & (se1+se2==0)]), # reads with 2+ tc conv
-              se_0=sum(count[(se1==0) & (se2==0) & (cv1+cv2==0)]), # reads with no seq err
-              se_1=sum(count[(se1==1) & (se2==0) & (cv1+cv2==0)]), # reads with 1 seq err
-              se_2=sum(count[(se2==1) & (cv1+cv2==0)]) # reads with 2+ seq err
-              ) %>% 
-=======
 # load raw data for rep
 home_dir=list(
   "rep1" = "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big5_slamseq_nf/"
@@ -1555,7 +1512,7 @@ fcr_cvsu=cache({
         tmp = load_table(paste0(home_dir[[r]], 'eva/counts/',conf$dataset_name,'.cr',cr,'.',mapper,'.counts.tsv.gz')) %>% 
             mutate(rep=!!r) %>% 
             as_tibble() 
-        tmp = tmp %>% filter(class_type=='tx') %>% 
+        tmp = tmp %>% filter(class_type=='tx', ! fid %in% bad_annotation_tids ) %>% 
             left_join(m[['tx']] %>% select(fid=tid, mappability, convertibility, ftype), by='fid')
         tab = tab %>% 
           bind_rows(
@@ -1576,13 +1533,12 @@ fcr_cvsu=cache({
     }
   }
   tab
-}, name = 'fcr_cvsu', rerun = T)
+}, name = 'fcr_cvsu', rerun = F)
 
 # number of analyzed reads
 fcr_cvsu %>% filter(conversion_rate>0,true_isoform=='pre', classification %in% c('TP','FN')) %>% summarise(analyzes_reads=sum(all))
 
 tab = fcr_cvsu  %>% 
->>>>>>> ff29178d9b9386f51781952c0b0e9ab76473cb3b
     pivot_wider(names_from=classification, 
                 values_from=c(all, nc_0, nc_1, nc_2, se_0, se_1, se_2), 
                 names_sort=T) %>% 
@@ -1633,11 +1589,11 @@ tab = fcr_cvsu  %>%
 p1 = tab %>% 
   filter(class=='FDR', conversion_rate>0, true_isoform=='pre') %>% 
   group_by(ftype, mapper, mappability, cat, n_conv, class) %>% 
-  calc_ci(value_norm) %>% 
-  ggplot(aes(n_conv, col.mean, col=mapper, group=mapper)) +
+  calc_iqr(value_norm) %>% 
+  ggplot(aes(n_conv, col.median, col=mapper, group=mapper)) +
   geom_line() +
   geom_ribbon(aes(ymin=col.lower, ymax=col.upper, fill=mapper), linetype=0, alpha=0.2) +
-  facet_grid(mappability~cat) +
+  facet_grid(mappability~cat, scales = 'free') +
   ggtitle('FDR') +
   ylab("Normalized FDR") + xlab("Number of mismatches") +
   geom_hline(yintercept = 1.0, col='black', linetype='dashed') +
@@ -1646,24 +1602,19 @@ p1 = tab %>%
 p2 = tab %>% 
   filter(class=='FNR', conversion_rate>0, true_isoform=='pre') %>% 
   group_by(ftype, mapper, mappability, cat, n_conv, class) %>% 
-  calc_ci(value_norm) %>% 
-  ggplot(aes(n_conv, col.mean, col=mapper, group=mapper)) +
+  calc_iqr(value_norm) %>% 
+  ggplot(aes(n_conv, col.median, col=mapper, group=mapper)) +
   geom_line() +
   geom_ribbon(aes(ymin=col.lower, ymax=col.upper, fill=mapper), linetype=0, alpha=0.2) +
-  facet_grid(mappability~cat) +
+  facet_grid(mappability~cat, scales = 'free') +
   ggtitle('FNR') +
   ylab("Normalized FNR") + xlab("Number of mismatches") +
   geom_hline(yintercept = 1.0, col='black', linetype='dashed') +
   my_scales()
 
-<<<<<<< HEAD
-ggsave(paste0(params$out_dir, 'special_conv_unconv_reads.pdf'), width=12, height=10)
-
-=======
 my_plot_grid(list(p1,p2), nrow=1, 'FDR/FNR dependence on mismatches', labels = T, rel_widths = c(1,1.1))
 
 ggsave(paste0(params$out_dir, 'special_conv_unconv_reads.pdf'), width=10, height=6)
->>>>>>> ff29178d9b9386f51781952c0b0e9ab76473cb3b
 ```
 ## MQ20 Mapping quality filtering
 
@@ -1726,7 +1677,6 @@ B) Mean mappability vs feature length  for protein coding genes only.
 </div>
 
 ```{r, include=F, echo=F, eval=F}
-
 # top_gene_type_cat = m[['ga']] %>% count(gene_type) %>% arrange(desc(n)) %>% head(4) %>% pull(gene_type)
 top_gene_type_cat=c('protein_coding', 'lincRNA', 'processed_pseudogene', 'other')
 tab = m[['fx']] %>% select(tid, fid, ftype, mean_map, len) %>% 
@@ -1757,9 +1707,6 @@ p2 = tab %>%
   xlab("Mean genomic mappability") +
   ylab("feature length [kb]")
 
-<<<<<<< HEAD
-my_plot_grid(list(p1,p2), labels = T, 'mappability ')
-=======
 p3 = m[['fx']] %>% filter(ftype=='intron', tx_rnk>1) %>% 
   group_by(tid, num_exons) %>% 
   summarise(sd=sd(mean_map)) %>% 
@@ -1989,7 +1936,6 @@ p2 = tab %>%
   geom_line() +
   facet_grid(genome~tx_mappability, scales = 'free')
 plot_grid(p1,p2, labels=c('A','B'),ncol=2)
->>>>>>> ff29178d9b9386f51781952c0b0e9ab76473cb3b
 
 ```
 
@@ -2032,12 +1978,7 @@ summarise_results('Actb')
 
 ```
 
-<<<<<<< HEAD
-# Write results tables
-
-=======
 ## MAP examples
->>>>>>> ff29178d9b9386f51781952c0b0e9ab76473cb3b
 ```{r}
 # RNA guanine-7 methyltransferase activating subunit Ramac / Fam103a1 : chr7:81,762,750-81,769,597
 # angiogenin / Ang5 : chr14:43,956,901-43,963,185
@@ -2107,7 +2048,8 @@ bind_rows(tab,tab2,tab3,tab4) %>%
 
 
 
-summarise_results_fmat('GAS5') # (lincRNA / snoRNA host gene)
+#summarise_results_fmat('GAS5') # (lincRNA / snoRNA host gene)
+summarise_results_fmat('STK38L') # (lincRNA / snoRNA host gene)
 
 #summarise_results_fmat('Ttn') # (many introns)
 ```
@@ -2132,31 +2074,11 @@ D) Number of annotations with high (>0.9), low (<0.2) and medium genomic mappabi
 
 ```{r}
 
-<<<<<<< HEAD
-upsetlist = list(mat = perf %>%
-  dplyr::filter(mapper == "HISAT3N", mappability == "medium",ftype == "exon",true_isoform == "mat") %>% .$fid,
-  pre = perf %>%
-  dplyr::filter(mapper == "HISAT3N", mappability == "medium",ftype == "exon",true_isoform == "pre") %>% .$fid
-)
-
-perf %>%
-  dplyr::group_by(mapper, mappability, ftype, true_isoform) %>%
-  dplyr::summarise(NAs = sum(is.na(F1))) %>%
-  ggplot(aes(x = ftype, y = NAs, fill = true_isoform)) +
-  geom_bar(stat= "identity") +
-  facet_grid(mappability~mapper, scales = 'free_y')
-
-upset(fromList(upsetlist))
-
-f1a = perf %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(F1) %>% 
-  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
-=======
 f1a = txfx %>% 
   filter(!(ftype=='intron' & true_isoform=='mat')) %>% # always 0
   mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
   group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(all_F1) %>% 
   ggplot(aes(as.numeric(as.character(conversion_rate))*100, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
->>>>>>> ff29178d9b9386f51781952c0b0e9ab76473cb3b
   geom_line() +
   #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
   facet_grid(mappability~ftype, scales = 'free_y') +
@@ -2263,7 +2185,6 @@ The plot shows that FMAT improvement increases with higher fractions of filtered
 </div>
 
 ```{r}
-
 f2a = fcr_perf %>% 
   filter(ftype=='exon') %>% 
   select(ftype, conversion_rate, true_isoform, mappability, HISAT3N=diff_HISAT3N, STAR=diff_STAR) %>% 
@@ -2340,7 +2261,6 @@ f2d = sfrac %>%
 
 my_plot_grid(list(f2a, f2b, f2c, f2d), 'Fig2', labels = T)
 ggsave(paste0(params$out_dir, 'Fig2.pdf'), width=12, height=10)
-
 ```
 
 ## Fig 4 + result tables

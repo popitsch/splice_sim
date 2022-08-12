@@ -116,6 +116,7 @@ if __name__ == '__main__':
     parser["evaluate"].add_argument("-b", "--bam_file", type=str, required=True, dest="bam_file", metavar="bam_file", help="input bam file")
     parser["evaluate"].add_argument("-c", "--config", type=str, required=True, dest="config_file", metavar="config_file", help="JSON config file")
     parser["evaluate"].add_argument("-m", "--model", type=str, required=True, dest="model_file", metavar="model_file", help="model file")
+    parser["evaluate"].add_argument("-f", "--filter_bed", type=str, required=False, dest="filter_bed", metavar="filter_bed", help="Filter regions BED file")
     parser["evaluate"].add_argument("-t", "--threads", type=int, required=False, dest="threads", default=1, help="used threads")
     parser["evaluate"].add_argument("-o", "--outdir", type=str, required=True, dest="outdir", metavar="outdir", help="output dir")
 
@@ -271,7 +272,7 @@ if __name__ == '__main__':
         if "random_seed" in config:
             random.seed(config["random_seed"])
             logging.info("setting random seed to %i" % config["random_seed"])
-        evaluate(config, m, args.bam_file, args.threads, outdir)
+        evaluate(config, m, args.bam_file, args.filter_bed, args.threads, outdir)
 
     if mod == "extract_feature_metadata":
         # load config to be able to react to config changes after model was built!

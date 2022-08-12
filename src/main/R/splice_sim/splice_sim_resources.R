@@ -178,10 +178,14 @@ calc_cor = function(d,a,b) {
 }
 
 # simple correlation plot
-plot_corr = function(d, a, b, col_, shape_=NULL, main_title=NA, xlog=F, use_hex=F, draw_diag=T, max_x=NA, show_legend=T, alpha_=0.2) {
-  thecor = paste("r_pearson = ", round(cor(d[[a]], d[[b]], use = "complete.obs"), 4), 
+plot_corr = function(d, a, b, col_, shape_=NULL, main_title=NA, xlog=F, use_hex=F, draw_diag=T, 
+                     max_x=NA, show_legend=T, alpha_=0.2, use_scattermore=FALSE, calc_corr=T) {
+  thecor=''
+  if ( calc_corr) {
+    thecor = paste("r_pearson = ", round(cor(d[[a]], d[[b]], use = "complete.obs"), 4), 
                  "\nr_spearman = ", round(cor(d[[a]], d[[b]], use = "complete.obs", method="spearman"), 4),
                  "\nn =",nrow(na.omit(d %>% select(all_of(a),all_of(b))))  )
+  }
   if (is.na(main_title)) {
     main_title=paste0("Correlation between ",a," and ",b)
   }
@@ -189,7 +193,11 @@ plot_corr = function(d, a, b, col_, shape_=NULL, main_title=NA, xlog=F, use_hex=
   if ( use_hex) {
     p = ggplot( d, aes_string(x=a, y=b) ) +
       geom_hex(bins=100)
-  } else {
+  } else if (use_scattermore) {
+    p = ggplot( d, aes_string(x=a, y=b, col=col_, shape=shape_) ) +
+      geom_scattermore(aes(alpha=alpha_), pointsize=2) 
+  } 
+  else {
     p = ggplot( d, aes_string(x=a, y=b, col=col_, shape=shape_) ) +
       geom_point(aes(alpha=alpha_)) 
   }
@@ -210,6 +218,7 @@ plot_corr = function(d, a, b, col_, shape_=NULL, main_title=NA, xlog=F, use_hex=
   }
   return(p)
 }
+
 
 gn2tid = function(gn) {
   return(unique( m[['ga']] %>% filter(gene_name == gn) %>% pull(tid) ))
@@ -232,6 +241,25 @@ clean_cache = function() {
   unlink(cached_files)
 }
 
+gene_type2cat = function(gts) {
+  # vectorized
+  # see https://vega.archive.ensembl.org/info/about/gene_and_transcript_types.html
+  ncRNA_cat = c('Mt_rRNA','Mt_tRNA','miRNA','misc_RNA','rRNA','scRNA','snRNA','snoRNA','ribozyme','sRNA','scaRNA')
+  lncRNA_cat = c('non_coding','3prime_overlapping_ncRNA','antisense', 'antisense_RNA', 'lincRNA', 'retained_intron','sense_intronic','sense_overlapping','macro_lncRNA','bidirectional_promoter_lncRNA')
+  ret=c()
+  for(gt in gts) {
+    ret=c(ret, case_when(
+      gt %in% c('protein_coding','lncRNA') ~ gt,
+      grepl('pseudogene', gt) ~ 'pseudogene',
+      gt %in% ncRNA_cat ~ 'ncRNA',
+      gt %in% lncRNA_cat ~ 'lncRNA',
+      gt == 'protein_coding' ~ 'protein_coding',
+      is.na(gt) ~ NA_character_,
+      TRUE ~ 'other'
+    ))
+  }
+  return(ret)
+}
 
 
 # __________===============================================================
@@ -247,7 +275,7 @@ my_colors=c(
   "Both"="goldenrod4", 
   "STAR"="green4",
   "HISAT3N"="darkorange2",
-  "simulated"="grey30",
+  "simulated"="#551A8B",
   "truth"="black",
   "fast"="#551A8B",
   "moderate"="sienna4",
@@ -256,10 +284,7 @@ my_colors=c(
   "medium"="blue4",
   "low"="darkolivegreen",
   "outlier"="red",
-  "Outlier in both"="goldenrod4",
-  "Outlier in STAR"="darkolivegreen",
-  "Outlier in HISAT3N"="darkorange4",
-  "Outlier in none"="grey21"
+  "No Outlier"="grey21"
 )
 # show_col(my_colors)
 my_scales=function() {

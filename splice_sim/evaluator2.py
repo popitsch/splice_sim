@@ -14,6 +14,7 @@ from splice_sim.utils import *
 from splice_sim.model import *
 import statistics
 import concurrent.futures   
+import intervaltree
 
 read_colors={
     'fn': '200,200,200',
@@ -149,8 +150,10 @@ def classify_read(found_read, found_overlapping_raw, tid2feat, performance, dict
     return performance
 
 
-def classify_region(target_region, config, bam_file, chrom2feat, tid2feat, out_file_prefix):
+def classify_region(target_region, config, bam_file, chrom2feat, tid2feat, filter_regions, out_file_prefix):
     """ Classify all reads in the passed target region """
+    filter_tree=filter_regions[target_region.chr_idx] if (target_region!='unmapped') and (filter_regions is not None) and (target_region.chr_idx in filter_regions) else None
+        
     min_mapq=config['min_mapq'] if 'min_mapq' in config else 20
     write_bam=config['write_bam'] if 'write_bam' in config else True
     samin = pysam.AlignmentFile(bam_file, "rb")
@@ -162,6 +165,7 @@ def classify_region(target_region, config, bam_file, chrom2feat, tid2feat, out_f
         } if write_bam else None
     performance=Counter()
     wr=0
+    fr=0
     if target_region=='unmapped':
         for unmapped_read in samin.fetch(contig=None, until_eof=True):
             if not unmapped_read.is_unmapped:
@@ -174,8 +178,11 @@ def classify_region(target_region, config, bam_file, chrom2feat, tid2feat, out_f
             rit = ReadIterator(samin, dict_chr2idx, reference=chrom, start=target_region.start, end=target_region.end, max_span=None, flag_filter=0) # max_span=m.max_ilen
             it = AnnotationOverlapIterator(rit, aits, check_read_alignment=True, report_splicing=True)
             for loc, (read, annos) in it:
+                if (filter_tree is not None) and (filter_tree.overlap(loc.start, loc.end)):
+                    fr+=1
+                    continue
                 wr+=1
-                overlapping_annos = annos[0] # select 1st entry as theree is only one ait
+                overlapping_annos = annos[0] # select 1st entry as there is only one ait             
                 performance=classify_read(read, overlapping_annos, tid2feat, performance, dict_samout, dict_chr2idx, min_mapq)
     # close SAM files
     samin.close()
@@ -183,7 +190,7 @@ def classify_region(target_region, config, bam_file, chrom2feat, tid2feat, out_f
         for cat,samout in dict_samout.items():
             samout.close()
             dict_samout[cat]=out_file_prefix+'.%s.eval.%s.bam' % (cat, slugify(str(target_region)))
-    return performance, dict_samout, wr
+    return performance, dict_samout, wr, fr
 
 # evaluate
 # --bam_file /Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/sim/final_bams/big3_slamseq_nf.cr0.1.STAR.final.bam
@@ -191,7 +198,7 @@ def classify_region(target_region, config, bam_file, chrom2feat, tid2feat, out_f
 # --model /Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/sim/reference_model/big3_slamseq_nf.model
 # --outdir /Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/eva/debug/
 
-def evaluate(config, m, bam_file, threads, out_dir):
+def evaluate(config, m, bam_file, filter_regions_bed, threads, out_dir):
     """ evaluate the passed BAM file """
     logging.info("Evaluating %s" % bam_file)
     assert os.path.exists(bam_file) and os.path.exists(bam_file+'.bai'), "Could not find bam file (or idx) for %s" % (bam_file)
@@ -229,6 +236,20 @@ def evaluate(config, m, bam_file, threads, out_dir):
             chrom2feat[c].append((loc,(tid, 'intron', fid)))
             tid2feat[tid].append((loc,(tid, 'intron', fid)))
             intron_len+=len(loc)
+    # get filter regions if any
+    filter_regions=None
+    if filter_regions_bed is not None:
+        freg = pd.read_csv(filter_regions_bed, sep='\t', header=None, names=['chromosome', 'start', 'end', 'name', 'score', 'strand'])
+        filter_regions={}
+        for _, row in freg.iterrows():
+            if row['chromosome'] not in dict_chr2idx.keys():
+                print("Skipping unknown chrom %s in filter_regions_bed" % row['chromosome'])
+                continue
+            chridx=dict_chr2idx[row['chromosome']]
+            if chridx not in filter_regions:
+                filter_regions[chridx]=IntervalTree()          
+            filter_regions[chridx].add(Interval( row['start'],row['end']) )
+        
     # target regions
     if 'target_region' in config:
         target_regions=[Location.from_str(config['debug_region'], dict_chr2idx)]
@@ -238,22 +259,23 @@ def evaluate(config, m, bam_file, threads, out_dir):
     # run parallel
     performance=Counter()
     dict_samout=None
-    wr=0
+    wr,fr=0,0
     print("Start")
     with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
-        future_param = {executor.submit(classify_region, reg, config, bam_file, chrom2feat, tid2feat, out_file_prefix): (reg) for reg in target_regions }
+        future_param = {executor.submit(classify_region, reg, config, bam_file, chrom2feat, tid2feat, filter_regions, out_file_prefix): (reg) for reg in target_regions }
         pbar = tqdm.tqdm(total=len(target_regions), desc="Annotated regions")
         for future in concurrent.futures.as_completed(future_param):
             para = future_param[future]
-            region_performance, region_dict_samout, region_wr = future.result()
+            region_performance, region_dict_samout, region_wr, region_fr = future.result()
             wr+=region_wr
+            fr+=region_fr
             performance.update(region_performance)
             if region_dict_samout is not None:
                 if dict_samout is None:
                     dict_samout={'tx':[], 'fx':[], 'sj':[]}
                 for k in dict_samout.keys():
                     dict_samout[k]+=[region_dict_samout[k]]
-            pbar.set_description('Classified reads: %i' % (wr))
+            pbar.set_description('Classified reads: %i, filtered: %i' % (wr, fr))
             pbar.update(1)
         pbar.close()
     # write performance data
@@ -274,7 +296,7 @@ def evaluate(config, m, bam_file, threads, out_dir):
         for cat,bam_files in dict_samout.items():
             out_file = out_file_prefix+'.%s.eval.bam' % str(cat)
             merge_bam_files(out_file, bam_files, sort_output=True, del_in_files=True)
-    print("All done. Considered %i reads" % wr)
+    print("All done. Classified %i and filtered %i reads" % (wr,fr))
 
 
 def calc_mappability(genomeMappability, chrom, start, end):

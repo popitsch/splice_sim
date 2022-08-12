@@ -329,12 +329,12 @@ echo "Starting splice_sim pipeline with profile $profile"
                     "STAR": {
                         "star_cmd": "STAR",
                         "star_genome_idx": "/groups/ameres/Niko/ref/genomes/mm10/indices/star_2.7.1",
-                        "star_splice_gtf": "/groups/ameres/Niko/ref/genomes/mm10/annotation/GRCm38.p6.annotation.gtf"
+                        "star_splice_gtf": "/groups/ameres/Niko/ref/genomes/mm10/annotation/gencode.vM21.annotation.nochr.sorted.gtf"
                     },
                     "HISAT3N": {
                         "hisat3n_cmd": "singularity exec /groups/ameres/Niko/software/SIF/hisat-3n.sif /hisat-3n/hisat-3n",
                         "hisat3n_idx": "/groups/ameres/Niko/ref/genomes/mm10/indices/hisat2-3n/Mus_musculus.GRCm38.dna.primary_assembly",
-                        "hisat3n_kss": "/groups/ameres/Niko/ref/genomes/mm10/annotation/GRCm38.p6.annotation.gtf.hisat2_splice_sites.txt"
+                        "hisat3n_kss": "/groups/ameres/Niko/ref/genomes/mm10/annotation/gencode.vM21.annotation.nochr.sorted.gtf.hisat2_splice_sites.txt"
                         }
                     },
                 "max_ilen": 100000,

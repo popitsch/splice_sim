@@ -17,11 +17,11 @@ output:
     fig_caption: true
 params:
     bam_stats:
-       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/splice_sim_paper/replicate_data/bamstats.rds"
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/splice_sim_paper/replicate_data_kss/bamstats.rds"
     special_hisat3n_stats:
-       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/splice_sim_paper/replicate_data/special_hisat3n_stats.rds"
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/splice_sim_paper/replicate_data_kss/special_hisat3n_stats.rds"
     out_dir:
-       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/splice_sim_paper/analysis/"
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/splice_sim_paper/analysis_kss/"
 ---
 <style type="text/css">
 body, td {
@@ -146,10 +146,6 @@ hisat3n_stats=read_rds(params$special_hisat3n_stats) %>%
   ungroup() %>% 
   rename(mapped=n_reads)
 
-
-
-# result tables
-results=list()
 ```
 
 
@@ -214,13 +210,13 @@ p3 = bam_stats %>%
   geom_col(position = 'dodge') +
   facet_grid(name~rep, scales = 'free') +
   my_scales() + 
-  ylab("Fraction of reads / # bases ") + xlab("conversion rate [%]")
+  ylab("Fraction of reads / # bases ") + xlab("Conversion rate [%]")
 
 
 left=plot_grid(p1,p2,labels=c('A',''), ncol = 1)
 right=plot_grid(p3,labels=c('B'), ncol = 1)
 plot_grid(left,right)
-ggsave(paste0(params$out_dir, 'bam_stats.pdf'), width=12, height=10)
+ggsave(paste0(params$out_dir, 'bam_stats.pdf'), width=12, height=9)
 
 
 # Example for HISAT3N soft-clipping at read ends

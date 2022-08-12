@@ -17,11 +17,11 @@ output:
     fig_caption: true
 params:
     splice_sim_config_r1:
-       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/splice_sim.config.json"
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf_kss/splice_sim.config.json"
     data_dir:
-       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/splice_sim_paper/replicate_data/"
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/splice_sim_paper/replicate_data_kss/"
     out_dir:
-       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/splice_sim_paper/analysis/"
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/splice_sim_paper/analysis_kss/"
 ---
 <style type="text/css">
 body, td {
@@ -129,8 +129,6 @@ for ( n in names(dp0)) {
     )
 }
 
-# result tables
-results=list()
 ```
 
 

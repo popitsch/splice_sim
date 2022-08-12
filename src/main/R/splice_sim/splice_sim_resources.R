@@ -2,7 +2,7 @@
 # __________===============================================================
 # Functions ---------------------------------------------------------------
 
-  
+
 # load data from TSV
 load_table = function(dataF, append="", header=T, nrows=Inf) {
   dataF = as.character(paste0(dataF, append))
@@ -14,7 +14,7 @@ load_table = function(dataF, append="", header=T, nrows=Inf) {
   }
 }
 
-# load RDS file 
+# load RDS file
 load_rds = function(data_file) {
   if (file.exists(data_file)) {
     tic(paste0("load ", data_file))
@@ -28,7 +28,7 @@ load_rds = function(data_file) {
 
 # multiple plots with single title
 my_plot_grid = function(plots, main='', ncol=NULL, nrow=NULL, labels=NULL, rel_widths = 1, rel_heights = 1) {
-  
+
   if (!is.null(labels)){
     if (labels==T) { labels=LETTERS[1:length(plots)] }
   }
@@ -37,7 +37,7 @@ my_plot_grid = function(plots, main='', ncol=NULL, nrow=NULL, labels=NULL, rel_w
   return (plot_grid(title, plot_row, ncol = 1, rel_heights = c(0.1, 1)))
 }
 
-# calculate confidence interval (ci),  a measure of precision 
+# calculate confidence interval (ci),  a measure of precision
 # call with mtcars %>% calc_ci(mpg) or mtcars %>% group_by(cyl) %>% calc_ci(mpg)
 # plot with ...  %>% ggplot(aes(x=cyl, y=col.mean)) + geom_line() + geom_ribbon(aes(ymin=col.lower, ymax=col.upper), alpha=0.1 ...)
 calc_ci = function(d, col, min_lower_ci=NA, max_upper_ci=NA) {
@@ -49,8 +49,8 @@ calc_ci = function(d, col, min_lower_ci=NA, max_upper_ci=NA) {
     .groups = 'drop') %>%
     mutate(stderr = col.sd / sqrt(col.n),
            col.lower = col.mean - qt(1 - (0.05 / 2), col.n - 1) * stderr,
-           col.upper = col.mean + qt(1 - (0.05 / 2), col.n - 1) * stderr) %>% 
-    ungroup() %>% 
+           col.upper = col.mean + qt(1 - (0.05 / 2), col.n - 1) * stderr) %>%
+    ungroup() %>%
     mutate(col.lower = pmax(min_lower_ci, col.lower, na.rm=T),
            col.upper = pmin(max_upper_ci, col.upper, na.rm=T))
   return (ret)
@@ -66,7 +66,7 @@ calc_iqr = function(d, col, min_lower_ci=NA, max_upper_ci=NA) {
     col.upper = quantile({{col}}, .75, na.rm = TRUE),
     col.lower = quantile({{col}}, .25, na.rm = TRUE),
     col.n = n(),
-    .groups = 'drop') %>% 
+    .groups = 'drop') %>%
     mutate(col.lower = pmax(min_lower_ci, col.lower, na.rm=T),
            col.upper = pmin(max_upper_ci, col.upper, na.rm=T))
 }
@@ -92,39 +92,39 @@ write_bed = function(dat, bed_file, title, header=F) {
   sink(bed_file)
   cat(paste0("track name=",title," description=\"",title,"\" useScore=1 itemRgb=\"On\"\n"))
   sink()
-  dat %>% write_tsv( bed_file, col_names = F, append = T ) 
+  dat %>% write_tsv( bed_file, col_names = F, append = T )
 }
 
 # calculates performance and coverage on grouped data.
 # required columns: count, classification, len
 calc_performance=function(tab, readlen) {
-  tab %>% 
-    summarise(count=sum(count)) %>% 
-    pivot_wider(names_from=classification, values_from=count, names_sort=T) %>% 
-    mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>% 
+  tab %>%
+    summarise(count=sum(count)) %>%
+    pivot_wider(names_from=classification, values_from=count, names_sort=T) %>%
+    mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>%
     mutate(
       read_count=TP+FN,
       cov=read_count*!!readlen/len,
       precision=ifelse(TP+FP>0, TP/(TP+FP), NA),
       recall=ifelse(TP+FN>0,TP/(TP+FN), NA),
       F1=ifelse((2*TP+FP+FN)>0,2*TP/(2*TP+FP+FN),NA)
-    ) 
+    )
 }
 
 # calculate coverage for a grouped table
 # calc_coverage = function(grp_tab) {
-#   grp_tab %>% 
-#     summarise(count=sum(count)) %>% 
-#     pivot_wider(names_from=c(mapper,classification), values_from=count, names_sort=T) %>% 
-#     mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>% 
+#   grp_tab %>%
+#     summarise(count=sum(count)) %>%
+#     pivot_wider(names_from=c(mapper,classification), values_from=count, names_sort=T) %>%
+#     mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>%
 #     filter(len>conf$readlen) %>% # filter too-short introns as this will lead to wrong coverage calc. Example: ENSMUST00000116560.2_in5
 #     mutate(
 #       simulated=(HISAT3N_TP+HISAT3N_FN)*!!conf$readlen/len, # same as simulated_star!
 #       HISAT3N=(HISAT3N_TP+HISAT3N_FP)*!!conf$readlen/len,
 #       STAR=(STAR_TP+STAR_FP)*!!conf$readlen/len,
-#     ) %>% pivot_longer(c(simulated, HISAT3N, STAR), names_to='mapper') %>% 
+#     ) %>% pivot_longer(c(simulated, HISAT3N, STAR), names_to='mapper') %>%
 #     mutate(mapper=factor(mapper, levels=c('simulated', 'HISAT3N', 'STAR')),
-#            is_converted=ifelse(conversion_rate==0,'no conversions', 'converted reads')) %>% 
+#            is_converted=ifelse(conversion_rate==0,'no conversions', 'converted reads')) %>%
 #     ungroup()
 # }
 
@@ -132,8 +132,8 @@ calc_performance=function(tab, readlen) {
 named_group_split <- function(.tbl, ...) {
   grouped <- group_by(.tbl, ...)
   names <- rlang::inject(paste(!!!group_keys(grouped), sep = " / "))
-  grouped %>% 
-    group_split() %>% 
+  grouped %>%
+    group_split() %>%
     rlang::set_names(names)
 }
 
@@ -150,7 +150,7 @@ fit_halflife = function(TP, dat) {
     nlsLM(dat~decay_model(TP, k),
           start=list(
             k=0),
-          lower = c(0),                 
+          lower = c(0),
           upper = c(Inf),
           control = nls.lm.control(maxiter = 1000),
           na.action = na.omit)
@@ -172,7 +172,7 @@ calc_cor = function(d,a,b) {
     tibble(
       r_pearson=round(cor(d[[a]], d[[b]], use = "complete.obs"), 4),
       r_spearman = round(cor(d[[a]], d[[b]], use = "complete.obs", method="spearman"), 4),
-      n =nrow(na.omit(d %>% select(all_of(a),all_of(b))))               
+      n =nrow(na.omit(d %>% select(all_of(a),all_of(b))))
     )
   )
 }
@@ -189,7 +189,7 @@ plot_corr = function(d, a, b, col_, shape_=NULL, main_title=NA, xlog=F, use_hex=
   if (is.na(main_title)) {
     main_title=paste0("Correlation between ",a," and ",b)
   }
-  
+
   if ( use_hex) {
     p = ggplot( d, aes_string(x=a, y=b) ) +
       geom_hex(bins=100)
@@ -199,16 +199,16 @@ plot_corr = function(d, a, b, col_, shape_=NULL, main_title=NA, xlog=F, use_hex=
   } 
   else {
     p = ggplot( d, aes_string(x=a, y=b, col=col_, shape=shape_) ) +
-      geom_point(aes(alpha=alpha_)) 
+      geom_point(aes(alpha=alpha_))
   }
   if (main_title!='') {
-    p=p+ggtitle(main_title, thecor) 
+    p=p+ggtitle(main_title, thecor)
   }
   if ( !is.na(max_x) ) {
     p=p+xlim(0,max_x)+ylim(0, max_x)
   }
   if (draw_diag) {
-    p=p+geom_abline(intercept = 0, slope = 1, col="black",linetype="dotted") 
+    p=p+geom_abline(intercept = 0, slope = 1, col="black",linetype="dotted")
   }
   if ( xlog ) {
     p=p+scale_x_log10()+scale_y_log10()
@@ -271,8 +271,8 @@ gene_type2cat = function(gts) {
 # pal=brewer.pal(name="Dark2",n=8)
 # my_colors=setNames(colorRampPalette(pal)(length(all_factors)), all_factors)
 my_colors=c(
-  "None"="grey21", 
-  "Both"="goldenrod4", 
+  "None"="grey21",
+  "Both"="goldenrod4",
   "STAR"="green4",
   "HISAT3N"="darkorange2",
   "simulated"="#551A8B",
@@ -285,12 +285,17 @@ my_colors=c(
   "low"="darkolivegreen",
   "outlier"="red",
   "No Outlier"="grey21"
+  "Outlier in both"="goldenrod4",
+  "Outlier in STAR"="darkolivegreen",
+  "Outlier in HISAT3N"="darkorange4",
+  "MERANGS"="violetred4",
+  "MOSAIC"="blue4"
 )
 # show_col(my_colors)
 my_scales=function() {
   return(list(
     scale_color_manual(values = my_colors, limits = force),
-    scale_fill_manual(values = my_colors, limits = force) 
+    scale_fill_manual(values = my_colors, limits = force)
   )
   )
 }

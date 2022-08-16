@@ -39,6 +39,8 @@ if __name__ == '__main__':
 
     bamfile = pysam.AlignmentFile(args.bam_file, "rb")
 
+    print("chromosome\tstart\tend\ttx_id\tmean_detected_vs_simulated_conversions\treads_per_feature")
+
     with opener(args.bed_file, 'rt') as f:
         for line in f:
             if line.startswith("#") :

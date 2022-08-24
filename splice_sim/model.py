@@ -480,10 +480,8 @@ class Model():
 #     #m, f_model = Model.build_model('/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/nf3/splice_sim.config.json', 
 #     #                               '/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/nf3/tmp/')
 #     #print(m)
-#     m = Model.load_from_file('/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/nf3/tmp/nf2.model')
+#     m = Model.load_from_file('/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/decay_sim_nf4_intron_kss/tp0/sim/reference_model/decay_sim_nf4_tp0.model')
 #     print(m)
-#     iv=m.build_transcript_iv()
-#     print(iv) 
-#     print(iv['5'].overlap(142903115,142906754))
+    
     
     

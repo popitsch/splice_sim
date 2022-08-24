@@ -21,8 +21,7 @@ read_colors={
     'fn+fp': '200,200,100',
     'fp+fn': '200,100,0',
     'fp': '200,0,0'
-    }
-
+    } 
 
 
 def read_aligns_to_loc(loc, read):
@@ -636,6 +635,39 @@ def special_extract_sc_reads(bam_file, region, outdir):
     print("All done.")
     
     
-
-
+def filter_xc_yc_reads(bam_file, outdir):
+    """ extract reads where xc/yc counts differ """
+    assert os.path.exists(bam_file) and os.path.exists(bam_file+'.bai'), "Could not find bam file (or idx) for %s" % (bam_file)
+    out_bam_file = outdir+'/xcyc_' + os.path.basename(bam_file)
+    dict_chr2idx, dict_idx2chr, dict_chr2len=get_chrom_dicts_from_bam(bam_file)   
+    samin = pysam.AlignmentFile(bam_file, "rb")
+    samout=pysam.AlignmentFile(out_bam_file, "wb", template=samin)
+    hist=Counter()
+    for chrom, chrlen in dict_chr2len.items():
+        rit = ReadIterator(samin, dict_chr2idx, reference=chrom, start=1, end=chrlen, max_span=None, flag_filter=0) # max_span=m.max_ilen
+        for loc, r in rit:
+            if r.has_tag('yc') and r.has_tag('YC'):
+                rtype=get_tag('YC')
+                if rtype == read_colors['fn']:
+                    continue # skip FN reads
+                _, _, _, _, _, _, _, _, xc, _ = r.query_name.split('_')
+                yc=r.get_tag('yc')
+                hist[int(xc), int(yc)]+=1
+                if int(xc) != int(yc):
+                    samout.write(r)
+    samout.close()  
+    out_file = outdir+'/xcyc_' + os.path.basename(bam_file)+'.hist.tsv'
+    with open(out_file, 'w') as out:
+        print('bam\txc\tyc\tcount', file=out)
+        for xc, yc in hist:
+            print('\t'.join([str(x) for x in [os.path.basename(bam_file), xc, yc, hist[xc,yc]]]), file=out)
+    # index
+    try:
+        pysam.index(out_bam_file)  # @UndefinedVariable
+    except Exception as e:
+        print("error indexing bam: %s" % e)
+    print("All done.")
     
+# bam_file='/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf_kss/xcyc_analysis/counts/decay_sim_nf4_tp5.cr0.05.HISAT3N.final+tc.bam'
+# outdir='/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf_kss/xcyc_analysis/counts/'
+# filter_xc_yc_reads(bam_file, outdir)

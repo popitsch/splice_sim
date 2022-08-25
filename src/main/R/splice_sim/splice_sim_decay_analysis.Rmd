@@ -789,8 +789,7 @@ p3 = outliers_with_data %>% left_join(decay_fcr_tx_filtered$fcr, by=c('fid', 'ma
   ggtitle("FCR decay curves (filtered)") +
   xlab("timepoint") 
 
-p4 = decay_halflifes_tx_filtered %>% 
-   filter(fid %in% outliers_with_filtered_data) %>% 
+p4 = outliers_with_data %>% left_join(decay_fcr_tx_filtered$fcr, by=c('fid', 'mapper')) %>%
   ggplot(aes(x=decay_rate, y=hl, col=mapper)) + 
   geom_boxplot() +
   stat_summary(fun.data = function(x){return(c(y=0,label=length(na.omit(x))))}, 

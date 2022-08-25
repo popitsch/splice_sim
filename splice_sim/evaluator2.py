@@ -647,7 +647,7 @@ def filter_xc_yc_reads(bam_file, outdir):
         rit = ReadIterator(samin, dict_chr2idx, reference=chrom, start=1, end=chrlen, max_span=None, flag_filter=0) # max_span=m.max_ilen
         for loc, r in rit:
             if r.has_tag('yc') and r.has_tag('YC'):
-                rtype=get_tag('YC')
+                rtype=r.get_tag('YC')
                 if rtype == read_colors['fn']:
                     continue # skip FN reads
                 _, _, _, _, _, _, _, _, xc, _ = r.query_name.split('_')

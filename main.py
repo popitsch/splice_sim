@@ -138,6 +138,9 @@ if __name__ == '__main__':
     parser["special_extract_sc_reads"].add_argument("-r", "--region", type=str, required=True, dest="region", metavar="region", help="BAM region")
     parser["special_extract_sc_reads"].add_argument("-o", "--outdir", type=str, required=True, dest="outdir", metavar="outdir", help="output dir")
     
+    parser["filter_xc_yc_reads"] = ArgumentParser(description=usage, formatter_class=RawDescriptionHelpFormatter)
+    parser["filter_xc_yc_reads"].add_argument("-b", "--bam_file", type=str, required=True, dest="bam_file", metavar="bam_file", help="BAM file")
+    parser["filter_xc_yc_reads"].add_argument("-o", "--outdir", type=str, required=True, dest="outdir", metavar="outdir", help="output dir")
     
   
     #============================================================================
@@ -299,3 +302,7 @@ if __name__ == '__main__':
     if mod == "special_extract_sc_reads":
         print("special_extract_sc_reads")
         special_extract_sc_reads(args.bam_file, args.region, outdir)
+        
+    if mod == "filter_xc_yc_reads":
+        print("filter_xc_yc_reads")
+        filter_xc_yc_reads(args.bam_file, outdir)

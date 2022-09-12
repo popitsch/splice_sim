@@ -1106,6 +1106,18 @@ txmapcmp = m[["tx"]] %>%
 
 pdf(paste0(params$out_dir, 'mappability_interval_strategies.pdf'), width=8, height=6)
 
+pMappabilityScoreDistribution <- txmapcmp %>%
+  dplyr::select(mappability, tid, everything()) %>%
+  tidyr::gather(type, value, 3:5) %>%
+  dplyr::mutate(type = factor(type, levels = c("gn","3end_gn","3end_tx"))) %>%
+  ggplot(aes(x=type, y = value, fill = type)) +
+  geom_boxplot() +
+  theme(legend.position="none") +
+  facet_grid(~mappability) +
+  scale_fill_brewer(palette = "Set2") +
+  ylab("Mappability") + xlab("") +
+  ggtitle('Mappabilities across sequencing strategies')
+
 txmapcmp %>%
   dplyr::select(mappability, tid, everything()) %>%
   tidyr::gather(type, value, 3:5) %>%
@@ -1193,6 +1205,18 @@ mappabilityClassAlluvia = m[["tx"]] %>%
       dplyr::select(tid, mappability) %>%
       dplyr::rename(`3end_tx` = mappability)
   )
+
+pAlluvia <- mappabilityClassAlluvia %>%
+  dplyr::group_by(gn, `3end_gn`, `3end_tx`) %>%
+  dplyr::summarise(freq = n()) %>%
+  ggplot(aes(y = freq, axis1 = `3end_gn`, axis2 = gn, axis3 = `3end_tx`)) +
+  geom_alluvium(aes(fill = gn), width = 1/12) +
+  geom_stratum(width = 1/12, fill = "black", color = "grey") +
+  geom_label(stat = "stratum", aes(label = after_stat(stratum))) +
+  scale_x_discrete(limits = c("3end_gn", "gn", "3end_tx"), expand = c(.05, .05)) +
+  scale_fill_brewer(type = "qual", palette = "Set1") +
+  ylab("# transcripts") +
+  ggtitle('Transcripts redistribution per mappability class across sequencing strategies')
 
 mappabilityClassAlluvia %>%
   dplyr::group_by(gn, `3end_gn`, `3end_tx`) %>%
@@ -3261,11 +3285,12 @@ f2a = rbind(
   dplyr::mutate(tech = factor(tech, levels = c("gn","3end_gn","3end_gn_txnoise","3end_tx","3end_tx_txnoise"))) %>%
   group_by(ftype, conversion_rate, true_isoform, mappability, tech) %>%
   calc_ci(diff_STAR) %>%
-  ggplot(aes(x=as.numeric(as.character(conversion_rate))*100, y=col.mean, col=tech, group=tech, linetype=tech)) +
+  ggplot(aes(x=as.numeric(as.character(conversion_rate))*100, y=col.mean, col=tech, group=tech, fill=tech)) +
   geom_hline(yintercept = 0, col='black') +
   geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
   geom_line() +
   scale_color_brewer(palette = "Set1") +
+  scale_fill_brewer(palette = "Set1") +
   facet_grid(true_isoform~mappability) +
   scale_x_continuous() + xlab("conversion rate [%]") + ylab("Mean difference to simulated FCR") +
   ggtitle("Mean difference to simulated FCR in exonic regions STAR") +
@@ -3281,11 +3306,12 @@ f2b = rbind(
   dplyr::mutate(tech = factor(tech, levels = c("gn","3end_gn","3end_gn_txnoise","3end_tx","3end_tx_txnoise"))) %>%
   group_by(ftype, conversion_rate, true_isoform, mappability, tech) %>%
   calc_ci(diff_HISAT3N) %>%
-  ggplot(aes(x=as.numeric(as.character(conversion_rate))*100, y=col.mean, col=tech, group=tech, linetype=tech)) +
+  ggplot(aes(x=as.numeric(as.character(conversion_rate))*100, y=col.mean, col=tech, group=tech, fill=tech)) +
   geom_hline(yintercept = 0, col='black') +
   geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
   geom_line() +
   scale_color_brewer(palette = "Set1") +
+  scale_fill_brewer(palette = "Set1") +
   facet_grid(true_isoform~mappability) +
   scale_x_continuous() + xlab("conversion rate [%]") + ylab("Mean difference to simulated FCR") +
   ggtitle("Mean difference to simulated FCR in exonic regions HISAT-3N") +
@@ -3293,6 +3319,9 @@ f2b = rbind(
 
 my_plot_grid(list(f2a, f2b), 'Fig2', labels = T)
 ggsave(paste0(params$out_dir, 'Fig2c.pdf'), width=14, height=5)
+
+my_plot_grid(list(f2a, f2b, pMappabilityScoreDistribution, pAlluvia), '', labels = T)
+ggsave(paste0(params$out_dir, 'Figure_3end_alluvia.pdf'), width=14, height=10)
 
 ```
 

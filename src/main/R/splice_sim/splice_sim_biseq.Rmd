@@ -1794,7 +1794,7 @@ D) Delta of F1 umap vs bismap scores across features and mappability classes.
 
 ```{r}
 
-my_plot_grid(list(pf1, pBismapCor, pF1Cor, pf1diff), 'Figure Biseq4 performance + bismap correlation', labels = T)
+my_plot_grid(list(pf1, pBismapCor, pF1Cor, pf1diff), '', labels = T)
 ggsave(paste0(params$out_dir, 'Fig_biseq_overview.pdf'), width=12, height=10)
 
 ```

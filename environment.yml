@@ -19,7 +19,7 @@ dependencies:
   - pyranges
   - pybedtools
   - art
-  - star=2.5.2a
+  - star=2.6.1d
   - biobambam
   - tqdm
   - rseqc

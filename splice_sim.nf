@@ -16,12 +16,11 @@ params.mappers=[:]
  * build model
  */
 process build_model {
-    cpus 1
-    time 2.h
+
     module 'python/3.7.2-gcccore-8.2.0'
     publishDir "sim/reference_model", mode: 'copy'
-    input:    	
-    output: 
+    input:
+    output:
     	file("${params.dataset_name}.model") into model_file1, model_file2
     	file("${params.dataset_name}.fa") into isoform_fasta
     	file("gene_anno.gff3.gz") into gff3
@@ -31,20 +30,19 @@ process build_model {
 	    """
     		${params.splice_sim_cmd} build_model --config ${params.config_file} --outdir .
 	    """
-	} 	
+	}
 
 
 /*
  * simulate reads
  */
 process simulate_reads {
-	label "long"
     module 'art/2016.06.05-gcc-7.3.0-2.30:python/3.7.2-gcccore-8.2.0:htslib/1.10.2-gcccore-7.3.0:samtools/1.10-foss-2018b'
     publishDir "sim/bams_truth", mode: 'copy'
-    input: 
+    input:
     	file(isoform_fasta) from isoform_fasta
     	file(model_file) from model_file1
-    output: 
+    output:
     	file("*.fq.gz") into fq1, fq2, fq3, fq4, fq5
     	file("*") into simulate_reads
     params.double_cov=params.condition.base_coverage*2
@@ -58,12 +56,12 @@ process simulate_reads {
     }
     script:
 	    """
-	    	# Copy pre-existing result files that stem from partial pipeline runs. 
+	    	# Copy pre-existing result files that stem from partial pipeline runs.
 	    	# Useful for large simulations that crashed/ran oot/oom
 	    	if [ -d ${params.pre_existing_results} ]; then
 	    		cp ${params.pre_existing_results}/* .
 	    	fi
-	    
+
 	    	# do not recreate if in pre-existing files dir
 	    	if [ ! -f ${params.dataset_name}.sam ]; then
 	    		art_illumina -ss HS25 -i ${isoform_fasta} -l ${params.readlen} -f ${params.double_cov} \
@@ -71,44 +69,43 @@ process simulate_reads {
 	    	fi
 	    	# drop fastq - we dont need it and it might be huge
 	    	rm -f ${params.dataset_name}.fq
-	    	
+
 	    	# create genome bam + fq
 	    	${params.splice_sim_cmd} create_genome_bam \
 	    		--model ${model_file} --art_sam ${params.dataset_name}.sam --outdir . --threads ${task.cpus}
-	    	
+
 	    	# compress fastqs
 	    	for fq in ${params.dataset_name}.cr*.fq
 	    	do
 	    	    bgzip --threads ${task.cpus} \${fq}
 	    	done
-	    	
+
 	    	# add md tags and update index
 	    	for bam in *.bam
 	    	do
 	    		samtools calmd --threads ${task.cpus} -b \${bam} ${params.genome_fa} > tmp.bam && mv tmp.bam \${bam}
 	    		samtools index \${bam}
 	    	done
-	    	
+
 	    	# rm sam file as it might be huge
 	    	rm -f ${params.dataset_name}.sam
 	    """
-	} 
+	}
 
 
 /*
  * STAR
  */
 process map_star {
-	tag "$fq" 
-	module 'star/2.7.1a-foss-2018b:sambamba/0.6.6'
+    tag "$fq"
+    module 'star/2.7.1a-foss-2018b:sambamba/0.6.6'
     publishDir "sim/bams_star", mode: 'copy'
-    label "long"
-    
-    when: 
+
+    when:
     	params.mappers.STAR && params.create_bams
-    input: 
+    input:
     	file(fq) from fq1.flatten()
-    output: 
+    output:
     	file("${fq.getBaseName(3)}.STAR.bam") into bams_star
     	file("${fq.getBaseName(3)}.STAR.bam.bai") into bais_star
     	file("*out") into logs_star
@@ -125,24 +122,23 @@ process map_star {
 		      	--sjdbGTFfile ${params.mappers.STAR.star_splice_gtf}
 
 		   sambamba view -S -f bam -t ${task.cpus}  ${fq.getBaseName(3)}Aligned.out.sam -o ${fq.getBaseName(3)}.pre.bam
-		   sambamba sort -t ${task.cpus}  -o ${fq.getBaseName(3)}.STAR.bam ${fq.getBaseName(3)}.pre.bam 		      
+		   sambamba sort -t ${task.cpus}  -o ${fq.getBaseName(3)}.STAR.bam ${fq.getBaseName(3)}.pre.bam
 	    """
-	} 
+	}
 
 /*
  * HISAT-3N
  */
 process map_hisat_3n {
-    label "long"
-	tag "$fq" 
+    tag "$fq"
     module 'python/3.7.2-gcccore-8.2.0:sambamba/0.6.6'
     publishDir "sim/bams_hisat3n", mode: 'copy'
-    
-    when: 
+
+    when:
     	params.mappers.HISAT3N && params.create_bams
-    input: 
+    input:
     	file(fq) from fq2.flatten()
-    output: 
+    output:
     	file("${fq.getBaseName(3)}.HISAT3N.bam") into bams_hisat3n
     	file("${fq.getBaseName(3)}.HISAT3N.bam.bai") into bais_hisat3n
     script:
@@ -156,11 +152,11 @@ process map_hisat_3n {
 	       		--threads ${task.cpus} \
 	       		--known-splicesite-infile ${params.mappers.HISAT3N.hisat3n_kss} \
 	       		-S ${fq.getBaseName(3)}.sam
-	      
+
 		   sambamba view -S -f bam -t ${task.cpus}  ${fq.getBaseName(3)}.sam -o ${fq.getBaseName(3)}.pre.bam
-		   sambamba sort -t ${task.cpus}  -o ${fq.getBaseName(3)}.HISAT3N.bam ${fq.getBaseName(3)}.pre.bam        
+		   sambamba sort -t ${task.cpus}  -o ${fq.getBaseName(3)}.HISAT3N.bam ${fq.getBaseName(3)}.pre.bam
 	    """
-	} 
+	}
 
 
 /*
@@ -168,16 +164,16 @@ process map_hisat_3n {
  */
 process map_merangs {
     label "long"
-	tag "$fq" 
+	tag "$fq"
     // NOTE that merangs does not support newer versions of STAR
     module 'star/2.5.2a-foss-2018b:python/3.7.2-gcccore-8.2.0:sambamba/0.6.6:biobambam2/2.0.87-foss-2018b:samtools/1.10-foss-2018b'
     publishDir "sim/bams_merangs", mode: 'copy'
-    
-    when: 
+
+    when:
     	params.mappers.MERANGS && params.create_bams
-    input: 
+    input:
     	file(fq) from fq3.flatten()
-    output: 
+    output:
     	file("${fq.getBaseName(3)}.MERANGS.bam") into bams_merangs
     	file("${fq.getBaseName(3)}.MERANGS.bam.bai") into bais_merangs
     script:
@@ -195,39 +191,33 @@ process map_merangs {
 	       		-starcmd ${params.mappers.MERANGS.star_cmd} \
 	       		-star_outSAMattributes NH HI AS nM MD \
 	       		-star_sjdbGTFfile ${params.mappers.MERANGS.merangs_splice_gtf}
-	      
+
 	       # converted unaligned FASTQ to BAM
 	       fastqtobam gz=1 unaligned_reads/${fq.getBaseName(3)}.truth_unmapped.fq.gz > ${fq.getBaseName(3)}_unmapped.bam
 	       # merge aligned+unaligned reads
 	       samtools merge ${fq.getBaseName(3)}.MERANGS.bam ${fq.getBaseName(3)}_sorted.bam ${fq.getBaseName(3)}_unmapped.bam
 	       samtools index ${fq.getBaseName(3)}.MERANGS.bam
 	    """
-	} 
+	}
 
 
 /*
  * Postprocessing
  */
 process postprocess_bams {
-	cpus 1
-	memory '64 GB'
-	time 5.h
-	//cache false 
+	//cache false
 	module 'python/3.7.2-gcccore-8.2.0'
 	publishDir "sim/final_bams", mode: 'copy'
-	when: 
+	when:
 		params.create_bams
-	input: 
+	input:
 		file(bam) from bams_star.mix(bams_hisat3n, bams_merangs).ifEmpty([])
 		file(bai) from bais_star.mix(bais_hisat3n, bais_merangs).ifEmpty([])
-	output: 
+	output:
 		file("*.bam") into postprocessed_bams
 		file("*.bai") into postprocessed_bais
 	script:
     """
 		${params.splice_sim_cmd} postfilter_bam --config ${params.config_file} --bam ${bam} --outdir .
     """
-} 	
-
-
-
+}

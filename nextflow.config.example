@@ -22,22 +22,51 @@ profiles {
     process.memory = '62 GB'
     process.cpus = 8
   }
-  //SLURM (cbe)
-  cbe {
+  //SLURM (cbe) - BIG configuration
+  cbe_big {
     process {
       container = 'tobneu/splice_sim:latest'
       executor = 'slurm'
-      queue='c'
       memory='64 GB'
+      queue = { task.memory <= 120.GB ? 'c' : 'm' }
+      clusterOptions = { ( task.queue == 'g' ? '--gres gpu:1 ' : '' ) << ( (task.queue == 'c' & task.time <= 1.h) ? '--qos rapid' : ( task.time <= 8.h ? '--qos short': ( task.time <= 48.h ? '--qos medium' : '--qos long' ) ) ) }
       cpus='8'
       time='8.h'
       scratch = false
-      withLabel: 'medium' {
-        clusterOptions = '--qos=medium'
-        memory='128 GB'
-        cpus=16
-        time='2.d'
+      withName: 'build_model' {
+        clusterOptions = '--qos=short'
+        memory='5 GB'
+        cpus=4
+        time='1.h'
       	queue='c'
+      }
+      withName: 'simulate_reads' {
+        clusterOptions = '--qos=long'
+        memory='30 GB'
+        cpus=4
+        time='4.d'
+      	queue='c'
+      }
+      withName: 'map_star' {
+        clusterOptions = '--qos=short'
+        memory='40 GB'
+        cpus=10
+        time='8.h'
+      	queue='c'
+      }
+      withName: 'map_hisat_3n' {
+        clusterOptions = '--qos=medium'
+        memory='16 GB'
+        cpus=16
+        time='1.d'
+      	queue='c'
+      }
+      withName: 'postprocess_bams' {
+        clusterOptions = '--qos=short'
+        memory='4 GB'
+        cpus=2
+        time='w.h'
+        queue='c'
       }
       withLabel: 'highmem' {
         clusterOptions = '--qos=short'

@@ -65,7 +65,7 @@ profiles {
         clusterOptions = '--qos=short'
         memory='4 GB'
         cpus=2
-        time='w.h'
+        time='4.h'
         queue='c'
       }
       withLabel: 'highmem' {

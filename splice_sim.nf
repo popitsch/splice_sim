@@ -187,7 +187,6 @@ process map_merangs {
 	       		-S ${fq.getBaseName(3)}.sam \
 	       		-un -ud unaligned_reads \
 	       		-id ${params.mappers.MERANGS.merangs_genome_idx} \
-	       		-mbp \
 	       		-starcmd ${params.mappers.MERANGS.star_cmd} \
 	       		-star_outSAMattributes NH HI AS nM MD \
 	       		-star_sjdbGTFfile ${params.mappers.MERANGS.merangs_splice_gtf}

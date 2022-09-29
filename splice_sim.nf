@@ -163,8 +163,7 @@ process map_hisat_3n {
  * MERANGS
  */
 process map_merangs {
-    label "long"
-	tag "$fq"
+	  tag "$fq"
     // NOTE that merangs does not support newer versions of STAR
     module 'star/2.5.2a-foss-2018b:python/3.7.2-gcccore-8.2.0:sambamba/0.6.6:biobambam2/2.0.87-foss-2018b:samtools/1.10-foss-2018b'
     publishDir "sim/bams_merangs", mode: 'copy'

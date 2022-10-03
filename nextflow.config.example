@@ -75,6 +75,20 @@ profiles {
         time='4.h'
         queue='c'
       }
+      withName: 'evaluate_bams' {
+        clusterOptions = '--qos=long'
+        memory='20 GB'
+        cpus=2
+        time='6.d'
+        queue='c'
+      }
+      withName: 'extract_feature_metadata' {
+        clusterOptions = '--qos=long'
+        memory='8 GB'
+        cpus=1
+        time='2.h'
+        queue='c'
+      }
       withLabel: 'highmem' {
         clusterOptions = '--qos=short'
         memory='200 GB'

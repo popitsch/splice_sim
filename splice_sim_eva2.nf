@@ -79,7 +79,6 @@ process extract_feature_metadata {
  * preprocess results
  */
 process preprocess_results {
-    cpus 1
     module 'r/4.0.2-foss-2018b'
     publishDir "eva/results", mode: 'copy'
     cache true

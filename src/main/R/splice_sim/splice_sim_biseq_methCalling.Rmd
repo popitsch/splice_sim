@@ -1,0 +1,462 @@
+---
+title: "splice_sim_replicate_analysis.Rmd"
+author: "niko.popitsch@imba.oeaw.ac.at"
+documentclass: article
+fontsize: 10pt
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    fig_width: 14
+    fig_height: 10
+    fig_caption: true
+    df_print: paged
+  pdf_document:
+    fig_width: 12
+    fig_height: 10
+    fig_caption: true
+params:
+    truth_table:
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/ref/GSE83432_ESC_total.xlsx.tsv"
+    sim_table:
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_biseq_nf_5mC_kss/met/big3_biseq_nf_5mC.cr0.98.truth.bam.meranCall.tsv"
+    hisat3n_table:
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_biseq_nf_5mC_kss/met/big3_biseq_nf_5mC.cr0.98.HISAT3N.final.mq20.bam.meranCall_mmr0.2.tsv"
+    merangs_table:
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_biseq_nf_5mC_kss/met/big3_biseq_nf_5mC.cr0.98.MERANGS.final.mq20.bam.meranCall_mmr0.2.tsv"
+    out_dir:
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_biseq_nf_5mC_kss/met/"
+---
+<style type="text/css">
+body, td {
+   font-size: 10px;
+}
+code.r{
+  font-size: 10px;
+}
+pre {
+  font-size: 10px
+}
+div.blue pre { background-color:lightblue; }
+div.blue pre.r { background-color:blue; }
+</style>
+
+<!--
+rmarkdown::render('splice_sim_paper.Rmd', 'html_document')
+-->
+
+# INIT
+
+```{r setup, include=FALSE}
+require(data.table)
+require(goseq)
+require(AnnotationDbi)
+require(BiocGenerics)
+require(parallel)
+require(tidyr)
+require(dplyr)
+require(dtplyr)
+require(ggplot2)
+require(scales)
+require(rjson)
+require(stringr)
+require(VGAM)
+require(cowplot)
+require(arrow)
+require(tictoc)
+require(ggpubr)
+require(minpack.lm)
+require(readr)
+require(testthat)
+require(RColorBrewer)
+require(skimr)
+require(ggforce)
+require(writexl)
+require(xfun)
+require(forcats)
+require(glue)
+require(ggh4x)
+require(scattermore)
+require(ggvenn)
+
+rename=dplyr::rename
+select=dplyr::select
+arrange=dplyr::arrange
+
+# NB install arrow with snappy on Rstudio server
+# Sys.setenv(ARROW_WITH_SNAPPY = "ON")
+# Sys.setenv(NOT_CRAN="true")
+# Sys.setenv(LIBARROW_BINARY="FALSE")
+# install.packages("arrow", repos = "https://arrow-r-nightly.s3.amazonaws.com")
+
+# to ensure stripping '\0' (nul) from character vector
+options(arrow.skip_nul = TRUE)
+
+# global theme
+ggplot2::theme_set(theme_light())
+
+# enable tidylog (has overhead!)
+#require(tidylog)
+options("tidylog.display" = list()) # turn tidylog off
+options(scipen=10000) # to avoid scientific notation y axis 
+
+# load resources/functions
+source('splice_sim_resources.R')
+```
+
+
+# Prepare
+```{r}
+
+# converted to tsv from excel sheet published with  https://pubmed.ncbi.nlm.nih.gov/28077169/
+d_gse=load_table(params$truth_table) %>% as_tibble()
+
+# write BED
+# d_gse %>% mutate(start=pos-1, end=pos, score=methRate*1000) %>% 
+#   select(chromosome, start, end, Name, score, strand) %>% 
+#   arrange(chromosome, start) %>% 
+#   write_tsv('/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/ref/GSE83432_ESC_total.xlsx.tsv.bed', col_names = FALSE)
+
+```
+
+## Create VCF
+
+This code block creates a VCF file that can be passed to splice_sim (as SNP file).
+It marks methylated 5mC sites and provide the respective avg methylation rate
+splice_sim will then 'mask' these reads from 98% BS conversion and use the provided probability instead.
+see https://pubmed.ncbi.nlm.nih.gov/28077169/
+
+```{r eval=FALSE, echo=FALSE}
+
+vcf_path='/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/ref/GSE83432_ESC_total.xlsx.tsv.vcf'
+writeLines(c("##fileformat=VCFv4.1"), vcf_path)
+d_gse %>% mutate(chromosome=substr(chromosome,4,nchar(chromosome)), # fix chr names
+             info=paste0('prob=',1-methRate,';strand=',strand,';enable_nc=no'), # methRate is avg methylation rate. so prob(conv)=1-methRate
+             ref=ifelse(strand=='+','C','G'), 
+             alt=ifelse(strand=='+','T','A'), 
+             qual= '.', 
+             fil= '.') %>% 
+  filter(chromosome!='M') %>% 
+  arrange(chromosome, pos) %>% 
+  select(`#CHROM`=chromosome,
+         `POS` = pos, 
+         `ID` = Name, 
+         `REF` = ref, 
+         `ALT` = alt, 
+         `QUAL` = qual, 
+         `FILTER` = fil, 
+         `INFO` = info) %>% 
+  write_tsv(vcf_path, append = T, col_names=T)
+
+# TODO: include + highlight Malat1 as featured in their paper. Many 5mC sites  in seq similar region
+# maybe repeat with all tx overlapping the 5mC sites?
+```
+
+## Create tid list
+
+Extracts the transcript ids overlapping these positions so they can be used to configure a splice_sim run
+```{r eval=FALSE, echo=FALSE}
+#$ bedtools intersect -a /groups/ameres/Niko/ref/genomes/mm10/annotation/gencode.vM21.annotation.nochr.sorted.gff3.gz -b GSE83432_ESC_total.xlsx.tsv.vcf.gz > GSE83432_ESC_total.tx.gff3
+require(rtracklayer)
+gff=rtracklayer::import("/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/ref/GSE83432_ESC_total.tx.gff3") %>% 
+  as_tibble() %>% filter(type=='transcript') %>% as_tibble()
+tx_with_5mc = gff %>% select(tx=transcript_id, gene_type, gene_name, chromosome=seqnames) %>% distinct() %>% 
+  filter(chromosome!='M') %>% 
+  group_by(gene_name) %>% mutate(first_tx=dplyr::first(tx)) %>% 
+  left_join(m[['ga']] %>% select(gene_name, refset_tx=tid), by='gene_name') %>% 
+  mutate(transcript_id=ifelse(is.na(refset_tx), first_tx, refset_tx)) %>% 
+  select(transcript_id, gene_name, gene_type) %>% 
+  distinct() %>% ungroup()
+tx_with_5mc %>% select(transcript_id) %>% 
+  write_tsv('/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_biseq_nf_5mC_kss/tids.tsv')
+
+
+# check Malat1 (ENSMUST00000172812.2) which overlaps Gm37376 (ENSMUST00000192176.1) on the other strand.
+
+
+#
+# FIXME: some genes/tx are missing from our refset (e.g., Malat1) for unknown reasons. Its ~1.4k genes but many weird/short (185 GmXX)
+#
+# refset_tx_per_gene = load_table('/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf_kss/tids.tsv') %>% 
+#   left_join(m[['ga']], by=c('transcript_id'='tid'))
+# alltx=load_table('/groups/ameres/Niko/projects/Ameres/splicing/data/TTSC_v1/1_map/STAR/mm10/r12_ip_180/gencode.vM21.annotation.nochr.sorted.MAXISOFORM.gff3.data.tsv')
+# alltx = alltx %>% left_join(refset_tx_per_gene, by=c('tid'='transcript_id'))
+# alltx = alltx %>% mutate(is_analyzed=name %in% refset_tx_per_gene$gene_name)
+# alltx %>% filter(!is_analyzed) %>% View()
+```
+
+
+# Analysis
+## Load data
+```{r}
+
+d_meth = list(
+  'sim' = load_table(params$sim_table) %>% as_tibble() %>% 
+      rename(chromosome=`#SeqID`, pos=refPos, strand=refStrand),
+  'HISAT3N' = load_table(params$hisat3n_table) %>% as_tibble() %>% 
+      rename(chromosome=`#SeqID`, pos=refPos, strand=refStrand),
+  'MeranGs' = load_table(params$merangs_table) %>% as_tibble() %>% 
+      rename(chromosome=`#SeqID`, pos=refPos, strand=refStrand),
+  'truth' = load_table(params$truth_table) %>% 
+    mutate(chromosome=substr(chromosome,4,nchar(chromosome))) %>% 
+    select(chromosome, pos, strand, refBase, cov, C_count=c_count, methRate ) %>% 
+    as_tibble()
+) %>% bind_rows(.id = 'cat') %>% as_tibble() %>% 
+  mutate(vid=paste0(chromosome, ':', pos, refBase)) 
+
+true_vids = d_meth %>% filter(cat=='truth') %>% pull(vid)
+sim_vids =  d_meth %>% filter(cat=='sim') %>% pull(vid)
+d_meth = d_meth %>% 
+  mutate(is_true = vid %in% true_vids, is_sim = vid %in% sim_vids)
+
+# show positions that were not detected from simulated data
+#d_meth %>% filter(is_true & !is_sim) %>% View()
+
+# write a BED file of 5mC sites that were *not* simulated
+# reasons: 
+# - tx not simulated (e.g., ENSMUST00000114610.7 which has a too long intron (206693 vs 100000): 26 tx lost
+# - intragenic candidates (chr2:26,636,607-26,636,936). 
+# - antisense candidates (chr2:160,648,250-160,662,603)
+# - too close to tx end or different isoform (not overlapping) resulting in insufficient coverage to call
+# - too low methRate?
+#     - example: chr2:25292250-25292250 / m5C_102706
+#     - we reduced the -minMethR to 0.15.
+d_meth %>% 
+  filter(cat %in% c('sim', 'truth')) %>% 
+  filter(is_true & !is_sim) %>% 
+  pivot_wider(names_from = cat, values_from = methRate) %>% 
+  mutate(start=pos-1, end=pos, score=1000, name='missing') %>% 
+  select(chromosome, start, end, name, score, strand) %>%
+  arrange(chromosome, start) %>%
+  write_tsv(paste0(params$out_dir,'5mC_not_simulated.bed'), col_names = FALSE)
+
+d_meth %>% 
+  filter(cat %in% c('sim')) %>% 
+  filter(is_true & is_sim) %>% 
+  pivot_wider(names_from = cat, values_from = methRate) %>% 
+  mutate(start=pos-1, end=pos, score=1000, name=candidateName) %>% 
+  select(chromosome, start, end, name, score, strand) %>%
+  arrange(chromosome, start) %>%
+  write_tsv(paste0(params$out_dir,'5mC_simulated.bed'), col_names = FALSE)
+
+
+d_gse %>% 
+  mutate(chromosome=substr(chromosome,4,nchar(chromosome))) %>% 
+  mutate(start=pos-1, end=pos, score=1000, name=Name) %>% 
+  select(chromosome, start, end, name, score, strand) %>%
+  arrange(chromosome, start) %>%
+  write_tsv(paste0(params$out_dir,'GSE83432_ESC_total.bed'), col_names = FALSE)
+
+# calculate methylation rate table
+methRates = d_meth %>% 
+  select(cat, chromosome, pos, strand, methRate) %>% 
+  group_by(chromosome, pos, strand) %>% 
+  pivot_wider(names_from = cat, values_from = methRate) %>% 
+  ungroup() %>% 
+  filter(! (is.na(sim) & !is.na(truth))) %>% # remove true hits that were not simulated!
+  filter(! (is.na(truth) & !is.na(sim)) ) %>% # remove FP simulated
+  filter(is.na(sim) | (sim>=0.2)) %>% # use only hits with at least 20% simulated meth 
+  mutate(class_HISAT3N = case_when(
+   !is.na(sim) & !is.na(HISAT3N) ~ 'TP',
+   is.na(sim) & !is.na(HISAT3N) ~ 'FP',
+   !is.na(sim) & is.na(HISAT3N) ~ 'FN',
+   TRUE ~ NA_character_
+  )) %>% 
+  mutate(class_MeranGs = case_when(
+   !is.na(sim) & !is.na(MeranGs) ~ 'TP',
+   is.na(sim) & !is.na(MeranGs) ~ 'FP',
+   !is.na(sim) & is.na(MeranGs) ~ 'FN',
+   TRUE ~ NA_character_
+  )) %>% mutate(vid=paste0(chromosome, ':', pos)) 
+
+# write bed files
+methRates %>% filter(class_HISAT3N %in% c('FP','FN')) %>% mutate(start=pos-1, end=pos, score=ifelse(is.na(HISAT3N),0,HISAT3N*1000), start2=start, end2=end, 
+                     col=case_when(class_HISAT3N=='TP'~'0,255,0',
+                                   class_HISAT3N=='FP'~'255,0,0',
+                                   class_HISAT3N=='FN'~'0,0,0',
+                                   TRUE ~ '128,128,128')) %>% 
+  select(chromosome, start, end, class_HISAT3N, score, strand, start2, end2, col) %>%
+  arrange(chromosome, start) %>%
+  write_tsv(paste0(params$out_dir,'met_HISAT3N_classification.bed'), col_names = FALSE)
+methRates  %>% filter(class_MeranGs %in% c('FP','FN')) %>% mutate(start=pos-1, end=pos, score=ifelse(is.na(MeranGs),0,MeranGs*1000), start2=start, end2=end, 
+                     col=case_when(class_MeranGs=='TP'~'0,255,0',
+                                   class_MeranGs=='FP'~'255,0,0',
+                                   class_MeranGs=='FN'~'0,0,0',
+                                   TRUE ~ '128,128,128')) %>% 
+  select(chromosome, start, end, class_MeranGs, score, strand, start2, end2, col) %>%
+  arrange(chromosome, start) %>%
+  write_tsv(paste0(params$out_dir,'met_MeranGs_classification.bed'), col_names = FALSE)
+
+# venn_list=list()
+# for (cat in unique(d_meth$cat)) {
+#   print(cat)
+#   venn_list[[cat]]=d_meth %>% filter(cat==!!cat) %>% pull(vid)
+# }
+# ggVennDiagram(venn_list)
+
+# calculate Venn
+venn_list=list(
+  Simulated=methRates %>% filter(!is.na(sim)) %>% pull(vid),
+  HISAT3N=methRates %>% filter(!is.na(HISAT3N)) %>% pull(vid),
+  MeranGs=methRates %>% filter(!is.na(MeranGs)) %>% pull(vid)
+)
+
+
+```
+
+## Mappability of FP/FN sites?
+```{r}
+get_max_gene_type_cat = function(gts) {
+  gtcat=list('protein_coding'=0, 'lncRNA'=1, 'ncRNA'=2,'pseudogene'=3,'other'=4,'NA'=5)
+  mingt=5
+  for (g in gts) {
+    x=gtcat[[g]]
+    if (! is.null(x)) {
+      mingt=min(mingt, x)
+    }
+  }
+  return(names(gtcat[mingt+1]))
+}
+
+methRates_fp=methRates %>% filter(class_HISAT3N=='FP' | class_MeranGs=='FP')
+methRates_fn=methRates %>% filter(class_HISAT3N=='FN' | class_MeranGs=='FN')
+print(glue::glue("We recovered {methRates_fp %>% nrow()} FP and {methRates_fn %>% nrow()} FN sites"))
+
+
+# bedtools intersect -a /groups/ameres/Niko/ref/genomes/mm10/annotation/gencode.vM21.annotation.nochr.sorted.gff3.gz -b met_MeranGs_classification.bed > met_MeranGs_classification.bed.tx.gff3
+fpfn_tx = list( 
+  'HISAT3N' = rtracklayer::import(paste0(params$out_dir, '/met_HISAT3N_classification.bed.tx.gff3')) %>% 
+  as_tibble() %>% filter(type=='transcript') %>% as_tibble(),
+  'MeranGs' = rtracklayer::import(paste0(params$out_dir, '/met_MeranGs_classification.bed.tx.gff3')) %>% 
+  as_tibble() %>% filter(type=='transcript') %>% as_tibble()
+) %>% bind_rows(.id = 'origin')
+
+fpfn_genes = tibble(gene_name=fpfn_tx %>% pull(gene_name) %>% unique()) %>% 
+  left_join(m[['ga']], by='gene_name')
+print(glue::glue("We found {fpfn_genes %>% nrow()} genes hosting FP/FN calls"))
+
+fpfn_genes %>% 
+  mutate(cat=gene_type2cat(gene_type)) %>% 
+  group_by(cat) %>% count() %>% arrange(desc(n))
+
+# load positions + mappability + overlapping tx
+fpfn_map = list(
+'HISAT3N\nFP+FN'=load_table(paste0(params$out_dir,'/met_HISAT3N_classification.bed+map')) %>% mutate(classification=name) %>% as_tibble(),
+'MeranGs\nFP+FN'=load_table(paste0(params$out_dir,'/met_MeranGs_classification.bed+map')) %>% mutate(classification=name)%>% as_tibble(),
+'Simulated'=load_table(paste0(params$out_dir,'/5mC_simulated.bed+map')) %>% mutate(classification='NA')%>% as_tibble(),
+'Not Simulated'=load_table(paste0(params$out_dir,'/5mC_not_simulated.bed+map')) %>% mutate(classification='NA')%>% as_tibble(),
+'All'=load_table(paste0(params$out_dir,'/GSE83432_ESC_total.bed+map')) %>% mutate(classification='NA')%>% as_tibble()
+) %>% bind_rows(.id = 'cat') %>% 
+  select(-c('score','tstart','tend','col')) %>% 
+  mutate(cat=factor(cat, levels=c('MeranGs\nFP+FN', 'HISAT3N\nFP+FN', 'Not Simulated', 'Simulated', 'All'))) %>% 
+  separate_rows(tx, sep=',') %>% 
+  left_join(m[['ga']] %>% select(tid, gene_type, gene_name), by=c('tx'='tid')) %>% 
+  mutate(gene_type_cat = gene_type2cat(gene_type)) %>% 
+  group_by(cat, chromosome, start,end,name, strand,map,classification) %>% 
+  summarise(tx=paste0(tx, collapse =';'),
+            gene_name=paste0(gene_name, collapse=';'),
+            gene_type=paste0(gene_type, collapse=';'),
+            gene_type_cat=get_max_gene_type_cat(gene_type_cat),
+            ) %>% ungroup()
+  
+
+
+
+```
+
+## Figure
+
+Effect of NC mappability on methylation site reconstruction. To estimate the impact of (NC) mapping biases on methylation site calling in BS-RNAseq data, 
+we first extracted all 7541 mESC total polyA RNA derived m5C sites published by Amort et al. (https://pubmed.ncbi.nlm.nih.gov/28077169/, GEO project GSE83432) and simulated data for overlapping tx with splice_sim. To simulate the methylated sites, we created a VCF file with the respective positions and set the C/T conversion rate for these genomic positions according to the published methylation rates (which were called with a 0.2 cutoff by meRanCall). 
+<!-- We then called m5C sites from the simulated and mapper-derived alignments also with meRanCall to make the data comparable using a lower -minMethR cutoff (0.15) to not loose too many of the sites with low methylation rates in the random simulation process. We ultimately recovered 5453 (72%) of the published m5C sites. -->
+We ultimately recovered 4865 (64.5%) of the published m5C sites and confirmed a high correlation of published and simulated methylation rates (A). We then classified the m5C calls from the HISAT3N/MeranGs alignments (after filtering for mapping_quality>20) with respect to the simulated sites as TP/FP/FN (B) and plotted methylation rate correlations for HISAT3N (C) and MeranGs (D). 
+E:
+F:
+Note that these plots also contain methylationRates for FN and FP calls. 
+
+
+from the mESC total dataset 
+GSE83432_ESC_total dataset GSE83432 
+
+```{r}
+
+# how many of the truth vars were actually simulated?
+print(glue::glue("We recovered {methRates %>% filter(!is.na(sim), !is.na(truth)) %>% nrow()} / {d_meth %>% filter(cat=='truth') %>% nrow()} sites"))
+
+
+# p2 = d_meth_truth %>% 
+#   ggplot(aes(1, methRate, fill=was_simulated)) + 
+#   geom_violin( draw_quantiles = c(0.5))
+p1 = methRates %>% 
+  plot_corr('truth', 'sim', col_='1', draw_diag = TRUE, main_title = ' ') + theme(legend.position="none") +
+  xlab("Truth set methylation rate") + ylab("Simulated methylation rate")
+
+p2=ggvenn(venn_list, c("Simulated", "HISAT3N", "MeranGs"), stroke_alpha=0.2, stroke_color='grey', show_percentage = FALSE)
+
+corr_hisat3n=calc_cor(methRates %>% filter(class_HISAT3N=='TP') %>% select(sim, HISAT3N) %>% replace_na(list(sim = 0, HISAT3N = 0)), 'sim', 'HISAT3N') 
+p3 = methRates %>% 
+  filter(!is.na(class_HISAT3N)) %>% 
+  select(sim, HISAT3N, class_HISAT3N) %>% 
+  replace_na(list(sim = 0, HISAT3N = 0)) %>% 
+  plot_corr('sim', 'HISAT3N', col_='class_HISAT3N', draw_diag = TRUE, calc_corr=FALSE, 
+            main_title = glue::glue('HISAT3N, corr coef on TP only\nr_pearson={corr_hisat3n$r_pearson}, r_spearman={corr_hisat3n$r_spearman}, n={corr_hisat3n$n}')) + 
+  theme(legend.position="none") +
+  xlab("Simulated methylation rate") +
+  ylab("Detected methylation rate")+
+  geom_hline(yintercept = 0.2, col='grey', linetype='dotted') +
+  geom_vline(xintercept = 0.2, col='grey', linetype='dotted')  + 
+  theme(plot.title = element_text(size=10))
+
+corr_merangs=calc_cor(methRates %>% filter(class_MeranGs=='TP') %>% select(sim, MeranGs) %>% replace_na(list(sim = 0, MeranGs = 0)), 'sim', 'MeranGs') 
+p4 = methRates %>% 
+  filter(!is.na(class_MeranGs)) %>% 
+  select(sim, MeranGs, class_MeranGs) %>% 
+  replace_na(list(sim = 0, MeranGs = 0)) %>% 
+  plot_corr('sim', 'MeranGs', col_='class_MeranGs', draw_diag = TRUE, calc_corr=FALSE, 
+            main_title = glue::glue('MeranGs, corr coef on TP only\nr_pearson={corr_merangs$r_pearson}, r_spearman={corr_merangs$r_spearman}, n={corr_merangs$n}')) + 
+  scale_alpha(guide = 'none') +
+  guides(col=guide_legend(title="Classification")) +
+  xlab("Simulated methylation rate") +
+  ylab("Detected methylation rate") +
+  geom_hline(yintercept = 0.2, col='grey', linetype='dotted') +
+  geom_vline(xintercept = 0.2, col='grey', linetype='dotted') + 
+  theme(plot.title = element_text(size=10))
+
+p5 = fpfn_map %>% 
+  filter(cat != 'Not Simulated') %>% 
+  ggplot(aes(cat, map, fill=classification)) + 
+  geom_violin(draw_quantiles = c(0.5)) + 
+  ylab("Genomic Mappability") + xlab("") +
+  coord_flip() +
+  theme(legend.title = element_text( size=8), legend.text=element_text(size=8))
+
+p6 = fpfn_map %>% 
+  filter(cat != 'Not Simulated') %>% 
+  group_by(cat, gene_type_cat) %>% count() %>% 
+  mutate() %>% 
+  ggplot(aes(cat, n, fill=gene_type_cat)) + geom_col() +
+  coord_flip() + xlab("") + ylab("# m5C sites") +
+  theme(legend.title = element_text( size=8), legend.text=element_text(size=8))
+
+plot_grid(
+  plot_grid(p1,p2,p5, nrow=1, labels=c('A','B','C'), rel_widths = c(1,0.8,1.2)),
+  plot_grid(p3,p4,p6, nrow=1, labels=c('D','E','F'), rel_widths = c(0.8,1.3,1.2)),
+  ncol=1
+)
+ggsave(paste0(params$out_dir, 'special_biseq_methCalling.pdf'), width=14, height=7)
+
+```
+
+
+# FN/FP examples
+```{r}
+#methRates %>% filter(class_HISAT3N=='FP', class_MeranGs=='FP', HISAT3N>0.3)
+# a FP in both mappers that results from (1) incomplete conversion in truth alignment (due to 98% cr) and (2) missing 
+# reads in this low-mappability region: chr12:105,794,471-105,794,945
+# methRate HISAT3N: 0.333	, MeranGs: 0.294
+
+# methRates %>% filter(class_MeranGs=='FN')
+# a FN in both mappers that results from missing reads in Ppia (lwo mappability)
+# chr11:6,419,398-6,419,650
+# methRate truth 0.307, sim 0.321
+```

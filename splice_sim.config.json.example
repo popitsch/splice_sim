@@ -1,0 +1,42 @@
+{
+    "dataset_name": "nf1",
+    "splice_sim_cmd": "python /groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/nf1/splice_sim/main.py",
+    "gene_gff": "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/small4/gencode.SMALL.gff3.gz",
+    "genome_fa": "/groups/ameres/Niko/ref/genomes/mm10/Mus_musculus.GRCm38.dna.primary_assembly.fa",
+    "genome_chromosome_sizes": "/groups/ameres/Niko/ref/genomes/mm10/Mus_musculus.GRCm38.dna.primary_assembly.fa.chrom.sizes",
+    "genome_mappability": "/groups/ameres/Niko/ref/genomes/mm10/mappability/mm10.k24.umap.bedgraph.gz",
+    "transcript_data": "data.config.json",
+    "transcript_ids": "tids.tsv",
+    "isoform_mode": "1:1",
+    "condition": {
+        "name": "cr10",
+        "ref": "T",
+        "alt": "C",
+        "conversion_rate": 0.1,
+    "base_coverage": 10
+    },
+    "mappers": {
+        "STAR": {
+            "star_cmd": "/groups/ameres/Niko/software/STAR/STAR-2.6.1d/bin/Linux_x86_64/STAR",
+            "star_genome_idx": "/groups/ameres/Niko/ref/genomes/mm10/indices/star",
+            "star_splice_gtf": "/groups/ameres/Niko/ref/genomes/mm10/annotation/GRCm38.p6.annotation.gtf"
+        },
+	"HISAT-3N": {
+	    "hisat-3n_cmd": "singularity exec /groups/ameres/Niko/software/SIF/hisat-3n.sif /hisat-3n/hisat-3n",
+	    "hisat-3n_idx": "/groups/ameres/Niko/ref/genomes/mm10/indices/hisat2-3n/Mus_musculus.GRCm38.dna.primary_assembly",
+	    "hisat-3n_kss": "/groups/ameres/Niko/ref/genomes/mm10/annotation/GRCm38.p6.annotation.gtf.hisat2_splice_sites.txt"
+	},
+	"MERANGS": {
+	    "merangs_cmd": "/groups/ameres/Niko/software/meranTk/meRanTK-1.2.1b/meRanGs",
+            "star_cmd": "STAR",
+	    "merangs_genome_idx": "/groups/ameres/Niko/ref/genomes/mm10/indices/meRanTK-1.2.1b/BSgenomeIDX",
+	    "merangs_splice_gtf": "/groups/ameres/Niko/ref/genomes/mm10/annotation/GRCm38.p6.annotation.gtf"
+		}
+	},
+    "create_tdf": true,
+    "max_ilen": 100000,
+    "min_abundance": 1,
+    "random_seed": 1234,
+    "readlen": 100,
+    "rseqc" : true,
+}

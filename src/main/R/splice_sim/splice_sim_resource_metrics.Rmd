@@ -1,0 +1,380 @@
+---
+title: "splice_sim_resource_metrics.Rmd"
+author: "tobias.neumann@imp.ac.at"
+documentclass: article
+fontsize: 10pt
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    fig_width: 10
+    fig_height: 5
+    fig_caption: true
+    df_print: paged
+  pdf_document:
+    fig_width: 10
+    fig_height: 5
+    fig_caption: true
+params:
+    performance_metrics:
+       value: "/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/resource_metrics/nextflow_resource_metrics.xlsx"
+    out_dir:
+       value: "/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/resource_metrics/"
+---
+<style type="text/css">
+body, td {
+   font-size: 10px;
+}
+code.r{
+  font-size: 10px;
+}
+pre {
+  font-size: 10px
+}
+div.blue pre { background-color:lightblue; }
+div.blue pre.r { background-color:blue; }
+</style>
+
+<!--
+rmarkdown::render('splice_sim_paper.Rmd', 'html_document')
+-->
+
+# INIT
+
+```{r setup, include=FALSE}
+require(data.table)
+require(tidyr)
+require(dplyr)
+require(ggplot2)
+require(scales)
+require(rjson)
+require(stringr)
+require(VGAM)
+require(cowplot)
+require(arrow)
+require(tictoc)
+require(ggpubr)
+require(minpack.lm)
+require(readr)
+require(testthat)
+require(RColorBrewer)
+require(skimr)
+require(ggforce)
+library(readxl)
+require(writexl)
+require(xfun)
+require(forcats)
+require(glue)
+# NB install arrow with snappy on Rstudio server
+# Sys.setenv(ARROW_WITH_SNAPPY = "ON")
+# Sys.setenv(NOT_CRAN="true")
+# Sys.setenv(LIBARROW_BINARY="FALSE")
+# install.packages("arrow", repos = "https://arrow-r-nightly.s3.amazonaws.com")
+
+# to ensure stripping '\0' (nul) from character vector
+options(arrow.skip_nul = TRUE)
+
+# global theme
+ggplot2::theme_set(theme_light())
+
+# enable tidylog (has overhead!)
+#require(tidylog)
+options("tidylog.display" = list()) # turn tidylog off
+options(scipen=10000) # to avoid scientific notation y axis 
+
+# load resoiutces/functions
+source('splice_sim_resources.R')
+```
+
+
+# data
+
+```{r data, include=T, echo=F, eval=T}
+
+metrics_cpu = read_excel(params$performance_metrics, sheet = "CPU")
+metrics_ram = read_excel(params$performance_metrics, sheet = "RAM")
+metrics_time = read_excel(params$performance_metrics, sheet = "TIME")
+
+```
+
+# Performance metrics
+
+Let's look at all the different resource metrics extracted from Nextflow reports.
+
+## SLAMseq
+
+```{r performance_metrics_slamseq, include=T, echo=F}
+
+f1a1 = metrics_cpu %>%
+  dplyr::filter(!grepl("_bs",dataset)) %>%
+  dplyr::filter(!grepl("_small",dataset)) %>%
+  dplyr::mutate(class = factor(class, levels = c("build_model", "simulate_reads", "map_star","map_hisat_3n","postprocess_bams","extract_feature_metadata","evaluate_bams","preprocess_results"))) %>%
+  ggplot(aes(x = class, y = values, fill = class)) +
+  geom_boxplot() +
+  xlab("") + ylab("CPU [%]") +
+  theme(
+    legend.title=element_blank(),
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+  ) +
+  facet_wrap(~dataset) +
+  scale_fill_brewer(palette = "Set3")
+
+f1a2 = metrics_cpu %>%
+  dplyr::filter(!grepl("_bs",dataset)) %>%
+  dplyr::filter(grepl("_small",dataset)) %>%
+  dplyr::mutate(class = factor(class, levels = c("build_model", "simulate_reads", "map_star","map_hisat_3n","postprocess_bams","extract_feature_metadata","evaluate_bams","preprocess_results"))) %>%
+  ggplot(aes(x = class, y = values, fill = class)) +
+  geom_boxplot() +
+  xlab("") + ylab("CPU [%]") +
+  theme(
+    legend.title=element_blank(),
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+  ) +
+  facet_wrap(~dataset) +
+  scale_fill_brewer(palette = "Set3")
+
+metrics_cpu %>%
+  dplyr::filter(!grepl("_bs",dataset)) %>%
+  dplyr::mutate(class = factor(class, levels = c("build_model", "simulate_reads", "map_star","map_hisat_3n","postprocess_bams","extract_feature_metadata","evaluate_bams","preprocess_results"))) %>%
+  ggplot(aes(x = class, y = values, fill = class)) +
+  geom_boxplot() +
+  xlab("") + ylab("CPU [%]") +
+  theme(
+    legend.title=element_blank(),
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+  ) +
+  facet_wrap(~dataset) +
+  scale_fill_brewer(palette = "Set3")
+
+f1b1 = metrics_ram %>%
+  dplyr::filter(!grepl("_bs",dataset)) %>%
+  dplyr::filter(!grepl("_small",dataset)) %>%
+  dplyr::mutate(class = factor(class, levels = c("build_model", "simulate_reads", "map_star","map_hisat_3n","postprocess_bams","extract_feature_metadata","evaluate_bams","preprocess_results"))) %>%
+  ggplot(aes(x = class, y = values / (1024 * 1024 * 1024), fill = class)) +
+  geom_boxplot() +
+  xlab("") + ylab("Memory [GB]") +
+  theme(
+    legend.title=element_blank(),
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+  ) +
+  facet_wrap(~dataset) +
+  scale_fill_brewer(palette = "Set3")
+
+f1b2 = metrics_ram %>%
+  dplyr::filter(!grepl("_bs",dataset)) %>%
+  dplyr::filter(grepl("_small",dataset)) %>%
+  dplyr::mutate(class = factor(class, levels = c("build_model", "simulate_reads", "map_star","map_hisat_3n","postprocess_bams","extract_feature_metadata","evaluate_bams","preprocess_results"))) %>%
+  ggplot(aes(x = class, y = values / (1024 * 1024 * 1024), fill = class)) +
+  geom_boxplot() +
+  xlab("") + ylab("Memory [GB]") +
+  theme(
+    legend.title=element_blank(),
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+  ) +
+  facet_wrap(~dataset) +
+  scale_fill_brewer(palette = "Set3")
+
+ metrics_ram %>%
+  dplyr::filter(!grepl("_bs",dataset)) %>%
+  dplyr::mutate(class = factor(class, levels = c("build_model", "simulate_reads", "map_star","map_hisat_3n","postprocess_bams","extract_feature_metadata","evaluate_bams","preprocess_results"))) %>%
+  ggplot(aes(x = class, y = values / (1024 * 1024 * 1024), fill = class)) +
+  geom_boxplot() +
+  xlab("") + ylab("Memory [GB]") +
+  theme(
+    legend.title=element_blank(),
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+  ) +
+  facet_wrap(~dataset) +
+  scale_fill_brewer(palette = "Set3")
+
+f1c1 = metrics_time %>%
+  dplyr::filter(!grepl("_bs",dataset)) %>%
+  dplyr::filter(!grepl("_small",dataset)) %>%
+  dplyr::mutate(class = factor(class, levels = c("build_model", "simulate_reads", "map_star","map_hisat_3n","postprocess_bams","extract_feature_metadata","evaluate_bams","preprocess_results"))) %>%
+  ggplot(aes(x = class, y = values, fill = class)) +
+  geom_boxplot() +
+  xlab("") + ylab("Runtime [min]") +
+  theme(
+    legend.title=element_blank(),
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+  ) +
+  facet_wrap(~dataset,scales="free_y") +
+  scale_fill_brewer(palette = "Set3")
+
+f1c2 = metrics_time %>%
+  dplyr::filter(!grepl("_bs",dataset)) %>%
+  dplyr::filter(grepl("_small",dataset)) %>%
+  dplyr::mutate(class = factor(class, levels = c("build_model", "simulate_reads", "map_star","map_hisat_3n","postprocess_bams","extract_feature_metadata","evaluate_bams","preprocess_results"))) %>%
+  ggplot(aes(x = class, y = values, fill = class)) +
+  geom_boxplot() +
+  xlab("") + ylab("Runtime [min]") +
+  theme(
+    legend.title=element_blank(),
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+  ) +
+  facet_wrap(~dataset,scales="free_y") +
+  scale_fill_brewer(palette = "Set3")
+
+metrics_time %>%
+  dplyr::filter(!grepl("_bs",dataset)) %>%
+  dplyr::mutate(class = factor(class, levels = c("build_model", "simulate_reads", "map_star","map_hisat_3n","postprocess_bams","extract_feature_metadata","evaluate_bams","preprocess_results"))) %>%
+  ggplot(aes(x = class, y = values, fill = class)) +
+  geom_boxplot() +
+  xlab("") + ylab("Runtime [min]") +
+  theme(
+    legend.title=element_blank(),
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+  ) +
+  facet_wrap(~dataset,scales="free_y") +
+  scale_fill_brewer(palette = "Set3")
+
+my_plot_grid(list(f1a1, f1a2, f1b1, f1b2, f1c1, f1c2), '', nrow = 3, labels = T)
+
+ggsave(paste0(params$out_dir, 'Fig_nextflow_resources_slamseq.pdf'), width=12, height=14)
+
+#print(f1a)
+
+#print(f1b)
+
+#print(f1c)
+
+```
+
+## Biseq
+
+```{r performance_metrics_biseq, include=T, echo=F}
+
+f1a1 = metrics_cpu %>%
+  dplyr::filter(grepl("_bs",dataset)) %>%
+  dplyr::filter(!grepl("_small",dataset)) %>%
+  dplyr::mutate(class = factor(class, levels = c("build_model", "simulate_reads", "map_star","map_hisat_3n","map_merangs","postprocess_bams","extract_feature_metadata","evaluate_bams","preprocess_results"))) %>%
+  ggplot(aes(x = class, y = values, fill = class)) +
+  geom_boxplot() +
+  xlab("") + ylab("CPU [%]") +
+  theme(
+    legend.title=element_blank(),
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+  ) +
+  facet_wrap(~dataset) +
+  scale_fill_brewer(palette = "Set3")
+
+f1a2 = metrics_cpu %>%
+  dplyr::filter(grepl("_bs",dataset)) %>%
+  dplyr::filter(!grepl("_small",dataset)) %>%
+  dplyr::mutate(class = factor(class, levels = c("build_model", "simulate_reads", "map_star","map_hisat_3n","map_merangs","postprocess_bams","extract_feature_metadata","evaluate_bams","preprocess_results"))) %>%
+  ggplot(aes(x = class, y = values, fill = class)) +
+  geom_boxplot() +
+  xlab("") + ylab("CPU [%]") +
+  theme(
+    legend.title=element_blank(),
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+  ) +
+  facet_wrap(~dataset) +
+  scale_fill_brewer(palette = "Set3")
+
+metrics_cpu %>%
+  dplyr::filter(grepl("_bs",dataset)) %>%
+  dplyr::mutate(class = factor(class, levels = c("build_model", "simulate_reads", "map_star","map_hisat_3n","map_merangs","postprocess_bams","extract_feature_metadata","evaluate_bams","preprocess_results"))) %>%
+  ggplot(aes(x = class, y = values, fill = class)) +
+  geom_boxplot() +
+  xlab("") + ylab("CPU [%]") +
+  theme(
+    legend.title=element_blank(),
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+  ) +
+  facet_wrap(~dataset) +
+  scale_fill_brewer(palette = "Set3")
+
+f1b1 = metrics_ram %>%
+  dplyr::filter(grepl("_bs",dataset)) %>%
+  dplyr::filter(!grepl("_small",dataset)) %>%
+  dplyr::mutate(class = factor(class, levels = c("build_model", "simulate_reads", "map_star","map_hisat_3n","map_merangs","postprocess_bams","extract_feature_metadata","evaluate_bams","preprocess_results"))) %>%
+  ggplot(aes(x = class, y = values / (1024 * 1024 * 1024), fill = class)) +
+  geom_boxplot() +
+  xlab("") + ylab("Memory [GB]") +
+  theme(
+    legend.title=element_blank(),
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+  ) +
+  facet_wrap(~dataset) +
+  scale_fill_brewer(palette = "Set3")
+
+f1b2 = metrics_ram %>%
+  dplyr::filter(grepl("_bs",dataset)) %>%
+  dplyr::filter(grepl("_small",dataset)) %>%
+  dplyr::mutate(class = factor(class, levels = c("build_model", "simulate_reads", "map_star","map_hisat_3n","map_merangs","postprocess_bams","extract_feature_metadata","evaluate_bams","preprocess_results"))) %>%
+  ggplot(aes(x = class, y = values / (1024 * 1024 * 1024), fill = class)) +
+  geom_boxplot() +
+  xlab("") + ylab("Memory [GB]") +
+  theme(
+    legend.title=element_blank(),
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+  ) +
+  facet_wrap(~dataset) +
+  scale_fill_brewer(palette = "Set3")
+
+metrics_ram %>%
+  dplyr::filter(grepl("_bs",dataset)) %>%
+  dplyr::mutate(class = factor(class, levels = c("build_model", "simulate_reads", "map_star","map_hisat_3n","map_merangs","postprocess_bams","extract_feature_metadata","evaluate_bams","preprocess_results"))) %>%
+  ggplot(aes(x = class, y = values / (1024 * 1024 * 1024), fill = class)) +
+  geom_boxplot() +
+  xlab("") + ylab("Memory [GB]") +
+  theme(
+    legend.title=element_blank(),
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+  ) +
+  facet_wrap(~dataset) +
+  scale_fill_brewer(palette = "Set3")
+
+f1c1 = metrics_time %>%
+  dplyr::filter(grepl("_bs",dataset)) %>%
+  dplyr::filter(!grepl("_small",dataset)) %>%
+  dplyr::mutate(class = factor(class, levels = c("build_model", "simulate_reads", "map_star","map_hisat_3n","map_merangs","postprocess_bams","extract_feature_metadata","evaluate_bams","preprocess_results"))) %>%
+  ggplot(aes(x = class, y = values, fill = class)) +
+  geom_boxplot() +
+  xlab("") + ylab("Runtime [min]") +
+  theme(
+    legend.title=element_blank(),
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+  ) +
+  facet_wrap(~dataset,scales="free_y") +
+  scale_fill_brewer(palette = "Set3")
+
+f1c2 = metrics_time %>%
+  dplyr::filter(grepl("_bs",dataset)) %>%
+  dplyr::filter(grepl("_small",dataset)) %>%
+  dplyr::mutate(class = factor(class, levels = c("build_model", "simulate_reads", "map_star","map_hisat_3n","map_merangs","postprocess_bams","extract_feature_metadata","evaluate_bams","preprocess_results"))) %>%
+  ggplot(aes(x = class, y = values, fill = class)) +
+  geom_boxplot() +
+  xlab("") + ylab("Runtime [min]") +
+  theme(
+    legend.title=element_blank(),
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+  ) +
+  facet_wrap(~dataset,scales="free_y") +
+  scale_fill_brewer(palette = "Set3")
+
+metrics_time %>%
+  dplyr::filter(grepl("_bs",dataset)) %>%
+  dplyr::mutate(class = factor(class, levels = c("build_model", "simulate_reads", "map_star","map_hisat_3n","map_merangs","postprocess_bams","extract_feature_metadata","evaluate_bams","preprocess_results"))) %>%
+  ggplot(aes(x = class, y = values, fill = class)) +
+  geom_boxplot() +
+  xlab("") + ylab("Runtime [min]") +
+  theme(
+    legend.title=element_blank(),
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+  ) +
+  facet_wrap(~dataset,scales="free_y") +
+  scale_fill_brewer(palette = "Set3")
+
+my_plot_grid(list(f1a1, f1a2, f1b1, f1b2, f1c1, f1c2), '', nrow = 3, labels = T)
+
+ggsave(paste0(params$out_dir, 'Fig_nextflow_resources_biseq.pdf'), width=12, height=14)
+
+#print(f1a)
+
+#print(f1b)
+
+#print(f1c)
+
+```

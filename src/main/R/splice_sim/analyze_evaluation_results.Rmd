@@ -13,14 +13,24 @@ output:
 geometry: margin=1in
 classoption: a4paper
 params:
-    splice_sim_config:
-        value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq/config.json"
-    slam_out_dir:
-        value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq/slam_out/"
     extra_transcript_table:
-        value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/data/slamstr/pooled.mm10.all/pooled.mm10.all.Slamstr.stats.trans.final.tsv.gz"  
+       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/data/slamstr/pooled.mm10.all/pooled.mm10.all.Slamstr.stats.trans.final.tsv.gz"  
+    # splice_sim_config:
+    #    value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_biseq_nf/splice_sim.config.json"
+    # out_dir:
+    #    value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_biseq_nf/analysis/"
+    # plot_type:
+    #    value: "by_mapper"
+    # splice_sim_config:
+    #    value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/splice_sim.config.json"
+    # out_dir:
+    #     value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq_nf/analysis/"
+    splice_sim_config:
+       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/splice_sim.config.json"
     out_dir:
-        value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big3_slamseq/analysis/"
+       value: "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/analysis/"
+    plot_type:
+      value: "by_condition"
 
 ---
 <style type="text/css">
@@ -47,89 +57,198 @@ require(rjson)
 require(stringr)
 require(VGAM)
 require(cowplot)
+require(arrow)
+require(tictoc)
+require(ggpubr)
+require(minpack.lm)
+require(readr)
+require(testthat)
+require(tidylog)
+require(RColorBrewer)
+# NB install arrow with snappy on Rstudio server
+# Sys.setenv(ARROW_WITH_SNAPPY = "ON")
+# Sys.setenv(NOT_CRAN="true")
+# Sys.setenv(LIBARROW_BINARY="FALSE")
+# install.packages("arrow", repos = "https://arrow-r-nightly.s3.amazonaws.com")
+
+# to ensure stripping '\0' (nul) from character vector
+options(arrow.skip_nul = TRUE)
 
 # load data from TSV
-load_table = function(dataF, append="", header=T) {
+load_table = function(dataF, append="", header=T, nrows=Inf) {
   dataF = as.character(paste0(dataF, append))
   print(paste("Loading", dataF))
   if ( endsWith(dataF, ".gz") ) {
-    return(fread(cmd=paste('gunzip -c', dataF), header=header, sep="\t", na.strings=c("na","NA",".")))
+    return(fread(cmd=paste('gunzip -c', dataF), header=header, sep="\t", na.strings=c("na","NA",".", "None"), nrows=nrows))
   } else {
-    return(fread(dataF, header=header, sep="\t", na.strings=c("na","NA",".")))
+    return(fread(dataF, header=header, sep="\t", na.strings=c("na","NA",".", "None"), nrows=nrows))
   }
 }
 
+# multiple plots with single title
+my_plot_grid = function(plots, main, ncol=NULL, nrow=NULL) {
+  plot_row=plot_grid(plotlist=plots, ncol=ncol, nrow=nrow)
+  title <- ggdraw() + draw_label( main, fontface = 'bold', x = 0, hjust = 0 ) + theme(plot.margin = margin(0, 0, 0, 7))
+  return (plot_grid(title, plot_row, ncol = 1, rel_heights = c(0.1, 1)))
+}
+
+# calculate confidence interval
+# call with calc_ci( mtcars, mpg)
+calc_ci = function(d, col, min_lower_ci=NA, max_upper_ci=NA) {
+  ret = d %>% summarise(
+            col.mean := mean({{col}}, na.rm = TRUE),
+            col.sd = sd({{col}}, na.rm = TRUE),
+            col.n = n(),
+            .groups = 'drop') %>%
+  mutate(stderr = col.sd / sqrt(col.n),
+         lower.ci = col.mean - qt(1 - (0.05 / 2), col.n - 1) * stderr,
+         upper.ci = col.mean + qt(1 - (0.05 / 2), col.n - 1) * stderr) %>% 
+  ungroup() %>% 
+  mutate(lower.ci = pmax(min_lower_ci, lower.ci, na.rm=T),
+         upper.ci = pmin(max_upper_ci, upper.ci, na.rm=T))
+  return (ret)
+}
+
+# calculate interquartile range
+calc_iqr = function(d, col) {
+  d %>% summarise(
+            col.median = median({{col}}, na.rm = T),
+            col.mean = mean({{col}}, na.rm = T),
+            col.upper = quantile({{col}}, .75, na.rm = T),
+            col.lower = quantile({{col}}, .25, na.rm = T),
+            col.n = n(),
+            .groups = 'drop')
+}
+
+# calculate number of observations and places near median of box
+give.n <- function(x){
+  return(c(y = median(x) + 0.1, label = length(x)))
+}
+
+#
+# write result tibble to BED file
+#
+write_bed = function(dat, bed_file, title, header=F) {
+  sink(bed_file)
+  cat(paste0("track name=",title," description=\"",title,"\" useScore=1 itemRgb=\"On\"\n"))
+  sink()
+  dat %>% write_tsv( bed_file, col_names = F, append = T ) 
+}
+
 ```
+
 
 # data
 ```{r data, include=FALSE}
 
 home_dir=paste0(dirname(params$splice_sim_config),'/')
 conf=fromJSON(paste(readLines(params$splice_sim_config), collapse=""))
+conversion_rates=c('0', as.character(conf$condition$conversion_rates))
 
+home_dir='/Users/niko.popitsch/Desktop/data/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/'
 
-# load truth data
-isoform_truth=load_table(paste0(home_dir, conf$dataset_name, '/sim/isoform_truth.tsv.gz'))
-# load evaluation results
-tid_performance=load_table(paste0(home_dir, conf$dataset_name, '/eva/tid_performance.tsv'))
-reads=load_table(paste0(home_dir, conf$dataset_name, '/eva/reads.tsv.gz'))
-md=load_table(paste0(home_dir, conf$dataset_name, '/eva/metadata.tsv'))
-splice_site_performance=load_table(paste0(home_dir, conf$dataset_name, '/eva/splice_site_performance.tsv'))
-# additional transcript md
-gene_anno=load_table(paste0(home_dir, conf$dataset_name, '/sim/gene_anno.tsv.gz')) %>% mutate(len=End-Start+1)
-extra_transcript_table=load_table(params$extra_transcript_table) %>% select(transcript_id, rnk, GC_frac, mappability_median, mappability_mean, T_Pos)
-
-# add mappability, coords, etc.
-tid_performance=tid_performance %>% merge(gene_anno, by.x='tid', by.y='transcript_id', all.x=T) %>% merge(extra_transcript_table, by.x='tid', by.y='transcript_id', all.x=T)
-tid_performance$category=factor(tid_performance$category)
-tid_performance$mapper=factor(tid_performance$mapper)
-tid_performance$condition=factor(tid_performance$condition)
-
-# add performance measures
-tid_performance = tid_performance %>% mutate(
-  precision=TP/(TP+FP), 
-  recall=TP/(TP+FN), 
-  F1=2*TP/(2*TP+FP+FN))
-
-# reads
-reads$is_converted_bam=factor(reads$is_converted_bam)
-
-```
-
-# functions
-
-```{r}
-gn2tid = function(gn) {
-  return(unique( tid_performance %>% filter(gene_name == gn) %>% pull(tid) ))
+data_file=paste0(home_dir,'/results/data.rds')
+if (file.exists(data_file)) {
+  tic("load data")
+  d=readRDS(data_file)
+  toc()
+} else {
+  stop("Could not find data_file")
 }
 
-
-plot_gene_performance = function(d, tid) {
-  d=d %>% filter(tid==!!tid)
-  lab = paste0(gene_anno %>% filter(transcript_id==!!tid) %>% select(transcript_id, gene_name, gene_type), collapse=', ')
-  p = ggplot(d, aes(x=paste0(condition,'/',iso), y=F1, fill=condition) ) +
-    geom_bar(stat='identity') +
-    facet_grid(is_converted_bam~mapper) +
-    ggtitle(lab) +
-    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-    xlab("condition / isoform")
-  return (p)
-}
-#plot_gene_performance(tid_performance, 'ENSMUST00000179887.1')
-#plot_gene_performance(d, 'ENSMUST00000180000.1')
-#plot_gene_performance(d, gn2tid('Actb'))
-#plot_gene_performance(d, 'ENSMUST00000196997.1')
-
-
-
-
-
-
-
 ```
+### Create table of transcripts with bad performance but high mappability
 
+Table for analyze_decay_experiment2
+
+```{r eval=FALSE, include=F, echo=FALSE}
+
+# create table of transcripts with high genomic mappability but low F1 measure and at least 1 intron
+bad_trans = 
+  d[['tid_performance']] %>% 
+  filter(mappability %in% c('high', 'medium'), 
+         condition_id %in% c('0', '0.05'), 
+         rnk>1, 
+         transcript_len>1000, 
+         mapper %in% c('STAR', 'HISAT3N'), 
+         iso=='pre') %>% 
+  pivot_wider(names_from = condition_id, values_from = F1, id_cols = c('tid', 'mapper', 'rnk'), names_prefix = 'cr_') %>% 
+  mutate(diff=cr_0-cr_0.05)  %>% 
+  filter(diff>0.05)
+
+p1=bad_trans %>% 
+  ggplot(aes(x=cr_0, y=cr_0.05, col=mapper)) +
+  geom_point() + geom_abline(slope=1, intercept = 0)  +
+  geom_abline(slope=1, intercept = -0.05, col='grey', linetype='dotted')  +
+  ggtitle("Mappability reduction due to T/C conversions")
+
+#bad_trans%>% count(mapper)
+
+p2=d[['tid_performance']] %>% 
+  filter(tid %in% bad_trans$tid) %>% 
+  group_by(tid, condition_id, mapper) %>% 
+  summarise(m=min(F1, na.rm = T)) %>% 
+  ggplot(aes(x=condition_id, y=m, group=paste0(tid,mapper), col=mapper)) +
+  geom_line() +
+  facet_wrap(mapper~.) +
+  geom_hline(yintercept = 0.8, col='grey', linetype='dotted') +
+  ggtitle('Minimum F1 measure')
+
+d[['tid_performance']] %>% select(tid, mappability) %>% distinct() %>% count(mappability)
+
+my_plot_grid(list(p1,p2), 'bad transcripts', nrow=1)
+# write table
+d[['tid_performance']] %>% filter(tid %in% bad_trans$tid) %>% select(transcript_id=tid, rnk, mappability) %>% distinct() %>% mutate( k=0.075) %>% write_tsv('/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/decay_sim_nf3/isoform_config.tsv')
+```
 
 # QC
+
+## Data completeness
+```{r}
+
+# count non-NA values per column for all passed tables
+count_na_per_column = function(d, tables) {
+ counts=tibble()
+  for ( tab in tables ) {
+    nr=nrow(d[[tab]])
+    if (nr>0) {
+      counts=counts %>% rbind(
+        d[[tab]] %>% select(everything()) %>% summarise_all(funs(sum(is.na(.)))) %>% mutate(table=!!tab) %>% collect() %>% pivot_longer(-table) %>% mutate(nr=!!nr, frac=value/nr)
+      )
+    }
+  }
+  return (counts)
+}
+
+# count non NA values per column in all tables (long!)
+#non_na_counts = count_na_per_column(d, names(d))
+non_na_counts = count_na_per_column(d, c("tid_performance","splice_site_performance","splice_site_mappability","gene_anno","tx_metadata","sj_metadata","extra_transcript_table"))
+ggplot(non_na_counts, aes(x=name, y=frac)) +
+  geom_bar(stat='identity') +
+  facet_wrap(table~., scales = 'free') +
+  ggtitle("Fraction of NA counts per table column") + 
+  xlab("") + ylab("") +
+  ylim(0,1) +
+  coord_flip() 
+ggsave(paste0(params$out_dir,'/qc_na_counts.pdf'), width = 10, height = 12)
+```
+## Summary stats
+```{r}
+pdf(paste0(params$out_dir,'/qc_summary_stats.pdf'), width = 10, height = 16)
+d[['splice_site_mappability']] %>% 
+  group_by(mapper) %>% slice_sample(n=10000) %>% ungroup() %>% 
+  select(-c(is_converted_bam,condition,tid,chromosome,start,end,strand )) %>% 
+  group_by(mapper) %>% 
+  get_summary_stats() %>% 
+  ggplot(aes(x=variable, y=median, col=mapper)) + 
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ggtitle("Summary stats for splice_site_mappability (subsample, n=10k)") +
+  scale_y_sqrt() +
+  coord_flip() 
+
+dev.off()
+```
 
 ## Missing tids
 
@@ -140,248 +259,981 @@ This is either because
 
 ```{r}
 
-all_tids=load_table(paste0(home_dir, 'tids.tsv')) %>% pull(transcript_id)
-found_tids=unique(tid_performance %>% pull(tid))
-print(paste0("We have data for ", length(found_tids), '/', length(all_tids), " transcripts"))
+found_tids=unique(d[['tid_performance']] %>% pull(tid))
+print(paste0("We have data for ", length(found_tids), '/', length(d[['all_tids']]), " transcripts"))
 
 # what tids are missing?
 extra_transcript_table2=load_table(params$extra_transcript_table) %>% 
-  filter(transcript_id %in% all_tids) %>% 
-  select(transcript_id, chr,start,end,strand,gene_name,len,rnk, GC_frac, mappability_median, mappability_mean, T_Pos) %>% 
-  mutate(missing=ifelse(transcript_id %in% found_tids, 0,1))
-extra_transcript_table2 %>% ggplot(aes(x=factor(missing), y=len)) + 
+  filter(transcript_id %in% d[['all_tids']]) %>% 
+  select(transcript_id, chr,start,end,strand,gene_name,transcript_len=len,rnk, GC_frac, mappability_median, mappability_mean, T_Pos) %>% 
+  mutate(missing=ifelse(transcript_id %in% found_tids, 0,1)) 
+extra_transcript_table2 %>% ggplot(aes(x=factor(missing), y=transcript_len)) + 
   geom_violin()  +scale_y_log10() + ggtitle("Length distribution of missing transcripts")
-# expla
+ggsave(paste0(params$out_dir,'/qc_missing_transcripts.pdf'), width = 10, height = 8)
 
+# did we recover all reads?
+d[['tid_performance']] %>% mutate(all=TP+FN) %>% group_by(mapper, condition_id) %>% summarise(tc=sum(all))
 
 ```
 
+## transcript overlaps
+```{r}
 
+d[['tx_metadata']] %>% count(n_overlapping) %>% 
+  ggplot(aes(x=n_overlapping, y=n)) + 
+  geom_bar(stat='identity') +
+  ggtitle("Histogram of number of overlapping annotations per transcript")
+# example: Sfmbt2 is a miRNA host gene with 120 overlapping annotations
+```
+
+## Compare numbers for unspliced transcripts
+```{r}
+tab = d[['tid_performance']] %>% 
+  filter(rnk==1, condition_id=='0.1') %>% 
+  select(mapper, tid, iso, TP, FP, FN, F1) %>% 
+  pivot_wider(names_from = iso, values_from = c(TP,FP,FN,F1), id_cols = c('tid', 'mapper')) %>%
+  mutate(f1_diff=F1_mat-F1_pre) %>% 
+  merge(d[['gene_anno']], by = 'tid') %>% 
+  merge(d[['extra_transcript_table']], by = 'tid')
+
+p1 = tab %>% ggplot(aes(x=f1_diff)) + geom_density() + ggtitle("Difference in F1 value between pre/mat for unspliced transcripts. Should be zero!") +
+  facet_wrap(mapper~.)
+p2 = tab %>% filter(mappability_mean>0.5) %>% ggplot(aes(x=f1_diff)) + geom_density() + ggtitle("Difference in F1 value between pre/mat for unspliced transcripts. Map>0.5. Should be zero!") +
+  facet_wrap(mapper~.)
+p3 = tab %>% ggplot(aes(x=FP_mat, y=FP_pre, col=mappability_mean, alpha=0.1)) +
+  geom_point() +
+  scale_x_sqrt() +
+  scale_y_sqrt() +
+  facet_wrap(mapper~.)
+p4 = tab %>% ggplot(aes(x=FN_mat, y=FN_pre, col=mappability_mean, alpha=0.1)) +
+  geom_point() +
+  scale_x_sqrt() +
+  scale_y_sqrt() +
+  facet_wrap(mapper~.)
+
+my_plot_grid(list(p1,p2,p3,p4), main="QC: comparing isoform performance of unspliced transcripts (cr=0.1)") 
+ggsave(paste0(params$out_dir,'/qc_isoform_comparison_of_unspliced_transcripts.pdf'), width = 10, height = 8)
+
+```
 
 # Performance 
 
 ## Performance per transcript
 ```{r performance}
-# overall performance per isoform/mapper
-plot_overall_performance = function(d, subtitle='') {
-  p = ggplot( d, aes(x=paste0(condition,'/',iso), y=F1, fill=condition) ) +
-    geom_violin() +
-    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-    xlab("condition / isoform") +
-    geom_boxplot(width=.1) +
-    facet_grid(is_converted_bam~mapper) +
-    ggtitle(paste0("F1 measure per transcript (n=",length(unique(d$tid)),")"), subtitle)
+plot_median_performance_by_bin = function(tab, subtitle='', measure='F1', facet=NA) {
+  group_vars=c('mapper', 'condition_id', 'iso', 'is_converted_bam')
+  if (!is.na(facet)) {
+    # rename by addint '(n=xxx)')
+    cnts = tab %>% 
+      group_by_at(facet) %>% 
+      summarise(n_tid=n_distinct(tid)) %>% 
+      setNames(., c("a", "b")) %>% mutate(c=paste0(a,' (n=',b,')'))
+    labs = setNames(cnts$c, cnts$a)
+    tab[['facet']]=factor( labs[tab[[facet]]], levels=cnts$c)
+    group_vars=c(group_vars, 'facet')
+  }
+  if (measure=='F1') {
+    dat = tab %>% group_by_at(group_vars) %>% 
+      summarise(median_measure=median(F1, na.rm = T))
+  } else if (measure=='precision') {
+    dat = tab %>% group_by_at(group_vars) %>% 
+      summarise(median_measure=median(precision, na.rm = T))
+  } else if (measure=='recall') {
+    dat = tab %>% group_by_at(group_vars) %>% 
+      summarise(median_measure=median(recall, na.rm = T))
+  } else {
+    print("Unknown measure!")
+  }
+  if ( params$plot_type=='by_condition') {
+    p=dat %>% ggplot(aes(x=condition_id, y=median_measure, col=mapper, linetype=iso, group=paste0(mapper, iso))) + 
+      geom_line() + 
+      geom_point() +
+      #facet_wrap(is_converted_bam~.) +
+      ggtitle(paste0("Median ", measure, " measure per transcript (n=",length(unique(tab$tid)),")"), subtitle)
+    if (!is.na(facet)) {
+      p=p+facet_wrap(facet~.)
+    }
+  } else {
+    p=dat %>% ggplot(aes(x=mapper, y=median_measure, col=mapper, shape=iso, group=paste0(mapper, iso))) + 
+      geom_point() +
+      #facet_wrap(is_converted_bam~.) +
+      ggtitle(paste0("Median ", measure, " measure per transcript (n=",length(unique(tab$tid)),")"), subtitle) + 
+      theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+    if (!is.na(facet)) {
+      p=p+facet_wrap(facet~.)
+    }
+  }
   return(p)
 }
 
-plot_median_performance = function(d, subtitle='') {
-  dat = d %>% group_by(mapper, condition, iso, is_converted_bam) %>% 
-    summarise(median_F1=median(F1, na.rm = T))
-  p=dat %>% ggplot(aes(x=condition, y=median_F1, col=mapper, linetype=iso, group=paste0(mapper, iso))) + 
-    geom_line() + 
-    facet_wrap(is_converted_bam~.) +
-    ggtitle(paste0("Median F1 measure per transcript (n=",length(unique(d$tid)),")"), subtitle)
-  return(p)
+d[['tid_performance']] %>% group_by(mappability) %>% summarise(n=n_distinct(tid)) %>% 
+  ggplot(aes(x=mappability, y=n)) +
+  geom_bar(stat='identity') +
+  ggtitle("Tx per mappability category")
+ggsave(paste0(params$out_dir,'/tx_per_mappability_cat.pdf'), width = 10, height = 8)
+
+for ( measure in c('F1', 'precision', 'recall')) {
+  p1 = plot_median_performance_by_bin(d[['tid_performance']], 'by conversion rate', facet=NA, measure=measure)
+  p2 = plot_median_performance_by_bin(d[['tid_performance']], 'by regular read mappability', facet='mappability', measure=measure)
+  p3 = plot_median_performance_by_bin(d[['tid_performance']] %>% filter(mappability=='high'), 'by number of exons (high mappability only)', facet='num_exons', measure=measure)
+  p4 = plot_median_performance_by_bin(d[['tid_performance']] %>% filter(mappability=='medium'), 'by number of exons (medium mappability only)', facet='num_exons', measure=measure)
+  #p4 = plot_median_performance_by_bin(tab %>% filter(mappability=='high'), 'by transcript_type (high mappability only)', facet='transcript_type')
+  
+  my_plot_grid(list(p1,p2,p3,p4), main=paste0("Overall ",measure," per transcript")) 
+  ggsave(paste0(params$out_dir,'/tid_performance_',measure,'.pdf'), width = 10, height = 8)
+  
 }
+
+```
+## Precision / recall plot
+
+```{r}
+p1 = d[['tid_performance']] %>% 
+  filter(mapper != 'truth', iso=='pre', condition_id=='0.1') %>% 
+  ggplot(aes(x=precision, y=recall)) +
+  geom_hex(bins=100) + 
+  scale_fill_gradient(name = "count", trans = "log") +
+  facet_grid(mapper~mappability) +
+  ggtitle("Precision vs recall for cr=0.1")
+
+p2 = d[['tid_performance']] %>% 
+  filter(mapper != 'truth', iso=='pre', condition_id=='0.1') %>% 
+  pivot_wider(id_cols = c('tid', 'mappability'), names_from = mapper, values_from = precision) %>% 
+  ggplot(aes(x=STAR, y=HISAT3N)) +
+  geom_hex(bins=100)  +
+  facet_grid(.~mappability) + 
+  scale_fill_gradient(name = "count", trans = "log") +
+  ggtitle("STAR vs HISAT Precision for cr=0.1")
+
+p3 = d[['tid_performance']] %>% 
+  filter(mapper != 'truth', iso=='pre', condition_id=='0.1') %>% 
+  pivot_wider(id_cols = c('tid', 'mappability'), names_from = mapper, values_from = recall) %>% 
+  ggplot(aes(x=STAR, y=HISAT3N)) +
+  geom_hex(bins=100)  +
+  facet_grid(.~mappability) + 
+  scale_fill_gradient(name = "count", trans = "log") +
+  ggtitle("STAR vs HISAT Recall for cr=0.1")
+
+p4 = d[['tid_performance']] %>% 
+  filter(mapper != 'truth', iso=='pre', condition_id=='0.1') %>% 
+  pivot_wider(id_cols = c('tid', 'mappability'), names_from = mapper, values_from = F1) %>% 
+  ggplot(aes(x=STAR, y=HISAT3N)) +
+  geom_hex(bins=100)  +
+  facet_grid(.~mappability) + 
+  scale_fill_gradient(name = "count", trans = "log") +
+  ggtitle("STAR vs HISAT F1 for cr=0.1")
+
+my_plot_grid(list(p1,p2,p3,p4), main=paste0("Mapper comparison per transcript")) 
+ggsave(paste0(params$out_dir,'/tid_performance_mapper_comparison.pdf'), width = 10, height = 8)
+```
+
+
+
+
+
+## Performance correlations
+
+- TODO: correlate with T/A content
+
+```{r correlations}
 
 # some correlations
-plot_corr = function(d, a, b, subtitle='', xlog=F) {
+plot_corr = function(d, a, b, subtitle='', xlog=F, draw_diag=T) {
   thecor = paste("r_pearson = ", round(cor(d[[a]], d[[b]], use = "complete.obs"), 4), 
                  "\nr_spearman = ", round(cor(d[[a]], d[[b]], use = "complete.obs", method="spearman"), 4),
                  "\nn =",nrow(d)  )
   p = ggplot( d %>% filter(!is.na(mapper)), aes_string(x=a, y=b) ) +
-    #geom_point(aes(col=condition, alpha=0.5), size=.5)  +
+    #geom_point(aes(col=condition_id, alpha=0.5), size=.5)  +
     #annotation_custom(thecor) + 
-    stat_binhex(bins=50) + scale_fill_gradientn("", colours = rev(rainbow(10, end = 4/6))) +
-    facet_grid(is_converted_bam ~ mapper) +
-    geom_abline(intercept = 0, slope = 1, col="black",linetype="dotted") +
-    ggtitle(paste0("Correlation between ",a," and ",b, '. ', subtitle), thecor)
+    #geom_point(aes(col=iso, alpha=0.05), size=.5)  +
+    stat_binhex(bins=100) + scale_fill_gradientn("", colours = rev(rainbow(5, end = 4/6))) +
+    facet_grid(iso ~ mapper) +
+    ggtitle(paste0("Correlation between ",a," and ",b, '\n', subtitle), thecor)
+  if (draw_diag) {
+    p=p+geom_abline(intercept = 0, slope = 1, col="black",linetype="dotted") 
+  }
   if ( xlog ) {
     p=p+scale_x_log10()
   }
   return(p)
 }
 
-
-
-p1=plot_median_performance(tid_performance)
-p2=plot_median_performance(tid_performance %>% filter(mappability_mean>0.5), subtitle='mean(map) > 0.5')
-p3=plot_corr(tid_performance, "mappability_mean", "F1")
-p4=plot_corr(tid_performance, "GC_frac", "F1")  
-
-plot_grid(p1,p2,p3,p4) 
-ggsave(paste0(params$out_dir,'/tid_performance.pdf'), width = 10, height = 8)
+p1=plot_corr(d[['tid_performance']] %>% filter(mapper != 'truth', condition_id=='0.1'), "mappability_mean", "F1")
+p2=plot_corr(d[['tid_performance']] %>% filter(mapper != 'truth', condition_id=='0.1'), "GC_frac", "F1")  
+p3=plot_corr(d[['tid_performance']] %>% filter(mapper != 'truth', condition_id=='0.1'), "transcript_len", "F1", xlog=T, draw_diag=F)  
+p4=plot_corr(d[['tid_performance']] %>% filter(mapper != 'truth', condition_id=='0.1'), "rnk", "F1", draw_diag=F)  
+p5=plot_corr(d[['tid_performance']] %>% filter(mapper != 'truth', condition_id=='0.1', mappability=='high'), "rnk", "F1", draw_diag=F, subtitle = 'high mappability only')  
+p6=plot_corr(d[['tid_performance']] %>% filter(mapper != 'truth', mappability=='medium'), "rnk", "F1", draw_diag=F, subtitle = 'medium mappability only')  
+my_plot_grid(list(p1,p2,p3,p4,p5,p6), main="Correlations with mapping performance") 
+ggsave(paste0(params$out_dir,'/tid_performance_corr.pdf'), width = 16, height = 12)
 
 ```
 
-## mismapped reads
-```{r mismapped_reads}
+## Problematic tx
+
+Find tx that are influenced by TC mappability
+```{r}
+tab = d[['tid_performance']] %>% 
+  filter(condition_id %in% c('0', '0.05'), iso=='pre', transcript_len>1000) %>% 
+  pivot_wider(names_from = condition_id, values_from = F1, 
+              id_cols = c('tid', 'mapper', 'mappability', 'num_exons'), names_prefix = 'cr_') %>% 
+  mutate(diff=cr_0 - cr_0.05)
+
+tab %>% ggplot(aes(x=mapper, y=diff)) +
+  geom_boxplot() +
+  #geom_jitter(data=bad_trans, aes(x=mapper, y=diff), col='red', size=.1) +
+  facet_grid(mappability~num_exons) +
+  ylim(-0.3, +0.3) +
+  geom_hline(yintercept = 0, col='grey') +
+  geom_hline(yintercept = 0.05, col='grey', linetype='dotted') +
+  ggtitle("Difference in F1 between unconverted and cr=0.05 alignments")
+
+ggsave(paste0(params$out_dir,'/tx_with_tc_influenced_mappability.pdf'), width = 16, height = 12)
+
+```
+
+## Mismapped reads
+
+Only for smaller datasets possible
+
+TODO: calc stats about TC conversions from mismapped read BAMs and plot. Are there significantly more T/C conversions in those reads?
+
+```{r mismapped_reads, include=FALSE, eval=F}
 
 plot_mismapped_reads = function(d, subtitle='') {
-  dat = d %>% group_by(mapper, condition, iso, is_converted_bam) %>% 
+  dat = d %>% group_by(mapper, condition_id, iso, is_converted_bam) %>% 
     summarise(median_F1=median(F1, na.rm = T))
-  p=dat %>% ggplot(aes(x=condition, y=median_F1, col=mapper, linetype=iso, group=paste0(mapper, iso))) + 
-    geom_line() + 
-    facet_wrap(is_converted_bam~.) +
-    ggtitle(paste0("Median F1 measure per transcript (n=",length(unique(d$tid)),")"), subtitle)
+  if ( params$plot_type=='by_condition' ) {
+    p=dat %>% ggplot(aes(x=condition_id, y=median_F1, col=mapper, linetype=iso, group=paste0(mapper, iso))) + 
+      geom_line() + geom_point() +
+      facet_wrap(is_converted_bam~.) +
+      ggtitle(paste0("Median F1 measure per transcript (n=",length(unique(d$tid)),")"), subtitle)
+  } else {
+    p=dat %>% ggplot(aes(x=mapper, y=median_F1, col=mapper, shape=iso, group=paste0(mapper, iso))) + 
+      geom_point() +
+      facet_wrap(is_converted_bam~.) +
+      ggtitle(paste0("Median F1 measure per transcript (n=",length(unique(d$tid)),")"), subtitle) + 
+      theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  }
   return(p)
 }
 
 
 tab = reads %>% group_by(classification, is_converted_bam, mapper, condition_id, true_isoform) %>% count() 
-tab %>% ggplot(aes(x=condition_id, y=n, col=mapper, linetype=true_isoform, group=paste0(mapper, true_isoform, classification))) + 
+if (params$plot_type=='by_condition') {
+  p1 = tab %>% ggplot(aes(x=condition_id, y=n, col=mapper, linetype=true_isoform, group=paste0(mapper, true_isoform, classification))) + 
     geom_line() + 
-    facet_wrap(classification~is_converted_bam) +
+    facet_wrap(classification~.) +
     ggtitle( "Mismapped reads per mapper" )
+} else {
+  p1 = tab %>% ggplot(aes(x=mapper, y=n, col=mapper, shape=true_isoform, group=paste0(mapper, true_isoform, classification))) + 
+    geom_point() + 
+    facet_wrap(classification~.) +
+    ggtitle( "Mismapped reads per mapper" ) + 
+      theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+}
 
 tab = reads %>% filter(is_converted_bam==1) %>% 
   group_by(classification, mapper, condition_id, true_isoform) %>% summarise(m_ntc=mean(n_tc_pos, na.rm=T))
-tab %>% ggplot(aes(x=condition_id, y=m_ntc, col=mapper, linetype=true_isoform, group=paste0(mapper, true_isoform, classification))) + 
-    geom_line() + 
+if (params$plot_type=='by_condition') {
+  p2 = tab %>% ggplot(aes(x=condition_id, y=m_ntc, col=mapper, linetype=true_isoform, group=paste0(mapper, true_isoform, classification))) + 
+    geom_line() +
     facet_wrap(classification~.) +
-    ggtitle( "Mean n_tc per mapper" )
-```
-
-
-# per-gene stats
-```{r init, include=FALSE}
-plot_gene = function(gname, bar_ylim_min=50) {
-  tab = d %>% filter(gene_name==gname) %>% select('category','mapper','condition','overlap') %>% reshape2::melt(id.vars=c('category','mapper','condition'))
-  tab$value=tab$value+0.0000000000001
-  
-  p1 = ggplot(tab, aes(x=mapper, y=value, fill=mapper)) +
-    geom_violin() +
-    facet_grid(rows=vars(category), cols=vars(condition)) +
-    scale_y_log10() +
-    ylab('number of overlapping bases')
-  
-  tab2 = tab %>% group_by(category,mapper,condition,variable) %>% summarise(m=mean(value))
-  p2 = ggplot(tab2, aes(x=mapper, y=m, fill=mapper)) +
-    geom_bar(stat='identity') +
-    facet_grid(rows=vars(category), cols=vars(condition), scales="free") +
-    ylab('mean # of overlapping bases') +
-    scale_y_continuous(limits=c(bar_ylim_min,100), oob=rescale_none)
-
-  tab3 = d %>% filter(gene_name==gname,overlap>50) %>% count(category,mapper,condition, .drop=F)
-  p3 = ggplot(tab3, aes(x=mapper, y=n, fill=mapper)) +
-    geom_bar(stat='identity') +
-    facet_grid(rows=vars(category), cols=vars(condition), scales="free") +
-    ylab('# recovered reads with overlap>50')
-  
-  p=gridExtra::grid.arrange(p1,p2,p3, ncol=2, top=gname)
-  return(p)
+    ggtitle( "Mean n_tc per mapper (converted BAMs only)" )
+} else {
+  p2 = tab %>% ggplot(aes(x=mapper, y=m_ntc, col=mapper, shape=true_isoform, group=paste0(mapper, true_isoform, classification))) + 
+    geom_point() +
+    facet_wrap(classification~.) +
+    ggtitle( "Mean n_tc per mapper (converted BAMs only)" ) + 
+      theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 }
 
-plot(plot_gene('Actb'))
+tab = reads %>% filter(is_converted_bam==1) %>% 
+  group_by(classification, mapper, condition_id, true_isoform) %>% summarise(m_seqerr_perc=mean(n_true_seqerr, na.rm=T))
+if (params$plot_type=='by_condition') {
+  p3 = tab %>% ggplot(aes(x=condition_id, y=m_seqerr_perc, col=mapper, linetype=true_isoform, group=paste0(mapper, true_isoform, classification))) + 
+    geom_line() + geom_point() +
+    facet_wrap(classification~.) +
+    ggtitle( "Mean seq error per mapper (converted BAMs only)" )
+} else {
+  p3 = tab %>% ggplot(aes(x=mapper, y=m_seqerr_perc, col=mapper, shape=true_isoform, group=paste0(mapper, true_isoform, classification))) + 
+    geom_point() +
+    facet_wrap(classification~.) +
+    ggtitle( "Mean seq error per mapper (converted BAMs only)" ) + 
+      theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+}
 
-plot(plot_gene('Mat2a'))
+plot_grid(p1,p2,p3) 
+ggsave(paste0(params$out_dir,'/read_performance.pdf'), width = 12, height = 8)
 
-plot(plot_gene('Gm10243', bar_ylim_min=0))
-  
-plot(plot_gene('Ybx1-ps2', bar_ylim_min=0))
-```     
-
-Density
-
-```{r dens}
-
-# load tc histogram
-tc_hist=rbind(
-  load_table(paste0(params$slam_out_dir, 'truth_tc_hist.tsv')) %>% mutate(dens=ntc/(ntc+ntt)),
-  load_table(paste0(params$slam_out_dir, 'hisat_tc_hist.tsv')) %>% mutate(dens=ntc/(ntc+ntt)) 
-)
-tc_hist=tc_hist %>% merge(md, by='bam', all.x=T)
-#tc_hist=tc_hist %>% filter(ntt>5) # remove edge situations
-tc_hist[is.na(mapper)]$mapper='truth'
-
-ggplot( tc_hist, aes(x=bam, y=dens)) + 
-  geom_boxplot() + 
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  facet_wrap(is_converted_bam~mapper, scales='free') +
-  ggtitle("tc hist") +
-  scale_y_log10() +
-  ggtitle('ntc/(ntc+ntt)')
-
-ggplot( tc_hist %>% filter(ntt==20, is_converted_bam==1), aes(x=ntc, y=count) ) +
-  geom_bar(stat='identity') +
-  facet_wrap(mapper~condition_id)
-
-# # calculate number of tc reads
-# ftc1=tab1 %>% filter(ntc>1) %>% group_by(bam) %>% summarise(ntc2=sum(count)) %>% merge(
-#   tab1 %>% filter(ntc>0) %>% group_by(bam) %>% summarise(ntc=sum(count)) %>% 
-#   merge(
-#   tab1 %>% group_by(bam) %>% summarise(nall=sum(count)), by='bam'
-#   ) ) %>% mutate(ftc=ntc/nall, ftc2=ntc2/nall)
-# ftc1=ftc1 %>% pivot_longer(-bam) %>% merge(md, by='bam', all.x=T) %>% mutate(sample=paste0('cr=',condition_cr,', cov=',condition_cov, 'X'))
-# ftc1 = ftc1 %>% filter(! name %in% c('ftc2', 'ntc2'))
-# 
-# ftc2=tab2 %>% filter(ntc>1) %>% group_by(bam) %>% summarise(ntc2=sum(count)) %>% merge(
-#   tab2 %>% filter(ntc>0) %>% group_by(bam) %>% summarise(ntc=sum(count)) %>% 
-#   merge(
-#   tab2 %>% group_by(bam) %>% summarise(nall=sum(count)), by='bam'
-#   ) ) %>% mutate(ftc=ntc/nall, ftc2=ntc2/nall)
-# ftc2=ftc2 %>% pivot_longer(-bam) %>% merge(md, by='bam', all.x=T) %>% mutate(sample=paste0('cr=',condition_cr,', cov=',condition_cov, 'X'))
-# ftc2 = ftc2 %>% filter(! name %in% c('ftc2', 'ntc2'))
-# 
-# p3=ggplot(ftc1, aes(x=sample, y=value, fill=bam)) +
-#   geom_bar(stat='identity', position='dodge')+
-#   facet_wrap(is_converted_bam~name, scales='free') + 
-#   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
-# 
-# p4=ggplot(ftc2, aes(x=sample, y=value, fill=bam)) +
-#   geom_bar(stat='identity', position='dodge')+
-#   facet_wrap(is_converted_bam~name, scales='free', nrow = 2) + 
-#   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
-# 
-# plot_grid(p1,p2,p3,p4)
-# 
-# ggplot( tab1 %>% filter(ntt==20, is_converted_bam==1) %>% group_by(condition_cov, condition_cr, ntc) %>% summarise(s=sum(count)), aes(x=ntc, y=s)) + geom_bar(stat='identity', position='dodge') + facet_wrap(condition_cr~condition_cov, nrow = 3)
-# 
-# # for comparison: plot binomial 
-# barplot(table(rbinom( sum( tab1 %>% filter(ntt==20, is_converted_bam==1, condition_cr==0.05, condition_cov==10) %>%  pull(count) ), 20, 0.05)), ylim = c(0,40000))
-# 
-# 
-# CHROM=c(as.character(seq(1,19)), "X", "Y")
-# 
-# # TP/FN reads per chrom/mapper
-# reads=reads%>% mutate(mapped_chr=factor(str_extract(mapped_coords, "[^:]+"), levels=CHROM), true_chr=factor(true_chr, levels=CHROM) )
-# 
-# tab1=reads %>% filter(mapped_chr==true_chr, condition_id=='c_10')%>% group_by(classification, mapper, true_chr, is_converted_bam) %>% summarise(n_reads=n())
-# p1 = ggplot(tab1, aes(x=true_chr, y=n_reads, fill=is_converted_bam)) + geom_bar(stat='identity', position='dodge') + facet_grid(classification~mapper)
-# 
-# tab2=reads %>% filter(mapped_chr==true_chr, condition=='c_10')%>% group_by(classification, mapper, mapped_chr, is_converted_bam) %>% summarise(n_reads=n())
-# p2 = ggplot(tab2, aes(x=mapped_chr, y=n_reads, fill=is_converted_bam)) + geom_bar(stat='identity', position='dodge') + facet_grid(classification~mapper) + ggtitle('Intrachromosomally mismapped reads per mapper for cr=10%')
-# 
-# plot_grid(p1, p2)
 ```
 
-Calculate p from data via ZIB model
+
+
+
+## splice site precision
+
+calculated from splice_site_mappability table.
+
 ```{r}
-fit_zib_data = function( d, size=20, main='', max_n=NA ) {
-  dat=rep(d$ntc, d$count) # unroll data
-  if ( !is.na(max_n) && (length(dat)>max_n) ) {
-    dat=sample(dat, max_n)
+plot_mappability_by_bin = function(tab, type='donor', subtitle='', facet=NA) {
+  group_vars=c('mapper', 'condition')
+  if (!is.na(facet)) {
+    # rename by addint '(n=xxx)')
+    cnts = tab %>% 
+      group_by_at(facet) %>% 
+      summarise(n_tid=n_distinct(tid), .groups='drop') %>% 
+      setNames(., c("a", "b")) %>% mutate(c=paste0(a,' (n=',b,')'))
+    labs = setNames(cnts$c, cnts$a)
+    tab[['facet']]=factor( labs[tab[[facet]]], levels=cnts$c)
+    group_vars=c(group_vars, 'facet')
   }
-  nn=length(dat)
-  zfit <- vglm(cbind(dat,size-dat)~1, zibinomialff(zero = NULL, ionempstr0=0.99), trace = TRUE)
-  pfit=Coef(zfit)[1]
-  pobs0=1-Coef(zfit)[2] # for zibinomialff, onempstr0=1-pstr0
-  sim=rzibinom(nn, size, pfit, pobs0)
-  pdat=rbind( data.frame(value=dat, type='data'), data.frame(value=sim, type='sim') )
-  p=ggplot(pdat, aes(x=value, col=type, fill=type)) + 
-    geom_histogram(position="dodge", bins=max(pdat$value)) +
-    ggtitle(paste0(main,'\nn=',nn,'\np_fit:', pfit, '\npobs0:', pobs0,'\nAIC=',AIC(zfit)))
+  if (type=='donor') {
+    dat = calc_ci(tab %>% group_by_at(group_vars), mean_don_prec, min_lower_ci=0) %>% mutate(name='mean_don_prec')
+  } else {
+    dat = calc_ci(tab %>% group_by_at(group_vars), mean_acc_prec, min_lower_ci=0) %>% mutate(name='mean_acc_prec')
+  }
+  if ( params$plot_type=='by_condition') {
+    p=dat %>% 
+      ggplot(aes(x=condition, y=col.mean, col=mapper, group=mapper)) + 
+        geom_ribbon(aes(ymin=lower.ci, ymax=upper.ci), linetype=2, alpha=0.2) +
+        geom_line() +
+        ggtitle(paste0(type, " splice site precision  (n=",length(unique(tab$tid)),")"), subtitle)
+    if (!is.na(facet)) {
+      p=p+facet_wrap(facet~.)
+    }
+  } else {
+    
+  }
   return(p)
 }
 
-size=20 # only reads with this number of convertible positions
-plt=list()
-for ( m in unique(tc_hist$mapper)) {
-  for ( cond in unique(tc_hist$condition_id)) {
-    d =  tc_hist %>% filter(ntt==size, is_converted_bam==1, mapper==m, condition_id==cond )
-    id=paste0(m, '_', cond)
-    plt[[id]] =fit_zib_data(d, size=size, max_n=50000, main=id)
+tab = d[['splice_site_mappability']] %>% mutate(
+    don_prec=ifelse(don_TP_reads+don_FP_reads>0,don_TP_reads/(don_TP_reads+don_FP_reads),0), 
+    acc_prec=ifelse(acc_TP_reads+acc_FP_reads>0,acc_TP_reads/(acc_TP_reads+acc_FP_reads),0)
+    ) %>% 
+  group_by(mapper, condition, tid) %>% 
+  summarise(mean_don_prec=mean(don_prec), 
+            mean_acc_prec=mean(acc_prec),
+            mean_don_win_min_map=mean(don_win_min_map),
+            mean_acc_win_min_map=mean(acc_win_min_map), .groups='drop'
+            ) %>% 
+  mutate(don_win_map_cat=case_when(
+            mean_don_win_min_map<0.25 ~ 'low',
+            mean_don_win_min_map>0.75 ~ 'high',
+            T ~ 'medium'),
+         acc_win_map_cat=case_when(
+            mean_acc_win_min_map<0.25 ~ 'low',
+            mean_acc_win_min_map>0.75 ~ 'high',
+            T ~ 'medium')
+    ) %>% 
+  mutate(don_win_map_cat=factor(don_win_map_cat, levels=c('high', 'medium', 'low')),
+         acc_win_map_cat=factor(acc_win_map_cat, levels=c('high', 'medium', 'low'))
+         )
+
+p1 = plot_mappability_by_bin(tab, type='donor')
+p2 = plot_mappability_by_bin(tab, type='acceptor')
+p3 = plot_mappability_by_bin(tab, type='donor', subtitle='by SJ mappability', facet='don_win_map_cat')
+p4 = plot_mappability_by_bin(tab, type='acceptor', subtitle='by SJ mappability', facet='acc_win_map_cat')
+my_plot_grid(list(p1,p2,p3,p4), main = "Splice site precision")
+ggsave(paste0(params$out_dir,'/splice_site_precision.pdf'), width = 12, height = 8)
+
+```
+
+
+## SJ performance per tx 
+
+calculated from splice_site_performance table
+
+Performance (F-measure) of splice-site mapping (mean F1 over all donor/acceptor/splicing reads), stratified by read mapper and 
+genomic transcript mappability.
+
+```{r}
+plot_performance_by_bin = function(tab, type='donor', subtitle='', facet=NA) {
+  group_vars=c('mapper', 'condition_id')
+  if (!is.na(facet)) {
+    # rename by addint '(n=xxx)')
+    cnts = tab %>% 
+      group_by_at(facet) %>% 
+      summarise(n_tid=n_distinct(tid), .groups='drop') %>% 
+      setNames(., c("a", "b")) %>% mutate(c=paste0(a,' (n=',b,')'))
+    labs = setNames(cnts$c, cnts$a)
+    tab[['facet']]=factor( labs[tab[[facet]]], levels=cnts$c)
+    group_vars=c(group_vars, 'facet')
+  }
+  if (type=='donor') {
+    dat = calc_ci(tab %>% group_by_at(group_vars), mean_don_F1, min_lower_ci=0) %>% mutate(name='mean_don_F1')
+  } else if (type=='acceptor') {
+    dat = calc_ci(tab %>% group_by_at(group_vars), mean_acc_F1, min_lower_ci=0) %>% mutate(name='mean_acc_F1')
+  } else if (type=='spl') {
+    dat = calc_ci(tab %>% group_by_at(group_vars), mean_spl_F1, min_lower_ci=0) %>% mutate(name='mean_spl_F1')
+  } else if (type=='all') {
+    dat = calc_ci(tab %>% group_by_at(group_vars), mean_all_F1, min_lower_ci=0) %>% mutate(name='mean_all_F1')
+  }
+  if ( params$plot_type=='by_condition') {
+    p=dat %>% 
+      ggplot(aes(x=condition_id, y=col.mean, col=mapper, group=mapper)) + 
+        geom_ribbon(aes(ymin=lower.ci, ymax=upper.ci), linetype=2, alpha=0.2) +
+        geom_line() +
+        ggtitle(paste0(type, " splice site F1  (n=",length(unique(tab$tid)),")"), subtitle)
+    if (!is.na(facet)) {
+      p=p+facet_wrap(facet~.)
+    }
+  } else {
+    
+  }
+  return(p)
+}
+
+tab = d[['splice_site_performance']] %>% 
+  filter(mapper != 'truth') %>% 
+  group_by(mapper, condition_id, tid, mappability_mean) %>% 
+  summarise(mean_spl_F1=mean(spl_F1), 
+            mean_don_F1=mean(don_F1),
+            mean_acc_F1=mean(acc_F1), 
+            mean_all_F1=mean(all_F1), 
+            .groups='drop'
+            ) %>% 
+  mutate(transcript_mappability=factor(case_when(
+            mappability_mean<0.25 ~ 'low',
+            mappability_mean>0.75 ~ 'high',
+            T ~ 'medium'), levels=c('high', 'medium', 'low'))) 
+
+p1 = plot_performance_by_bin(tab, type='donor')
+p2 = plot_performance_by_bin(tab, type='acceptor')
+p3 = plot_performance_by_bin(tab, type='spl')
+p4 = plot_performance_by_bin(tab, type='spl', subtitle='by transcript mappability', facet='transcript_mappability')
+p5 = plot_performance_by_bin(tab, type='all')
+p6 = plot_performance_by_bin(tab, type='all', subtitle='by transcript mappability', facet='transcript_mappability')
+my_plot_grid(list(p1,p2,p3,p4,p5,p6), main = "Splice site performance per tx")
+ggsave(paste0(params$out_dir,'/splice_site_performance.pdf'), width = 12, height = 8)
+```
+
+## SJ performance per intron: SJ with TC-sensitive mappability
+
+Compare conditions cr=0% and cr=5% and plot difference in F1 measure per tx.
+This plot demonstrates again that HISAT3N is not affected by TC conversions while STAR is.
+For STAR, spliced read mapping is affected most, possibly because of affected anchor sequences.
+
+
+```{r}
+tab = d[['splice_site_performance']] %>% 
+  filter(condition %in% c(0,0.05), mapper %in% c('STAR', 'HISAT3N'), intron_len>100) %>% 
+  left_join(d[['splice_site_mappability']] %>% 
+              select(tid, intron_rnk, mapper, condition, don_win_min_map, acc_win_min_map), 
+            by=c('tid', 'intron_rnk', 'mapper', 'condition'), all.x+T) %>% 
+  select(tid, intron_rnk, mapper, condition, don_win_min_map, acc_win_min_map, 
+         acc_F1, don_F1, spl_F1, everything()) %>% 
+  ungroup() %>% 
+  mutate(loc=paste0(chromosome, ':', start,'-', end)) %>% 
+  mutate(SJ_mappability=pmin(don_win_min_map, acc_win_min_map)) %>% 
+  mutate(SJ_mappability=case_when(SJ_mappability<0.2 ~ 'low',
+                               SJ_mappability>0.9 ~ 'high',
+                               T ~ 'medium')) %>%
+  mutate(SJ_mappability=factor(SJ_mappability, levels=c('high', 'medium', 'low')))
+  
+F1_diff=tab %>% 
+  select(tid, intron_rnk, mapper, condition, don_win_min_map, acc_win_min_map, SJ_mappability,
+         all_F1, acc_F1, don_F1, spl_F1, 
+         loc, 
+         spl_TP, spl_FP, spl_FN, 
+         don_TP, don_FP, don_FN, 
+         acc_TP, acc_FP, acc_FN) %>% 
+  pivot_wider(names_from = condition, 
+              values_from = c(all_F1, acc_F1, don_F1, spl_F1, 
+                              spl_TP, spl_FP, spl_FN, 
+                              don_TP, don_FP, don_FN, 
+                              acc_TP, acc_FP, acc_FN), names_prefix = 'cr') %>% 
+  mutate(all_diff=all_F1_cr0-all_F1_cr0.05,
+         acc_diff=acc_F1_cr0-acc_F1_cr0.05,
+         don_diff=don_F1_cr0-don_F1_cr0.05,
+         spl_diff=spl_F1_cr0-spl_F1_cr0.05)
+
+F1_diff %>% 
+  select(tid, SJ_mappability, mapper, all_diff, acc_diff, don_diff, spl_diff) %>% 
+  pivot_longer(-c(tid, SJ_mappability, mapper)) %>% 
+  mutate(name=factor(name, levels=c('all_diff', 'don_diff', 'acc_diff', 'spl_diff'))) %>% 
+  ggplot(aes(x=name, y=value, fill=mapper)) +
+  geom_boxplot(outlier.colour = 'grey') +
+  facet_wrap(SJ_mappability~.) +
+  ggtitle('F1 measure difference between cr0 and cr0.05 per intron', 'HISAT3N is not affected by TC conversions')
+ggsave(paste0(params$out_dir,'/F1_diff_cr0_cr0.05.pdf'), width = 12, height = 8)
+
+
+```
+
+## SJ rank per gene_type
+
+```{r}
+top_gene_type_cat = d[['splice_site_performance']] %>% count(gene_type) %>% arrange(desc(n)) %>% head(4) %>% pull(gene_type)
+d[['splice_site_performance']] %>% 
+  filter(mapper != 'truth') %>% 
+  mutate(gene_type_cat=case_when(
+    gene_type %in% !!top_gene_type_cat ~ gene_type,
+    T ~ 'other'  
+  )) %>% 
+  mutate( level_cat = case_when(
+    level==1 ~ 'Level 1 - validated',
+    level==2 ~ 'Level 2 - manual annotation',
+    level==3 ~ 'Level 3 - automated annotation',
+    T ~ NA_character_
+  )) %>% 
+  mutate(gene_type_cat=factor(gene_type_cat, levels=c(top_gene_type_cat, 'other'))) %>% 
+  ggplot(aes(x=gene_type_cat, y=spliced_diff_rnk, fill=condition_id)) +
+  geom_boxplot() +
+  facet_wrap(mapper~level_cat) + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ggtitle("Distribution of intron rank per mapper.", 
+          "Rank is calculated from difference between true and found spliced fraction.\nLarger ranks mean higher difference to true value.")
+ggsave(paste0(params$out_dir,'/spliced_diff_rnk.pdf'), width = 12, height = 8)
+
+```
+# Coverage and FP/FN per feature
+```{r}
+
+pdf(paste0(params$out_dir,'/fpfn_per_feature.pdf'), width = 12, height = 8)
+
+d[['counts_per_feature']] %>% 
+  pivot_longer(c(FP,FN)) %>% 
+  ggplot(aes(x=condition_id, y=value, fill=mapper)) +
+  geom_boxplot() +
+  facet_wrap(ftype~name, scales = 'free') +
+  scale_y_log10() +
+  ggtitle("FP and FN reads in exonic/intronic regions per mapper")
+
+tab = calc_iqr(d[['counts_per_tx']] %>% 
+             pivot_longer(c(FP,FN)) %>% 
+             group_by(mapper, condition_id, ftype, name, mappability)
+         , value) 
+
+
+p1 = tab %>% filter(ftype=='exon') %>% 
+  ggplot(aes(x=condition_id, y=col.mean, col=mapper, group=mapper)) +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=3, alpha=0.05) +
+  geom_line() +
+  facet_grid(mappability~name, scales = 'free') +
+  ggtitle("Exons")
+
+p2 = tab %>% filter(ftype=='intron') %>% 
+  ggplot(aes(x=condition_id, y=col.mean, col=mapper, group=mapper)) +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=3, alpha=0.05) +
+  geom_line() +
+  facet_grid(mappability~name, scales = 'free') +
+  ggtitle("Introns")
+
+my_plot_grid(list(p1,p2), 'Mean FP/FN in exonic/intronic regions per mapper (tx level)')
+dev.off()
+
+
+p1=d[['counts_per_tx']] %>% 
+  ggplot(aes(x=condition_id, y=read_count, fill=mapper)) +
+  geom_boxplot() +
+  facet_wrap(ftype~mappability) +
+  scale_y_log10() +
+  ggtitle("Mapped reads")
+
+p2=d[['counts_per_tx']] %>% 
+  ggplot(aes(x=condition_id, y=cov, fill=mapper)) +
+  geom_boxplot() +
+  facet_wrap(ftype~mappability) +
+  scale_y_log10() +
+  ggtitle("Coverage", "Expected: exons ~100X, introns ~50X") +
+  geom_hline(yintercept = c(100,50), linetype='dotted', col='grey')
+
+my_plot_grid(list(p1,p2), 'Coverage in exonic/intronic regions per mapper (tx level)')
+ggsave(paste0(params$out_dir,'/coverage_per_tx.pdf'), width = 12, height = 8)
+
+```
+
+# SJ frac mature and correction
+
+- Measures performance wrt. reconstruction of simulated mature/premature ratios.
+- Intron filtering:
+  + Drop bad introns from each tx if the difference to the true fmat value is>threshold (min_spliced_diff)
+  + Stop if the number of remaining reads is below a minimum tbreshold (min_remaining_readcount)
+  + Calculate for two scenarios: w/o TC conversions (considering only condition==0) and with T/C conversions (filter if it is considered)
+
+NOTES:
+- Defined over spliced (at least 1 intron) transcripts only
+- tx len at least 1000bp
+- NB: A mapper can drop 99% of all mature and premature reads and would still reconstruct the original ratio perfectly.
+
+TODO:
+- remove tx with too-short exons (e.g., chr13:55,132,787-55,133,731 or chr6:115,227,343-115,259,294) where there are no simulated spliced reads?
+
+
+```{r map_corr}
+
+pdf(paste0(params$out_dir,'/splice_site_fmat_performance.pdf'), width = 12, height = 8)
+
+min_spliced_diff = 0.1 # filter SJ only if diff to true value is greater than this value
+min_remaining_readcount = 100 # filter SJs util this remaining_readcount
+
+rnk1_tids = d[['gene_anno']] %>%
+  filter(rnk>1, transcript_len>1000) %>% 
+  pull(tid)
+# ===============================================
+# Calculate bad/filtered introns
+# ===============================================
+intron_mappability = d[['splice_site_performance']] %>% 
+    filter(tid %in% rnk1_tids, mapper!='truth') %>% 
+    group_by(tid, mapper, condition) %>% 
+    arrange(spliced_diff_rnk) %>% 
+    mutate(read_sum=cumsum(found_mat+found_pre)) %>% 
+    select(tid, mapper, condition, intron_id, spliced_diff_rnk, spliced_diff, true_pre, true_mat, found_pre, found_mat, read_sum) %>% 
+    arrange(desc(spliced_diff_rnk)) %>% # sort per tx by decreasing intron rnk, i.e.,bad introns first
+    mutate(remaining_reads=lead(read_sum, default=0)) %>% # remaining reads after removing the current intron
+    mutate(low_map = (is.na(spliced_diff) | (spliced_diff>!!min_spliced_diff & remaining_reads>!!min_remaining_readcount))) %>% 
+    group_by(mapper, tid, intron_id) %>% summarise(
+      tc=sum(low_map)>sum(!low_map), # filter because in most conditions it is filtered
+      notc=low_map[condition==0]     # filter because in cond0 it is filtered
+      ) %>% 
+  ungroup() %>% 
+  pivot_longer(c(tc,notc), names_to = 'filter_type', values_to='filtered')
+# show data for 1 tid: intron_mappability %>% filter(tid==!!tid)
+
+# plot distribution of low_mappability introns
+levs=c('not filtered','filtered in STAR', 'filtered in HISAT3N', 'filtered in both')
+intron_mappability %>% 
+  pivot_wider(names_from=mapper, values_from = filtered, id_cols = c('tid', 'intron_id', 'filter_type')) %>% 
+  mutate(lab=case_when(
+    (HISAT3N) & (STAR) ~ 'filtered in both',
+    (!HISAT3N) & (STAR) ~ 'filtered in STAR',
+    (HISAT3N) & (!STAR) ~ 'filtered in HISAT3N',
+    T ~ 'not filtered'
+    )) %>% 
+  count(filter_type, lab) %>% 
+  ggplot(aes(x=lab, y=n, fill=lab)) +
+  scale_fill_manual(name = "lab",values = setNames(brewer.pal(length(levs),"Set1"), levs)) +
+  geom_bar(stat='identity') +
+  facet_wrap(filter_type~.) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ggtitle('Filter results per intron') 
+  
+
+# calculate spliced fraction per mapper/condition/filtered
+# 1) TC mode: consider all conditions
+sfrac_tc = d[['splice_site_performance']] %>% 
+  filter(mapper %in% c('HISAT3N', 'STAR'), tid %in% rnk1_tids) %>% 
+  left_join(intron_mappability, by=c('tid', 'intron_id', 'mapper'), all.x=T) %>% 
+  filter(filter_type=='tc') %>% 
+  group_by(mapper, condition, tid, rnk, mappability_mean, gene_type, gene_name, filter_type ) %>% 
+  summarise(true_mat=sum(spl_FN)+sum(spl_TP),
+            found_mat=sum(spl_FP)+sum(spl_TP),
+            true_pre=sum(don_FN)+sum(don_TP)+sum(acc_FN)+sum(acc_TP),
+            found_pre=sum(don_FP)+sum(don_TP)+sum(acc_FP)+sum(acc_TP),
+            # --- filtered ----
+            true_mat_fil=sum(spl_FN[!filtered])+sum(spl_TP[!filtered]),
+            found_mat_fil=sum(spl_FP[!filtered])+sum(spl_TP[!filtered]),
+            true_pre_fil=sum(don_FN[!filtered])+sum(don_TP[!filtered])+sum(acc_FN[!filtered])+sum(acc_TP[!filtered]),
+            found_pre_fil=sum(don_FP[!filtered])+sum(don_TP[!filtered])+sum(acc_FP[!filtered])+sum(acc_TP[!filtered]),
+            n_fil=sum(filtered, na.rm = T),
+            .groups = 'drop'
+         ) 
+# 1) no-TC mode: consider only condition0
+sfrac_notc = d[['splice_site_performance']] %>% 
+  filter(mapper %in% c('HISAT3N', 'STAR'), tid %in% rnk1_tids) %>% 
+  left_join(intron_mappability, by=c('tid', 'intron_id', 'mapper'), all.x=T) %>% 
+  filter(filter_type=='notc', condition==0) %>% 
+  group_by(mapper, condition, tid, rnk, mappability_mean, gene_type, gene_name, filter_type ) %>% 
+  summarise(true_mat=sum(spl_FN)+sum(spl_TP),
+            found_mat=sum(spl_FP)+sum(spl_TP),
+            true_pre=sum(don_FN)+sum(don_TP)+sum(acc_FN)+sum(acc_TP),
+            found_pre=sum(don_FP)+sum(don_TP)+sum(acc_FP)+sum(acc_TP),
+            # --- filtered ----
+            true_mat_fil=sum(spl_FN[!filtered])+sum(spl_TP[!filtered]),
+            found_mat_fil=sum(spl_FP[!filtered])+sum(spl_TP[!filtered]),
+            true_pre_fil=sum(don_FN[!filtered])+sum(don_TP[!filtered])+sum(acc_FN[!filtered])+sum(acc_TP[!filtered]),
+            found_pre_fil=sum(don_FP[!filtered])+sum(don_TP[!filtered])+sum(acc_FP[!filtered])+sum(acc_TP[!filtered]),
+            n_fil=sum(filtered, na.rm = T),
+            .groups = 'drop'
+         ) 
+# combine to one df
+sfrac = sfrac_tc %>% 
+  rbind(sfrac_notc) %>% 
+  filter( found_mat_fil+found_pre_fil>!!min_remaining_readcount ) %>% # drop if due to filtering the overall readcount became too low
+  mutate(
+         true_spliced=ifelse(true_pre>0,true_mat/(true_pre+true_mat), NA),
+         found_spliced=ifelse(found_pre>0,found_mat/(found_pre+found_mat), NA),
+         found_spliced_fil=ifelse(found_pre_fil>0,found_mat_fil/(found_pre_fil+found_mat_fil), NA),
+  ) %>% 
+  mutate(diff_spliced=true_spliced-found_spliced,
+         diff_spliced_fil=true_spliced-found_spliced_fil) %>% 
+  mutate(improvement=abs(diff_spliced) - abs(diff_spliced_fil)) %>% 
+  mutate(num_exons=case_when(rnk<=5 ~ as.character(rnk), 
+                             rnk>5 ~ '>5',
+                             T ~ 'NA'),
+         mappability=case_when(mappability_mean<0.2 ~ 'low',
+                               mappability_mean>0.9 ~ 'high',
+                               T ~ 'medium') 
+  )  %>% 
+  mutate(num_exons=factor(num_exons, levels=c('1','2','3','4','5','>5')),
+         mappability=factor(mappability, levels=c('high', 'medium', 'low'))
+  ) %>% 
+  left_join(d[['tx_metadata']], by='tid', all.x=T) %>% 
+  select(mapper, tid, condition, n_fil, 
+         true_spliced, found_spliced, found_spliced_fil, 
+         true_mat, found_mat, found_mat_fil,
+         true_pre, found_pre, found_pre_fil,
+         everything())
+
+# sanity ccheck: 
+#testthat::expect_that(sfrac %>% filter(filter_type=='tc', diff_spliced<diff_spliced_fil) %>% nrow(), equals(0))
+#testthat::expect_that(sfrac %>% filter(filter_type=='notc', diff_spliced<diff_spliced_fil) %>% nrow(), equals(0))
+
+# number of tids 
+sfrac_ntx = sfrac %>% summarise(n_tids=n_distinct(tid)) %>% pull(n_tids)
+sfrac_ntx2 = sfrac %>% filter(n_fil>0) %>% summarise(n_tids=n_distinct(tid)) %>% pull(n_tids)
+print(glue::glue('We have data for {sfrac_ntx} tx or which {sfrac_ntx2} ({prettyNum(sfrac_ntx2/sfrac_ntx, digits=2)} have at least 1 filtered intron) '))
+
+# plot difference to true fractions
+sfrac %>% 
+  select(mapper, tid, condition, filter_type, n_fil, improvement, 
+         mappability, n_overlapping, gene_type, rnk) %>% 
+  filter(n_fil > 0) %>% 
+  mutate(is_overlapping=ifelse(n_overlapping>0,'overlapping tx', 'non-overlapping tx')) %>% 
+  ggplot(aes(x=condition, y=improvement, fill=filter_type)) +
+    geom_boxplot(outlier.colour = 'grey') +
+    facet_grid(mappability~mapper) +
+    geom_hline(yintercept = 0, col='black') +
+    ggtitle('Improvement per mapper for tx with at least one filtered intron (TC or non-TC mode)')
+
+
+calc_iqr(sfrac %>%
+  filter(n_fil>0, n_overlapping==0, gene_type=='protein_coding') %>%
+  mutate(is_overlapping=ifelse(n_overlapping>0,'overlapping tx', 'non-overlapping tx')) %>%
+  mutate(frac_filtered=round(n_fil/(rnk-1),1)) %>%
+  group_by(mapper, frac_filtered, mappability, is_overlapping, condition, filter_type), improvement) %>%
+  filter(col.n>10) %>% # at least 10 observations! 
+  ggplot(aes(x=frac_filtered, y=col.median, col=mapper, group=mapper)) +
+  geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=3, alpha=0.05) +
+  geom_line() +
+  geom_hline(yintercept = 0, col='black') +
+  facet_grid(mappability~paste0(is_overlapping,', cr=',condition, ', ft=', filter_type)) +
+  ggtitle('Improvement of frac_mature estimate per fraction introns filtered',
+          paste0('protein_coding only'))
+
+dev.off()
+```
+## SJ correction: best tx per mapper
+- calc for each tx: which mapper has smallest diff to sim truth after correction
+
+```{r sj_corr_best_tx}
+best_mapper = sfrac %>% 
+    select(mapper, tid, condition,filter_type, n_fil, n_overlapping, true_spliced, found_spliced, found_spliced_fil, mappability) %>% 
+    group_by(mapper, tid, n_fil, n_overlapping, true_spliced, mappability, filter_type) %>% 
+    summarise( m_found_spliced=median(found_spliced, na.rm=T), 
+              m_found_spliced_fil=median(found_spliced_fil)) %>% 
+    ungroup() %>% 
+    pivot_wider(names_from=mapper, 
+                values_from=c(m_found_spliced, m_found_spliced_fil, n_fil), 
+                id_cols=c('tid', 'n_overlapping', 'true_spliced', 'mappability', 'filter_type')) %>% 
+    mutate(diff_STAR=abs(true_spliced-m_found_spliced_STAR),
+           diff_STAR_fil=abs(true_spliced-m_found_spliced_fil_STAR),
+           diff_HISAT3N=abs(true_spliced-m_found_spliced_HISAT3N),
+           diff_HISAT3N_fil=abs(true_spliced-m_found_spliced_fil_HISAT3N)
+           ) %>%   
+    mutate(best_HISAT3N=pmin(diff_HISAT3N, diff_HISAT3N_fil),
+           best_STAR=pmin(diff_STAR, diff_STAR_fil )) %>% 
+    mutate(best_diff=pmin(best_HISAT3N, best_STAR)) %>% 
+    mutate(best_mapper=ifelse(best_HISAT3N<best_STAR, 'HISAT3N', ifelse(best_STAR<best_HISAT3N,'STAR','BOTH')),
+           after_fil=(diff_STAR_fil==best_diff | diff_HISAT3N_fil==best_diff) & (diff_HISAT3N!=best_diff) & (diff_STAR!=best_diff),
+           diff_to_other=abs(best_HISAT3N-best_STAR)
+           ) %>% 
+  left_join(d[['gene_anno']], by='tid') 
+  
+# TODO: add best mapper for tx that cannot be intron-filtered (rnk1)
+
+
+p1 = best_mapper %>% 
+  group_by(mappability, after_fil, filter_type) %>% 
+  count(best_mapper) %>% 
+  ggplot(aes(x=best_mapper, y=n, fill=after_fil)) +
+  geom_bar(stat='identity') +
+  facet_grid(filter_type~mappability) +
+  ggtitle('All' )
+
+p2 = best_mapper %>% 
+  filter(best_diff<0.05, diff_to_other>0.05) %>% 
+  group_by(mappability, after_fil, filter_type) %>% 
+  count(best_mapper) %>% 
+  ggplot(aes(x=best_mapper, y=n, fill=after_fil)) +
+  geom_bar(stat='identity') +
+  facet_grid(filter_type~mappability) +
+  ggtitle('Substantial improvement, substantial better performance than other mapper',
+          'best_diff<0.05, diff_to_other>0.05')
+
+my_plot_grid(list(p1,p2), 'Best mapper per tx wrt. fmat')
+ggsave(paste0(params$out_dir,'/splice_site_fmat_best_mapper.pdf'), width = 12, height = 8)
+
+```
+
+### Write BED file of filtered introns per mapper
+```{r}
+# ==============================================
+# write BED file of filtered introns per mapper
+# ==============================================
+
+tab = intron_mappability %>%
+  left_join(d[['sj_metadata']], by = c('tid', 'intron_id'), all.x=T) %>% 
+  arrange(chromosome, start)
+for ( f in c('tc', 'notc')) {
+  for ( m in c('STAR', 'HISAT3N')) {
+    write_bed(
+      tab %>% filter(mapper==!!m, filter_type==!!f) %>% 
+      mutate(score=ifelse(is.na(don_win_min_map)|is.na(acc_win_min_map),0,(don_win_min_map+acc_win_min_map)/2*1000), 
+             rgb=ifelse(filtered,'255,0,0','0,255,0'),
+             start1=start,
+             end1=end) %>% 
+      select(chromosome,start,end,intron_id,score,strand,start1,end1,rgb),
+      paste0(params$out_dir,'/filtered_introns_',f,'.',m,'.bed'),
+      paste0(m,"_filtered_introns_", f)
+    )
   }
 }
-plot_grid(plotlist=plt, ncol=6)
+  
 ```
+
+### Write BED file of best mapper per tx (wrt. fmat reconstruction)
+```{r}
+# ==============================================
+# write BED file of tx per best mapper
+# ==============================================
+tab = best_mapper %>% 
+  select(tid, filter_type, best_mapper, best_diff, diff_to_other, chromosome, start, end, strand) %>% 
+  arrange(chromosome, start)
+
+
+for ( f in c('tc', 'notc')) {
+  write_bed(
+    tab %>% 
+    filter(filter_type==!!f) %>% 
+    mutate(score=ifelse(is.na(best_diff),0,(pmax(0,(1/3)-best_diff))*1000), 
+           rgb=case_when(
+             best_mapper=='STAR'~'255,0,0',
+             best_mapper=='HISAT3N'~'0,255,0',
+             T ~ '0,0,255'),
+           start1=start,
+           end1=end) %>% 
+    select(chromosome,start,end,best_mapper,score,strand,start1,end1,rgb),
+    paste0(params$out_dir,'/best_mapper_fmat.',f, '.bed'),
+    paste0('best_mapper_fmat_',f)
+  )
+ 
+}
+
+```
+
+### Correction examples
+```{r}
+
+# for which tx do we have perfect correction
+sfrac %>% filter(diff_spliced>0, diff_spliced_fil_tc==0) %>% View()
+
+# STAR examples
+best_mapper %>% 
+  filter(filter_type=='notc', best_mapper=='STAR', gene_type=='protein_coding', best_diff<0.05, diff_to_other>0.05,mappability=='high') %>% 
+  arrange(desc(diff_to_other)) %>% View()
+
+
+
+# for which tx do we have the highest correction
+sfrac %>% arrange(desc(improvement)) %>% select(improvement, everything()) %>% head()
+
+summarise_results = function(gene_name) {
+  tid=(sfrac %>% filter(gene_name==!!gene_name) %>% pull(tid))[1]
+  sfrac %>% filter(tid==!!tid) %>% select(improvement, everything()) %>% print()
+  intron_mappability %>% filter(tid==!!tid, filter_type=='tc') %>% print()
+}
+summarise_results('Slc2a3')
+summarise_results('Ttn') # (large number of introns)
+summarise_results('Fgf23') 
+summarise_results('Npm1')
+summarise_results('Gas5') # (lincRNA / snoRNA host gene)
+summarise_results('Actb')
+```
+
+
+### Example genes
+
+- Actb (housekeeping)
+- Ttn (large number of introns)
+- Npm1
+- Gas5 (lincRNA / snoRNA host gene)
+
+TODO: needs fixing
+
+```{r big_diff}
+gn2tid = function(gn) {
+  return(unique( d[['tid_performance']] %>% filter(gene_name == gn) %>% pull(tid) ))
+}
+
+plot_gene=function(gene_name) {
+  tid=gn2tid(gene_name)
+  if (params$plot_type=='by_condition') {
+    p1 = d[['tid_performance']] %>% filter(tid==!!tid) %>% 
+      ggplot(aes(x=condition_id, y=F1, col=mapper, linetype=iso, group=paste0(mapper, iso))) + 
+      geom_line() + geom_point() +
+      ggtitle( paste0("F1 for ", tid) ) +
+      xlab("")
+  } else {
+    p1 = d[['tid_performance']] %>% filter(tid==!!tid) %>% 
+      ggplot(aes(x=mapper, y=F1, col=mapper, shape=iso, group=paste0(mapper, iso ))) + 
+      geom_line() + geom_point() +
+      ggtitle( paste0("F1 for ", tid) ) 
+  }
+  # p1=ss_perf_per_intron %>% 
+  #   filter(gene_name==!!gene_name, mapper!='truth') %>% 
+  #   ggplot(aes(x=intron_rnk, y=diff, col=mapper, group=mapper)) +
+  #   geom_line() +
+  #   facet_wrap(condition_id~., nrow = 1) 
+  if ( ss_perf_per_intron %>% filter(gene_name==!!gene_name) %>% nrow() == 0 ) {
+    p2 = ggplot() + annotate("text", x = 4, y = 25, size=8, label = paste0("No data for this gene\nrnk=", d[['gene_anno']] %>% filter(gene_name==!!gene_name) %>% pull(rnk))) + theme_void()
+  } else {
+    p2=calc_iqr(ss_perf_per_intron %>% 
+                  filter(gene_name==!!gene_name, mapper!='truth') %>% 
+                  mutate(intron_rnk=factor(intron_rnk)) %>% 
+                  group_by(mapper, intron_rnk), diff) %>% 
+      ggplot(aes(x=intron_rnk, y=col.median, col=mapper, group=mapper)) +
+      geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.1) +
+      geom_line() +
+      facet_wrap(mapper~., nrow = 1) +
+      ggtitle("Splice site performance") +
+      ylab("Difference to real fraction")    
+  }
+
+  my_plot_grid(list(p1,p2), nrow = 2, main = gene_name)
+}
+
+example_genes=c('Actb','Ttn','Npm1', 'Gas5', 'Mat2a', 'Gm10243', 'Ybx1-ps2','Gm23306','Gm38323')
+pdf(paste0(params$out_dir,'/qc_example_genes.pdf'), width = 10, height = 8)
+for (g in example_genes) {
+  print(plot_gene(g))
+}
+dev.off()
+
+```
+
+
+
+## Genes with big mapper differences
+```{r big_diff}
+tab = d[['tid_performance']] %>% 
+  filter(mapper!='truth') %>% 
+  select(condition_id, gene_name, tid, iso, chromosome,start,end,  mapper, F1) %>% 
+  pivot_wider(names_from = mapper, values_from = F1, id_cols = c(condition_id, gene_name, tid, iso, chromosome,start,end)) %>% 
+  mutate(f1_diff=STAR-HISAT3N) 
+tab %>% ggplot(aes(x=condition_id, y=f1_diff, fill=iso)) +
+  geom_boxplot() +
+  geom_hline(yintercept = 0, col='grey', linetype='dotted') +
+  ggtitle("Difference in F1 value per transcript") 
+
+# example gene where there are no mapped reads in HISAT3N / cr==0 for some reason
+d[['tid_performance']] %>% filter(tid=='ENSMUST00000179058.1') %>% select(tid, gene_name,TP,FP,FN,F1, everything())
+
+
+```
+
+
+
+

@@ -1,0 +1,236 @@
+manifest {
+    name = "splice_sim"
+    author = "Niko Popitsch"
+    version = "0.1"
+    description = "splice-aware RNA simulator"
+}
+
+timeline {
+  enabled = true
+  file = "logs/execution_timeline.html"
+}
+
+profiles {
+  //LOCAL
+  standard {
+    process.executor = 'local'
+    process.memory = '8 GB'
+    process.cpus = 1
+  }
+  local_big {
+    process.executor = 'local'
+    process.memory = '62 GB'
+    process.cpus = 8
+  }
+
+  //SLURM (cbe) - SMALL configuration
+  cbe_small {
+    process {
+      container = 'tobneu/splice_sim:latest'
+      executor = 'slurm'
+      memory='64 GB'
+      queue = { task.memory <= 120.GB ? 'c' : 'm' }
+      clusterOptions = { ( task.queue == 'g' ? '--gres gpu:1 ' : '' ) << ( (task.queue == 'c' & task.time <= 1.h) ? '--qos rapid' : ( task.time <= 8.h ? '--qos short': ( task.time <= 48.h ? '--qos medium' : '--qos long' ) ) ) }
+      cpus='8'
+      time='8.h'
+      scratch = false
+      withName: 'build_model' {
+        clusterOptions = '--qos=short'
+        memory='500 MB'
+        cpus=1
+        time='1.h'
+      	queue='c'
+      }
+      withName: 'simulate_reads' {
+        clusterOptions = '--qos=short'
+        memory='1 GB'
+        cpus=2
+        time='1.h'
+      	queue='c'
+      }
+      withName: 'map_star' {
+        clusterOptions = '--qos=short'
+        memory='40 GB'
+        cpus=2
+        time='1.h'
+      	queue='c'
+      }
+      withName: 'map_hisat_3n' {
+        clusterOptions = '--qos=short'
+        memory='16 GB'
+        cpus=10
+        time='1.h'
+      	queue='c'
+      }
+      withName: 'map_merangs' {
+        clusterOptions = '--qos=short'
+        memory='80 GB'
+        cpus=2
+        time='1.h'
+      	queue='c'
+      }
+      withName: 'postprocess_bams' {
+        clusterOptions = '--qos=short'
+        memory='100 MB'
+        cpus=1
+        time='1.h'
+        queue='c'
+      }
+      withName: 'evaluate_bams' {
+        clusterOptions = '--qos=short'
+        memory='1 GB'
+        cpus=2
+        time='1.h'
+        queue='c'
+      }
+      withName: 'extract_feature_metadata' {
+        clusterOptions = '--qos=short'
+        memory='1 GB'
+        cpus=1
+        time='1.h'
+        queue='c'
+      }
+      withName: 'preprocess_results' {
+        clusterOptions = '--qos=short'
+        memory='1 GB'
+        cpus=1
+        time='1.h'
+        queue='c'
+      }
+      withLabel: 'highmem' {
+        clusterOptions = '--qos=short'
+        memory='200 GB'
+        cpus=16
+        time='8.h'
+      	queue='m'
+      }
+      withLabel: 'long' {
+        clusterOptions = '--qos=long'
+        memory='200 GB'
+        cpus=16
+        time='4.d'
+        queue='m'
+      }
+      withName: 'preprocess_results' {
+        container = 'tobneu/splice_sim_r:latest'
+      }
+     beforeScript = 'hostname; module purge; ml list; export DISPLAY=""; export R_LIBS_USER=""; export R_LIBS=""; export PYTHONPATH=""; export PERL5LIB="";'
+    }
+
+    singularity {
+      enabled = true
+      cacheDir = '/resources/containers'
+    }
+  }
+  //SLURM (cbe) - BIG configuration
+  cbe_big {
+    process {
+      container = 'tobneu/splice_sim:latest'
+      executor = 'slurm'
+      memory='64 GB'
+      queue = { task.memory <= 120.GB ? 'c' : 'm' }
+      clusterOptions = { ( task.queue == 'g' ? '--gres gpu:1 ' : '' ) << ( (task.queue == 'c' & task.time <= 1.h) ? '--qos rapid' : ( task.time <= 8.h ? '--qos short': ( task.time <= 48.h ? '--qos medium' : '--qos long' ) ) ) }
+      cpus='8'
+      time='8.h'
+      scratch = false
+      withName: 'build_model' {
+        clusterOptions = '--qos=short'
+        memory='5 GB'
+        cpus=4
+        time='1.h'
+      	queue='c'
+      }
+      withName: 'simulate_reads' {
+        clusterOptions = '--qos=long'
+        memory='30 GB'
+        cpus=4
+        time='4.d'
+      	queue='c'
+      }
+      withName: 'map_star' {
+        clusterOptions = '--qos=short'
+        memory='40 GB'
+        cpus=10
+        time='8.h'
+      	queue='c'
+      }
+      withName: 'map_hisat_3n' {
+        clusterOptions = '--qos=medium'
+        memory='16 GB'
+        cpus=16
+        time='1.d'
+      	queue='c'
+      }
+      withName: 'map_merangs' {
+        clusterOptions = '--qos=medium'
+        memory='80 GB'
+        cpus=4
+        time='2.d'
+      	queue='c'
+      }
+      withName: 'postprocess_bams' {
+        clusterOptions = '--qos=short'
+        memory='4 GB'
+        cpus=2
+        time='4.h'
+        queue='c'
+      }
+      withName: 'evaluate_bams' {
+        clusterOptions = '--qos=long'
+        memory='20 GB'
+        cpus=2
+        time='6.d'
+        queue='c'
+      }
+      withName: 'extract_feature_metadata' {
+        clusterOptions = '--qos=short'
+        memory='8 GB'
+        cpus=1
+        time='2.h'
+        queue='c'
+      }
+      withName: 'preprocess_results' {
+        clusterOptions = '--qos=short'
+        memory='50 GB'
+        cpus=1
+        time='1.h'
+        queue='c'
+      }
+      withLabel: 'highmem' {
+        clusterOptions = '--qos=short'
+        memory='200 GB'
+        cpus=16
+        time='8.h'
+      	queue='m'
+      }
+      withLabel: 'long' {
+        clusterOptions = '--qos=long'
+        memory='200 GB'
+        cpus=16
+        time='4.d'
+        queue='m'
+      }
+      withName: 'preprocess_results' {
+        container = 'tobneu/splice_sim_r:latest'
+      }
+     beforeScript = 'hostname; module purge; ml list; export DISPLAY=""; export R_LIBS_USER=""; export R_LIBS=""; export PYTHONPATH=""; export PERL5LIB="";'
+    }
+
+   singularity {
+     enabled = true
+     cacheDir = '/resources/containers'
+   }
+  }
+
+}
+
+
+workflow.onComplete = {
+  println "Completed at : $workflow.complete"
+  println "Status       : ${workflow.success?'OK':'failed'}"
+  println "Duration     : ${workflow.duration}"
+  println "work dir     : ${workflow.workDir}"
+  println "exit status  : ${workflow.exitStatus}"
+  println "Error report : ${workflow.errorReport?:'-'}"
+  println "Command line : ${workflow.commandLine}"
+}

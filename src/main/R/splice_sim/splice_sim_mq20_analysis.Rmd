@@ -1,0 +1,296 @@
+---
+title: "splice_sim_mq20_analysis.Rmd"
+author: "niko.popitsch@imba.oeaw.ac.at"
+documentclass: article
+fontsize: 10pt
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    fig_width: 14
+    fig_height: 10
+    fig_caption: true
+    df_print: paged
+  pdf_document:
+    fig_width: 12
+    fig_height: 10
+    fig_caption: true
+params:
+    splice_sim_config_r1:
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf_kss/splice_sim.config.json"
+    data_dir:
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/splice_sim_paper/replicate_data_kss/"
+    out_dir:
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/splice_sim_paper/analysis_kss/"
+---
+<style type="text/css">
+body, td {
+   font-size: 10px;
+}
+code.r{
+  font-size: 10px;
+}
+pre {
+  font-size: 10px
+}
+div.blue pre { background-color:lightblue; }
+div.blue pre.r { background-color:blue; }
+</style>
+
+<!--
+rmarkdown::render('splice_sim_paper.Rmd', 'html_document')
+-->
+
+# INIT
+
+```{r setup, include=FALSE}
+require(data.table)
+require(goseq)
+require(AnnotationDbi)
+require(BiocGenerics)
+require(parallel)
+require(tidyr)
+require(dplyr)
+require(dtplyr)
+require(ggplot2)
+require(scales)
+require(rjson)
+require(stringr)
+require(VGAM)
+require(cowplot)
+require(arrow)
+require(tictoc)
+require(ggpubr)
+require(minpack.lm)
+require(readr)
+require(testthat)
+require(RColorBrewer)
+require(skimr)
+require(ggforce)
+require(writexl)
+require(xfun)
+require(forcats)
+require(glue)
+
+rename=dplyr::rename
+select=dplyr::select
+arrange=dplyr::arrange
+
+# NB install arrow with snappy on Rstudio server
+# Sys.setenv(ARROW_WITH_SNAPPY = "ON")
+# Sys.setenv(NOT_CRAN="true")
+# Sys.setenv(LIBARROW_BINARY="FALSE")
+# install.packages("arrow", repos = "https://arrow-r-nightly.s3.amazonaws.com")
+
+# to ensure stripping '\0' (nul) from character vector
+options(arrow.skip_nul = TRUE)
+
+# global theme
+ggplot2::theme_set(theme_light())
+
+# enable tidylog (has overhead!)
+#require(tidylog)
+options("tidylog.display" = list()) # turn tidylog off
+options(scipen=10000) # to avoid scientific notation y axis 
+
+# load resources/functions
+source('splice_sim_resources.R')
+```
+
+
+# data
+
+```{r data, include=F, echo=F, cache=T, eval=F}
+
+home_dir_r1=paste0(dirname(params$splice_sim_config_r1),'/')
+
+# read from 1st replicate
+conf=fromJSON(paste(readLines(params$splice_sim_config_r1), collapse=""))
+
+# create result dir?
+if (!dir.exists(params$out_dir)) {
+  dir.create(params$out_dir)
+} 
+if (!dir.exists(paste0(params$out_dir,'/cache/'))) {
+  dir.create(paste0(params$out_dir,'/cache/'))
+} 
+
+
+# results files
+m = read_rds(paste0(params$data_dir, '/meta.rds'))
+dp0 = read_rds(paste0(params$data_dir, '/data.pooled.rds'))
+dp20 = read_rds(paste0(params$data_dir, '/data.pooled.mq20.rds'))
+
+dp=list()
+for ( n in names(dp0)) {
+  dp[[n]] = dp0[[n]] %>% mutate(mq=0) %>% 
+    bind_rows(
+      dp20[[n]] %>% mutate(mq=20)
+    )
+}
+
+```
+
+
+# _________
+## Coverage calc
+
+```{r}
+calc_coverage_mq = function(tab) {
+  tab %>% 
+    lazy_dt() %>% 
+    filter(len>conf$readlen) %>% # drop too-short transcripts that cannot get simulated reads
+    mutate(
+      all_true_cov=all_true*!!conf$readlen/len,
+      all_found_cov=all_found*!!conf$readlen/len,
+      tc1_true_cov=tc1_true*!!conf$readlen/len,
+      tc1_found_cov=tc1_found*!!conf$readlen/len
+      ) %>% 
+    select(mapper, mq, ftype, true_isoform, conversion_rate, fid, 
+           all_true_cov, all_found_cov, tc1_true_cov, tc1_found_cov) %>% 
+    group_by(mq, ftype, true_isoform, conversion_rate, fid) %>% 
+    #slice_sample(n=n_sample) %>% 
+    pivot_wider(names_from=mapper, 
+                values_from = c(all_true_cov, all_found_cov, tc1_true_cov, tc1_found_cov)) %>% 
+    rename(all_simulated=all_true_cov_STAR, tc1_simulated=tc1_true_cov_STAR, 
+           all_STAR=all_found_cov_STAR, tc1_STAR=tc1_found_cov_STAR, 
+           all_HISAT3N=all_found_cov_HISAT3N, tc1_HISAT3N=tc1_found_cov_HISAT3N) %>% 
+    pivot_longer(c(all_simulated, all_HISAT3N, all_STAR, tc1_simulated, tc1_HISAT3N, tc1_STAR ), names_to='mapper') %>%
+    separate(mapper, c('read_type', 'mapper'), sep='_') %>% 
+    ungroup() %>% 
+    as_tibble() %>% 
+    mutate(mapper=factor(mapper, levels=c('simulated', 'HISAT3N', 'STAR')),
+           read_type=factor(read_type, levels = c('all', 'tc1')))
+   
+}
+
+
+mq20_dp_cov_tx = cache({
+  dp[['tx']] %>% calc_coverage_mq() %>% ungroup()
+}, 'mq20_dp_cov_tx', rerun = T) 
+
+
+
+  
+
+```
+
+## Figure
+```{r}
+# check: mq20 must be smaller!
+mq_decrease_check = 
+  mq20_dp_cov_tx %>% 
+  filter(mapper != 'simulated') %>% 
+  lazy_dt() %>% 
+  group_by(read_type, true_isoform, mapper,conversion_rate, fid) %>% 
+  pivot_wider(names_from = mq, values_from = value, names_prefix = 'mq') %>% 
+  as_tibble() %>% 
+  mutate(fil_effect=case_when(
+    mq0<mq20 ~ 'increase',
+    mq0>mq20 ~ 'decrease',
+    mq0==mq20 ~ 'same',
+    TRUE ~ NA_character_
+  ) ) %>% 
+  group_by(read_type, true_isoform, mapper,conversion_rate) %>% 
+  count(fil_effect) %>% 
+  mutate(fil_effect=factor(fil_effect, levels=c('same', 'increase', 'decrease')))
+
+test_that("MQ20 filtering must reduce counts", {
+  expect_equal(mq_decrease_check %>% filter(fil_effect=='increase') %>% nrow(), 0) 
+  })
+
+p1 = mq_decrease_check %>% 
+  ggplot(aes(factor(as.numeric(as.character(conversion_rate))*100), n, fill=fil_effect)) +
+  geom_col(position = position_stack()) +
+  facet_grid(read_type+true_isoform~mapper, scales = 'free') +
+  xlab("conversion rate [%]") + ylab("# tx") +
+  guides(fill=guide_legend(title="Effect")) +
+  ggtitle('Effect of MQ20 filtering on tx counts') 
+  
+
+p2 = mq20_dp_cov_tx %>% 
+  mutate(mq=paste0('MQ',mq)) %>% 
+  mutate(mq=factor(mq, levels=c('MQ0', 'MQ20'))) %>% 
+  ggplot(aes(x=mq, y=value, fill=mapper)) + 
+  geom_violin() +
+  scale_y_sqrt() +
+  ggtitle('Mapping quality filtering effect on tx coverage',
+          'All reads') +
+  facet_grid(true_isoform~read_type, scales = 'free') + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylab("coverage [X]") +
+  xlab("") +
+  my_scales()
+
+F1_corr_dat = dp[['tx']] %>% 
+  filter(mapper != 'simulated') %>% 
+  lazy_dt() %>% 
+  select(true_isoform, mapper,conversion_rate, fid, mq, all_F1) %>% 
+  group_by(true_isoform, mapper,conversion_rate, fid) %>% 
+  pivot_wider(names_from = mq, values_from = all_F1, names_prefix = 'mq') %>% 
+  as_tibble()
+F1_corr=tibble()
+for (true_isoform in c('mat','pre')) {
+  for (mapper in c('STAR','HISAT3N')) {
+    F1_corr = F1_corr %>% bind_rows(
+       F1_corr_dat %>% filter(true_isoform==!!true_isoform, mapper==!!mapper) %>% calc_cor('mq0', 'mq20') %>% 
+         mutate(true_isoform=!!true_isoform, mapper=!!mapper)
+    )
+  }
+}
+
+
+p3 = dp[['tx']] %>% 
+  filter(true_isoform=='mat') %>% 
+  mutate(mq=paste0('MQ',mq)) %>% 
+  mutate(mq=factor(mq, levels=c('MQ0', 'MQ20'))) %>% 
+  group_by(mq, conversion_rate, mapper, mappability, true_isoform, ftype) %>% 
+  calc_iqr(all_F1) %>% 
+  ggplot(aes(as.numeric(as.character(conversion_rate))*100, 
+             col.median, col=mq), 
+             linetype=true_isoform) +
+  geom_line() +
+  geom_ribbon(aes(ymin=col.lower, ymax=col.upper, fill=mq), linetype=0, alpha=0.15) +
+  facet_grid(mappability~mapper, scales = 'free') +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5)) +
+  ylab("F1") +
+  xlab("Conversion rate [%]") + 
+  ggtitle('Median F1 per condition, mat') +
+  theme(legend.position="none")
+
+p4 = dp[['tx']] %>% 
+  filter(true_isoform=='pre') %>% 
+  mutate(mq=paste0('MQ',mq)) %>% 
+  mutate(mq=factor(mq, levels=c('MQ0', 'MQ20'))) %>% 
+  group_by(mq, conversion_rate, mapper, mappability, true_isoform, ftype) %>% 
+  calc_iqr(all_F1) %>% 
+  ggplot(aes(as.numeric(as.character(conversion_rate))*100, 
+             col.median, col=mq), 
+             linetype=true_isoform) +
+  geom_line() +
+  geom_ribbon(aes(ymin=col.lower, ymax=col.upper, fill=mq), linetype=0, alpha=0.15) +
+  facet_grid(mappability~mapper, scales = 'free') +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5)) +
+  ylab("F1") +
+  xlab("Conversion rate [%]") + 
+  ggtitle('Median F1 per condition, pre') 
+ 
+p5 = F1_corr %>% 
+  pivot_longer(c(r_pearson, r_spearman)) %>% 
+  ggplot(aes(mapper, value, fill=mapper)) +
+  geom_col() +
+  facet_grid(name~true_isoform, scales = 'free') +
+  my_scales() + ylab("R") +xlab("") + 
+  theme(legend.position="none")
+
+
+my_plot_grid(list(plot_grid(p1,p2, nrow=1, labels = c('A','B')),
+                  plot_grid(p3,p4,p5, nrow=1, rel_widths = c(1,1.2,0.7),labels = c('C','','D'))), 
+                  'Mapping quality filtering effect', nrow = 2)
+ggsave(paste0(params$out_dir, 'special_mq20_filtering.pdf'), width=12, height=8)
+
+```
+
+

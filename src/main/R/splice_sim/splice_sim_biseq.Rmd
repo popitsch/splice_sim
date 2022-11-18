@@ -1,0 +1,1800 @@
+---
+title: "splice_sim_biseq.Rmd"
+author: "tobias.neumann@imp.ac.at"
+documentclass: article
+fontsize: 10pt
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    fig_width: 14
+    fig_height: 10
+    fig_caption: true
+    df_print: paged
+  pdf_document:
+    fig_width: 12
+    fig_height: 10
+    fig_caption: true
+params:
+    splice_sim_config:
+       value: "/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/big4_biseq_nf_kss/splice_sim.config.json"
+    out_dir:
+       value: "/groups/zuber/zubarchive/USERS/tobias/myProjects/slamdunk/splice_sim/big4_biseq_nf_kss/analysis/"
+---
+<style type="text/css">
+body, td {
+   font-size: 10px;
+}
+code.r{
+  font-size: 10px;
+}
+pre {
+  font-size: 10px
+}
+div.blue pre { background-color:lightblue; }
+div.blue pre.r { background-color:blue; }
+</style>
+
+<!--
+rmarkdown::render('splice_sim_paper.Rmd', 'html_document')
+-->
+
+# INIT
+
+```{r setup, include=FALSE}
+require(data.table)
+require(tidyr)
+require(dplyr)
+require(ggplot2)
+require(scales)
+require(rjson)
+require(stringr)
+require(VGAM)
+require(cowplot)
+require(arrow)
+require(tictoc)
+require(ggpubr)
+require(minpack.lm)
+require(readr)
+require(testthat)
+require(RColorBrewer)
+require(skimr)
+require(ggforce)
+require(writexl)
+require(xfun)
+require(forcats)
+require(glue)
+# NB install arrow with snappy on Rstudio server
+# Sys.setenv(ARROW_WITH_SNAPPY = "ON")
+# Sys.setenv(NOT_CRAN="true")
+# Sys.setenv(LIBARROW_BINARY="FALSE")
+# install.packages("arrow", repos = "https://arrow-r-nightly.s3.amazonaws.com")
+
+# to ensure stripping '\0' (nul) from character vector
+options(arrow.skip_nul = TRUE)
+
+# global theme
+ggplot2::theme_set(theme_light())
+
+# enable tidylog (has overhead!)
+#require(tidylog)
+options("tidylog.display" = list()) # turn tidylog off
+options(scipen=10000) # to avoid scientific notation y axis 
+
+# load resoiutces/functions
+source('splice_sim_resources.R')
+```
+
+
+# data
+
+```{r data, include=F, echo=F, cache=T, eval=F}
+
+home_dir=paste0(dirname(params$splice_sim_config),'/')
+conf=fromJSON(paste(readLines(params$splice_sim_config), collapse=""))
+# create result dir?
+if (!dir.exists(params$out_dir)) {
+  dir.create(params$out_dir)
+} 
+if (!dir.exists(paste0(params$out_dir,'/cache/'))) {
+  dir.create(paste0(params$out_dir,'/cache/'))
+} 
+
+
+#home_dir='/Users/niko.popitsch/Desktop/data/projects/Ameres/splicing/splice_sim/testruns/big4_slamseq_nf/'
+
+
+# results files (~45 G) 
+data_file=paste0(home_dir,'/eva_umap/results/data.rds')
+data_file_mq20=paste0(home_dir,'/eva_umap/results/data.mq20.rds')
+meta_file=paste0(home_dir,'/eva_umap/results/meta.rds')
+  
+if (file.exists(data_file)) {
+  tic("load data")
+  d=readRDS(data_file)
+  d_mq20=readRDS(data_file_mq20)
+  toc()
+} else {
+  stop("Could not find data_file")
+}
+if (file.exists(meta_file)) {
+  tic("load metadata")
+  m=readRDS(meta_file)
+  toc()
+} else {
+  stop("Could not find meta_file")
+}
+
+meta_bsfile=paste0(home_dir,'/eva_bsmap/results/meta.rds')
+
+if (file.exists(meta_bsfile)) {
+  tic("load metadata bsmap")
+  mbs=readRDS(meta_bsfile)
+  toc()
+} else {
+  stop("Could not find meta_file")
+}
+
+high = m[["tx"]] %>% dplyr::group_by(mappability) %>% dplyr::summarise(tx = n()) %>% dplyr::filter(mappability == "high") %>% as_tibble %>% .$tx
+medium = m[["tx"]] %>% dplyr::group_by(mappability) %>% dplyr::summarise(tx = n())  %>% dplyr::filter(mappability == "medium") %>% as_tibble %>% .$tx
+
+mbs[["tx"]] = mbs[["tx"]] %>%
+  dplyr::arrange(desc(mean_map)) %>%
+  dplyr::mutate(mappability = case_when(
+    row_number() <= high ~ "high",
+    row_number() <= high + medium ~ "medium",
+    TRUE ~ "low"
+  )) %>% as_tibble
+
+high = m[["fx"]] %>% dplyr::group_by(mappability) %>% dplyr::summarise(tx = n())  %>% dplyr::filter(mappability == "high") %>% as_tibble %>% .$tx
+medium = m[["fx"]] %>% dplyr::group_by(mappability) %>% dplyr::summarise(tx = n())  %>% dplyr::filter(mappability == "medium") %>% as_tibble %>% .$tx
+
+mbs[["fx"]] = mbs[["fx"]] %>%
+  dplyr::arrange(desc(mean_map)) %>%
+  dplyr::mutate(mappability = case_when(
+    row_number() <= high ~ "high",
+    row_number() <= high + medium ~ "medium",
+    TRUE ~ "low"
+  )) %>% as_tibble
+
+# to calc performance data
+# d[['fx']] %>% 
+#   group_by(fid,mapper,conversion_rate,classification,len,gene_name,num_exons,ftype) %>% 
+#   calc_performance(conf$readlen) 
+
+# to add meta data
+# %>% 
+#   left_join(m[['tx']], by=c('fid'='tid')) %>% # NB too-short tx are lost
+#   left_join(m[['ga']], by=c('fid'='tid')) 
+
+
+# shortcuts
+tx = d[['tx']] %>% left_join(m[['tx']], by=c('fid'='tid')) %>% left_join(mbs[['tx']] %>% dplyr::select(tid, mean_map, mappability) %>% dplyr::rename(mean_bs_map = mean_map, bs_mappability = mappability), by=c('fid'='tid')) 
+tx20 = d_mq20[['tx']] %>% left_join(m[['tx']], by=c('fid'='tid')) %>% left_join(mbs[['tx']] %>% dplyr::select(tid, mean_map, mappability) %>% dplyr::rename(mean_bs_map = mean_map, bs_mappability = mappability), by=c('fid'='tid')) 
+fx = d[['fx']] %>% left_join(m[['fx']], by='fid') %>% left_join(mbs[['fx']] %>% dplyr::select(fid, mean_map, mappability) %>% dplyr::rename(mean_bs_map = mean_map, bs_mappability = mappability), by='fid') 
+fx20 = d_mq20[['fx']] %>% left_join(m[['fx']], by='fid')  %>% left_join(mbs[['fx']] %>% dplyr::select(fid, mean_map, mappability) %>% dplyr::rename(mean_bs_map = mean_map, bs_mappability = mappability), by='fid') 
+
+
+# ===========================================================
+# bam stats
+# ===========================================================
+if (dir.exists(paste0(home_dir,'/eva_umap/bamstats'))) {
+  d[['bam_stats']]=tibble()
+  for ( f in list.files(paste0(home_dir,'/eva_umap/bamstats'), pattern='\\.bamstats.tsv$', full.names = T)) {
+    d[['bam_stats']] = d[['bam_stats']] %>% bind_rows(load_table(f))
+  }
+}
+
+# result tables
+results=list()
+
+```
+
+
+# _________
+## QC
+
+### BAM stats
+
+```{r bam_stats, include=T, echo=F, cache=T}
+bam_stats = d[['bam_stats']] %>% 
+  rename(conversion_rate=cr) %>% 
+  group_by(mapper, conversion_rate, ftype) %>% 
+  summarise(
+    n_reads=sum(n_reads),
+    n_softclipped_reads=sum(n_softclipped_reads),
+    mean_span_reads=mean(mean_span_reads, na.rm=T),
+    mean_len_spliced_reads=mean(len_spliced_reads, na.rm=T),
+    n_unmapped=sum(n_unmapped),
+    n_spliced_reads=sum(n_spliced_reads),
+  ) %>% 
+  mutate(conversion_rate=factor(conversion_rate), 
+         frac_spliced=n_spliced_reads/n_reads,
+         frac_softclipped=n_softclipped_reads/n_reads,
+         cat='bam_stats') 
+
+# compare with count stats. 
+# NOTE: when you run splice_sim_eva with a chromosom param then there are slightly more reads in 
+# bam_stats than in count tables due to missed reads on non-canonical chrom .
+# count_stats = d[['tx']] %>% 
+#   group_by(mapper, conversion_rate, classification) %>% 
+#   summarise(c=sum(count)) %>% 
+#   pivot_wider(names_from = classification, values_from = c) %>% 
+#   mutate(n_reads=FN+TP) %>% 
+#   select(mapper, conversion_rate, value=n_reads) %>% 
+#   mutate(name='n_reads', cat='counts')
+
+p1 = bam_stats %>% 
+  select(mapper, conversion_rate, cat, n_reads, n_unmapped) %>% 
+  pivot_longer(c(n_reads, n_unmapped)) %>% 
+  mutate(name=factor(name, levels=c('n_unmapped', 'n_reads'))) %>% 
+  ggplot(aes(conversion_rate, value, fill=name)) +
+  facet_wrap(mapper~.) +
+  geom_col()
+
+p2 = bam_stats %>%
+ ggplot(aes(conversion_rate,n_spliced_reads, fill=mapper)) +
+ geom_col(position = 'dodge')
+
+p3 = bam_stats %>% 
+  ggplot(aes(conversion_rate,frac_spliced, fill=mapper)) +
+  geom_col(position = 'dodge')
+
+p4 = bam_stats %>% 
+  ggplot(aes(conversion_rate,frac_softclipped, fill=mapper)) +
+  geom_col(position = 'dodge')
+
+p5 = bam_stats %>% 
+  ggplot(aes(conversion_rate,mean_span_reads, fill=mapper)) +
+  geom_col(position = 'dodge')
+
+p6 = bam_stats %>% 
+  ggplot(aes(conversion_rate,mean_len_spliced_reads, fill=mapper)) +
+  geom_col(position = 'dodge')
+
+my_plot_grid(list(p1,p2,p3,p4,p5,p6), 'bam stats', labels = T)
+ggsave(paste0(params$out_dir, 'bam_stats.pdf'), width=12, height=10)
+
+# mean_span_reads: mean(r.reference_end-r.reference_start+1)
+# len_spliced_reads: mean(max_N-block_per_read)
+```
+
+### NA counts
+
+Calculate and plot the fraction of NA counts per table/column.
+Internal data completeness QC only, don not include in ms/supp.
+
+```{r non_na, include=T, echo=F, cache=T}
+# count non-NA values per column for all passed tables
+count_na_per_column = function(tables) {
+ counts=tibble()
+ for (name in names(tables)) {
+    print(name)
+    tab=tables[[name]]
+    nr=nrow(tab)
+    if (!is.null(nr)) {
+      if (nr>0) {
+        counts=counts %>% rbind(
+          tab %>% select(everything()) %>% summarise_all(funs(sum(is.na(.)))) %>% mutate(table=!!name) %>% collect() %>% pivot_longer(-table) %>% mutate(nr=!!nr, frac=value/nr)
+        )
+      }
+    }
+  }
+  return (counts)
+}
+
+non_na_counts = count_na_per_column(c(setNames(d, paste0('d_',names(d))),setNames(m, paste0('m_',names(m)))) )
+ggplot(non_na_counts, aes(x=name, y=frac)) +
+  geom_bar(stat='identity') +
+  facet_wrap(table~., scales = 'free') +
+  ggtitle("Fraction of NA counts per table column") + 
+  xlab("") + ylab("") +
+  ylim(0,1) +
+  coord_flip() 
+
+ggsave(paste0(params$out_dir, 'qc_non_na_counts.pdf'), width=12, height=10)
+
+```
+
+### Missing tids
+
+Internal QC plot only, do not include in paper but mention number of recovered tx.
+
+Some of the originally configured transcript ids are missing from result data. 
+This is either because 
+- there were no reads simulated as the annotation is smaller than read-size and there are no (longer) overlapping transcripts
+- annotations are very long (e.g., Kcnip1 or Cmss1)
+
+```{r missing_tids, include=T, echo=F, cache=T}
+# how many tx did we recover
+found_tids=unique(d[['tx']] %>% pull(fid))
+missing_tids=setdiff(m[['all_tids']],found_tids)
+print(paste0("We have data for ", length(found_tids), '/', length(m[['all_tids']]), " tx"))
+
+# what are the missing tx?
+missing_tx=load_table('/groups/ameres/Niko/projects/Ameres/splicing/data/slamstr/pooled.mm10.all/pooled.mm10.all.Slamstr.stats.trans.final.tsv.gz') %>% 
+  select(tid=transcript_id, gene_type, len, ilen) %>% 
+  filter(tid %in% m[['all_tids']]) %>% 
+  mutate(cat=ifelse(tid %in% found_tids, 'recovered','missing')) %>%
+  as_tibble()
+p1=missing_tx %>% ggplot(aes(x=factor(cat), y=len)) + 
+  geom_boxplot()  +scale_y_log10() + ggtitle("Length distribution of recovered vs missing tx") +
+  geom_hline(yintercept = conf$readlen, col='red')
+p2=missing_tx %>% ggplot(aes(x=factor(cat), y=ilen)) + 
+  geom_violin()  +scale_y_log10() + ggtitle("Intron Length distribution of recovered vs missing tx") +
+  geom_hline(yintercept = conf$max_ilen, col='red')
+# did we recover all reads?
+p3 = d[['tx']] %>% group_by(mapper, conversion_rate, classification) %>% summarise(count=sum(count)) %>% filter(classification %in% c('FN', 'TP', 'FP_raw')) %>% ggplot(aes(conversion_rate, count, fill=classification)) + geom_col() + facet_wrap(mapper~.) + ggtitle('read counts per mapper/condition') 
+
+my_plot_grid(list(p1,p2,p3), labels=T, 'QC only', nrow = 1)
+ggsave(paste0(params$out_dir, 'qc_missing_tids.pdf'), width=12, height=10)
+
+```
+### Comparison of counts for unspliced tx
+
+```{r unspliced_counts, include=T, echo=F, cache=T}
+tab = tx %>% # NB too-short tx are lost
+  filter(rnk==1, conversion_rate=='0') %>% 
+  mutate(is_overlapping=ifelse(n_overlapping>0, 'overlaps tx', 'no overlap')) %>% 
+  group_by(fid, mapper, true_isoform, classification, mappability,is_overlapping ) %>% 
+  summarise(count=sum(count)) %>% 
+  pivot_wider(names_from = classification, values_from=count) %>% 
+  mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>% 
+  mutate(F1=ifelse((2*TP+FP+FN)>0,2*TP/(2*TP+FP+FN),NA)) %>% 
+  select(fid,mapper,true_isoform,F1,FP,FN,TP,FP_raw,mappability, is_overlapping) %>% 
+  pivot_wider(names_from = true_isoform, values_from = c(F1,FP,FN,TP,FP_raw)) %>% 
+  mutate(f1_diff=F1_mat-F1_pre) 
+  
+p1 = tab %>% ggplot(aes(mapper, f1_diff)) + geom_boxplot() + 
+  facet_wrap(mappability~is_overlapping) +
+  geom_hline(yintercept = 0, col='red') +
+  ggtitle("Difference in F1 value between pre/mat.",
+          "Should be close to zero!") 
+
+p2 = tab %>% ggplot(aes(x=f1_diff)) + geom_density() + 
+  ggtitle("Difference in F1 value between pre/mat.",
+          "Should be close to zero!") +
+  facet_wrap(mapper~is_overlapping) +
+  geom_vline(xintercept = 0, col='red')
+
+p3 = tab %>% ggplot(aes(x=FP_mat, y=FP_pre, col=mappability, alpha=0.05)) + geom_point() + scale_x_sqrt() + scale_y_sqrt() + facet_wrap(mapper~is_overlapping) + geom_abline(slope=1, intercept=0) + theme(legend.position="none") +
+  ggtitle('FP: caveat: isoform from originating read!')
+p4 = tab %>% ggplot(aes(x=FN_mat, y=FN_pre, col=mappability, alpha=0.05)) + geom_point() + scale_x_sqrt() + scale_y_sqrt() + facet_wrap(mapper~is_overlapping) + geom_abline(slope=1, intercept=0) + theme(legend.position="none") +
+  ggtitle('FN')
+p5 = tab %>% ggplot(aes(x=TP_mat, y=TP_pre, col=mappability, alpha=0.05)) + geom_point() + scale_x_sqrt() + scale_y_sqrt() + facet_wrap(mapper~is_overlapping) + geom_abline(slope=1, intercept=0) + theme(legend.position="none") +
+  ggtitle('TP')
+p6 = tab %>% ggplot(aes(x=FP_raw_mat, y=FP_raw_pre, col=mappability, alpha=0.05)) + geom_point() + scale_x_sqrt() + scale_y_sqrt() + facet_wrap(mapper~is_overlapping) + geom_abline(slope=1, intercept=0) +
+  ggtitle('FP: caveat: isoform from originating read!')
+
+my_plot_grid(list(p1,p2,p3,p4,p5,p6), 
+             main="QC: comparing isoform performance (pre vs mat) for unspliced transcripts with Conversion_rate==0") 
+
+ggsave(paste0(params$out_dir, 'qc_F1_unspliced.pdf'), width=12, height=10)
+
+# example for considerable difference: ENSMUST00000226445.1
+# tab %>% filter(FP_mat<10, FP_mat-FP_pre>5, mapper=='STAR') %>% left_join(m[['tx']], by=c('fid'='tid'))
+```
+
+# _________
+## Coverage
+
+- The target coverage is ~50X per isoform, i.e., 100X overall
+- There is an edge effect as reads that overlap with 1bp are counted for their full length when coverage is calculated.
+  This could explain the increased mean coverage for exons and introns. 
+  For exons this effect is a bit reduced as the 1st/last exon also has an edge effect as we don't simulate reads that overlap the tx edges.
+
+<div class = "blue">
+<b>Coverage of simulated/mapped reads per isoform/genomic feature.</b>
+A) Coverage distributions calculated from unconverted reads only (conversion rate = 0). 
+   Both mappers have problems with spliced read mapping indicated by reduced coverage of spliced reads (panel mat/exon)
+   and increased coverage of mature isoform reads that were false-positively mapped to introns (panel mat/intron). 
+   Presumably, most of these reads are overlapping the splice junctions.
+B) Mean coverage per conversion rate. 
+   STAR shows decreased coverage of spliced reads with increasing conversion rates while HISAT3N is unaffected by this.
+Note that deviations of the configured ~100X coverage for this 1:1 mix of premature/mature isoforms presumably stems from edge effects of the coverage
+calculation that does not take partial read overlap into account. Coverage thresholds 0,50,100 are indicated by grey horizontal lines.
+</div>
+
+
+```{r coverage, include=T, echo=F, cache=T}
+
+hlines=tribble(
+  ~y,  ~cat,
+  0,   1,
+  50,  2,
+  100, 3
+)
+
+calc_coverage <- function(grp_tab) {
+  grp_tab %>% 
+    summarise(count=sum(count)) %>% 
+    pivot_wider(names_from=c(mapper,classification), values_from=count, names_sort=T) %>% 
+    mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>% 
+    filter(len>conf$readlen) %>% # filter too-short introns as this will lead to wrong coverage calc. Example: ENSMUST00000116560.2_in5
+    mutate(
+      simulated=(HISAT3N_TP+HISAT3N_FN)*!!conf$readlen/len, # same as simulated_star!
+      HISAT3N=(HISAT3N_TP+HISAT3N_FP)*!!conf$readlen/len,
+      STAR=(STAR_TP+STAR_FP)*!!conf$readlen/len,
+      MERANGS=(MERANGS_TP+MERANGS_FP)*!!conf$readlen/len,
+    ) %>% pivot_longer(c(simulated, HISAT3N, STAR,MERANGS), names_to='mapper') %>% 
+    mutate(mapper=factor(mapper, levels=c('simulated', 'HISAT3N', 'STAR','MERANGS')),
+           is_converted=ifelse(conversion_rate==0,'no conversions', 'converted reads')) %>% 
+    ungroup()
+}
+
+cov_tx = cache({
+  calc_coverage(tx %>% group_by(mapper, conversion_rate, fid, len, classification ) ) 
+}, 'cov_tx', rerun = F)
+
+cov_tx2 = cache({
+  calc_coverage(tx %>% group_by(mapper, conversion_rate, fid, true_isoform, len, classification ) ) 
+}, 'cov_tx2', rerun = F)
+
+cov_fx = cache({
+ calc_coverage(fx %>% group_by(mapper, conversion_rate, fid, true_isoform, ftype, len, classification ))
+}, 'cov_fx', rerun = F)
+
+cov_fx2 = cache({
+  calc_coverage(fx %>% group_by(mapper, conversion_rate, fid, ftype, len, classification ))
+}, 'cov_fx2', rerun = F)
+
+
+
+p1 = cov_tx2 %>% mutate(ftype='tx') %>% select(mapper, value, ftype, true_isoform) %>% 
+  bind_rows(cov_fx %>% select(mapper, value, ftype, true_isoform)) %>% 
+  ggplot(aes(x=mapper, y=value, fill=mapper)) + geom_boxplot() +
+  scale_y_sqrt() +
+  geom_hline(data = hlines, aes(yintercept = y, linetype=factor(cat)), color = 'grey', show.legend=FALSE ) +
+  ggtitle('Coverage per genomic feature') +
+  facet_grid(true_isoform~ftype, scales = 'free') + 
+  theme(legend.position="none") + xlab('') + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  my_scales()
+
+# p2 = cov_fx %>% group_by(conversion_rate, ftype, true_isoform, mapper) %>% calc_ci(value) %>% 
+#   ggplot(aes(x=conversion_rate, y=col.mean, col=mapper, group=mapper)) + 
+#   geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+#   geom_line() +
+#   ggtitle('Mean coverage per condition') +
+#   facet_grid(.~true_isoform+ftype) +
+#   my_scales()
+
+p2 = cov_tx2 %>% mutate(ftype='tx') %>% select(mapper, conversion_rate, value, ftype, true_isoform) %>% 
+  bind_rows(cov_fx %>% select(mapper, conversion_rate, value, ftype, true_isoform)) %>% 
+  group_by(conversion_rate, ftype, true_isoform, mapper) %>% 
+  calc_iqr(value) %>% 
+  ggplot(aes(x=conversion_rate, y=col.median, col=mapper, group=mapper)) + 
+  geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=0, alpha=0.2) +
+  geom_line() +
+  geom_hline(data = hlines, aes(yintercept = y, linetype=factor(cat)), color = 'grey', show.legend=FALSE ) +
+  ggtitle('Median coverage per condition') +
+  facet_grid(true_isoform~ftype, scales = 'free') +
+  my_scales()
+
+my_plot_grid(list(p1,p2), labels=T, 'Coverage per mapper', nrow = 1)
+ggsave(paste0(params$out_dir, 'cov.pdf'), width=12, height=10)
+
+# calc_coverage(d[['tx']] %>% group_by(mapper, conversion_rate, fid, len, classification ) ) %>% group_by(conversion_rate,mapper) %>% summarise(m=mean(value)) %>% ggplot(aes(conversion_rate,m,fill=mapper)) + geom_bar(stat='identity', position = 'dodge') + ggtitle('Mean tx coverage per mapper and condition')
+
+# NOTE: why is intron/pre coverage so high?
+# I think this is because of an edge effect at intron/exon boundaries. Reads that overlap only 1 bp with intron are counted for their full rl. 
+# The longer the intron, the less this influence gets:
+# tab %>% filter(conversion_rate==0, mapper=='simulated') %>% ggplot(aes(len, value)) + geom_point() + facet_wrap(ftype~true_isoform, scales='free') + geom_vline(xintercept = 100, col='red')
+# for exons, this effect is reduced by the edge effect on the 1st and last exon:
+#tab %>% filter(conversion_rate==0, mapper=='simulated', ftype=='exon') %>% left_join(m[['fx']]) %>% mutate(is_edge=(rnk==1 | rnk==tx_rnk)) %>% 
+#  ggplot(aes(x=is_edge, y=value)) + geom_boxplot() + facet_wrap(ftype~true_isoform, scales='free') 
+
+
+#remove()
+
+```
+
+# _________
+## umap vs bsmap
+
+<div class = "blue">
+<b>Comparison of umap and bsmap mappability measures.</b>
+Let's compare the mappability measures umap vs bsmap.Umap splits the genome in k-mers and maps them back, reporting uniquely mapping kmer chunks. The multiread mappability which we plots is per position the fraction of reads overlapping that position at a given k-mer length that are uniquely mappable. For bsmap the genomes are converted C>T and G>A separately and combine the data to represent the single-read mappability of the fwd and reverse strands in the converted genome. 
+
+</div>
+
+```{r umap_vs_bismap, include=T, echo=F, cache=T}
+
+pdf(paste0(params$out_dir, 'umap_vs_bismap.pdf'), width=8, height=6)
+
+plotTab = m[["tx"]] %>%
+  dplyr::select(tid, mean_map) %>%
+  dplyr::rename(umap = mean_map) %>%
+  dplyr::inner_join(
+     mbs[["tx"]] %>%
+       dplyr::select(tid, mean_map) %>%
+       dplyr::rename(bismap = mean_map) 
+  ) %>%
+  dplyr::mutate(
+    dens = densCols(umap, bismap, nbin = 100,
+                colramp = colorRampPalette((brewer.pal(9,"Greys")[-c(1:5)])))
+  )
+
+pearsonR = cor(plotTab$umap,plotTab$bismap)
+
+plotTab %>%
+  as_tibble %>%
+  ggplot(aes(x = umap, y = bismap, col = dens)) +
+  geom_point(size=0.5,alpha=0.8) +
+  scale_color_identity() + 
+  ggtitle("Umap vs Bismap [transcript]",subtitle=paste0("Pearson's r: ",round(pearsonR,digits=3)))
+
+pBismapCor <- plotTab %>%
+  as_tibble %>%
+  ggplot(aes(x = umap, y = bismap, col = dens)) +
+  geom_point(size=0.5,alpha=0.8) +
+  scale_color_identity() + 
+  ggtitle("Umap vs Bismap [transcript]",subtitle=paste0("Pearson's r: ",round(pearsonR,digits=3)))
+
+plotTab = m[["fx"]] %>%
+  dplyr::select(fid, mean_map) %>%
+  dplyr::rename(umap = mean_map) %>%
+  dplyr::inner_join(
+     mbs[["fx"]] %>%
+       dplyr::select(fid, mean_map) %>%
+       dplyr::rename(bsmap = mean_map) 
+  ) %>%
+  dplyr::mutate(
+    dens = densCols(umap, bsmap, nbin = 100,
+                colramp = colorRampPalette((brewer.pal(9,"Greys")[-c(1:5)])))
+  )
+
+pearsonR = cor(plotTab$umap,plotTab$bsmap)
+
+plotTab %>%
+  as_tibble %>%
+  ggplot(aes(x = umap, y = bsmap, col = dens)) +
+  geom_point(size=0.5,alpha=0.8) +
+  scale_color_identity() + 
+  ggtitle("Umap vs Bismap [features]",subtitle=paste0("Pearson's r: ",round(pearsonR,digits=3)))
+
+plotTab = m[["sj"]] %>%
+  dplyr::select(fid, don_win_map) %>%
+  dplyr::rename(umap = don_win_map) %>%
+  dplyr::inner_join(
+     mbs[["sj"]] %>%
+       dplyr::select(fid, don_win_map) %>%
+       dplyr::rename(bsmap = don_win_map) 
+  ) %>%
+  dplyr::mutate(
+    dens = densCols(umap, bsmap, nbin = 100,
+                colramp = colorRampPalette((brewer.pal(9,"Greys")[-c(1:5)])))
+  )
+
+pearsonR = cor(plotTab$umap,plotTab$bsmap)
+
+plotTab %>%
+  as_tibble %>%
+  ggplot(aes(x = umap, y = bsmap, col = dens)) +
+  geom_point(size=0.5,alpha=0.8) +
+  scale_color_identity() + 
+  ggtitle("Umap vs Bismap [SJ donor]",subtitle=paste0("Pearson's r: ",round(pearsonR,digits=3)))
+
+plotTab = m[["sj"]] %>%
+  dplyr::select(fid, acc_win_map) %>%
+  dplyr::rename(umap = acc_win_map) %>%
+  dplyr::inner_join(
+     mbs[["sj"]] %>%
+       dplyr::select(fid, acc_win_map) %>%
+       dplyr::rename(bsmap = acc_win_map) 
+  ) %>%
+  dplyr::mutate(
+    dens = densCols(umap, bsmap, nbin = 100,
+                colramp = colorRampPalette((brewer.pal(9,"Greys")[-c(1:5)])))
+  )
+
+pearsonR = cor(plotTab$umap,plotTab$bsmap)
+
+plotTab %>%
+  as_tibble %>%
+  ggplot(aes(x = umap, y = bsmap, col = dens)) +
+  geom_point(size=0.5,alpha=0.8) +
+  scale_color_identity() + 
+  ggtitle("Umap vs Bismap [SJ acceptor]",subtitle=paste0("Pearson's r: ",round(pearsonR,digits=3)))
+
+plotTab = rbind(
+  mbs[["tx"]] %>% dplyr::mutate(class = "bsmap") %>% dplyr::select(class, mappability, mean_map) %>% as_tibble,
+  m[["tx"]] %>% dplyr::mutate(class = "umap") %>% dplyr::select(class, mappability, mean_map) %>% as_tibble
+)
+
+plotTab %>%
+  as_tibble %>%
+  ggplot(aes(x = mappability, y = mean_map)) +
+  geom_boxplot() +
+  facet_wrap(~class) +
+  ggtitle("Mappability distribution per class")
+
+dev.off()
+
+```
+
+# _________
+## MAP Performance
+
+<div class = "blue">
+<b>Mapping performance per conversion rate.</b>
+Precision, recall and F1 score per feature type (tx: transcript), stratified by originating isoform (pre: premature, unspliced isoform; mat: mature, fully spliced isoform) and standard genomic mappability. 
+Performance drops with increasing conversion rate for STAR but not HISAT3N.
+</div>
+
+```{r map_perf, include=T, echo=F, cache=T}
+
+perf_tx = cache({
+  tx %>% 
+    group_by(fid, mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+             num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+    calc_performance(conf$readlen) %>% 
+    mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+    filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+    ungroup()
+}, 'perf_tx', rerun = F)
+
+perf_fx = cache({
+  fx %>% 
+    select(-rnk) %>% rename(rnk=tx_rnk) %>% #mappability=tx_mappability; we could also use tx_mappability here?
+    group_by(fid, mapper, conversion_rate, classification, len, true_isoform, mappability, mean_map, GC, 
+             num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+    calc_performance(conf$readlen) %>% 
+    mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+    filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+    ungroup()
+}, 'perf_fx', rerun = F)
+
+perf = bind_rows(perf_tx, perf_fx)
+
+perf_tx_bs = cache({
+  tx %>% 
+    group_by(fid, mapper, conversion_rate, classification, len, true_isoform, bs_mappability, mean_bs_map, GC, 
+             num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+    calc_performance(conf$readlen) %>% 
+    mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+    filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+    ungroup()
+}, 'perf_tx_bs', rerun = F)
+
+perf_fx_bs = cache({
+  fx %>% 
+    select(-rnk) %>% rename(rnk=tx_rnk) %>% #mappability=tx_mappability; we could also use tx_mappability here?
+    group_by(fid, mapper, conversion_rate, classification, len, true_isoform, bs_mappability, mean_bs_map, GC, 
+             num_exons, rnk, frac_convertible, convertibility, ftype) %>% 
+    calc_performance(conf$readlen) %>% 
+    mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+    filter(!(ftype=='intron' & true_isoform=='mat')) %>% # undefined and always 0!
+    ungroup()
+}, 'perf_fx_bs', rerun = F)
+
+perf_Bs = bind_rows(perf_tx_bs, perf_fx_bs)
+
+pdf(paste0(params$out_dir, 'map_perf.pdf'), width=8, height=6)
+
+perf %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(precision) %>% 
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~ftype, scales = 'free') +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5)) +
+  ylab("Precision") +
+  ggtitle('Median precision per condition') +
+  my_scales()
+
+perf %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(recall) %>% 
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~ftype, scales = 'free') +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5)) +
+  ylab("Recall") +
+  ggtitle('Median recall per condition') +
+  my_scales()
+
+pf1 <- perf %>% dplyr::filter(mapper != "STAR") %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(F1) %>% 
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~ftype, scales = 'free') +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5)) +
+  ylab("F1") +
+  ggtitle('Median F1 per condition') +
+  my_scales()
+
+perf %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(F1) %>% 
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~ftype, scales = 'free') +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5)) +
+  ylab("F1") +
+  ggtitle('Median F1 per condition') +
+  my_scales()
+
+perf_Bs %>% group_by(conversion_rate, mapper, bs_mappability, true_isoform, ftype) %>% calc_iqr(precision) %>% 
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(bs_mappability~ftype, scales = 'free') +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "bs mappability", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5)) +
+  ylab("Precision") +
+  ggtitle('Median precision per condition bismap') +
+  my_scales()
+
+perf_Bs %>% group_by(conversion_rate, mapper, bs_mappability, true_isoform, ftype) %>% calc_iqr(recall) %>% 
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(bs_mappability~ftype, scales = 'free') +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "bs mappability", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5)) +
+  ylab("Recall") +
+  ggtitle('Median recall per condition bismap') +
+  my_scales()
+
+perf_Bs %>% group_by(conversion_rate, mapper, bs_mappability, true_isoform, ftype) %>% calc_iqr(F1) %>% 
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(bs_mappability~ftype, scales = 'free') +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "bs mappability", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5)) +
+  ylab("F1") +
+  ggtitle('Median F1 per condition bismap') +
+  my_scales()
+
+perf %>%
+  dplyr::filter(conversion_rate == 0) %>%
+  group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(precision) %>%
+  ggplot(aes(mapper, col.median, fill=true_isoform)) +
+  geom_bar(stat="identity",position = position_dodge(width=-0.9),width=0.8) +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~ftype) +
+  ylab("") +
+  scale_fill_brewer(palette = "Set1") +
+  ggtitle('0% CR Median precision per condition / genomic mappability')
+
+perf %>%
+  dplyr::filter(conversion_rate == 0) %>%
+  group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(recall) %>%
+  ggplot(aes(mapper, col.median, fill=true_isoform)) +
+  geom_bar(stat="identity",position = position_dodge(width=-0.9),width=0.8) +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~ftype) +
+  ylab("") +
+  scale_fill_brewer(palette = "Set1") +
+  ggtitle('0% CR Median recall per condition / genomic mappability')
+
+perf %>%
+  dplyr::filter(conversion_rate == 0) %>%
+  group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(F1) %>%
+  ggplot(aes(mapper, col.median, fill=true_isoform)) +
+  geom_bar(stat="identity",position = position_dodge(width=-0.9),width=0.8) +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~ftype) +
+  ylab("") +
+  scale_fill_brewer(palette = "Set1") +
+  ggtitle('0% CR Median F1 per condition / genomic mappability')
+
+perf %>%
+  dplyr::filter(conversion_rate == 0.98) %>%
+  group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(precision) %>%
+  ggplot(aes(mapper, col.median, fill=true_isoform)) +
+  geom_bar(stat="identity",position = position_dodge(width=-0.9),width=0.8) +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~ftype) +
+  ylab("") +
+  scale_fill_brewer(palette = "Set1") +
+  ggtitle('98% CR Median precision per condition / genomic mappability')
+
+perf %>%
+  dplyr::filter(conversion_rate == 0.98) %>%
+  group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(recall) %>%
+  ggplot(aes(mapper, col.median, fill=true_isoform)) +
+  geom_bar(stat="identity",position = position_dodge(width=-0.9),width=0.8) +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~ftype) +
+  ylab("") +
+  scale_fill_brewer(palette = "Set1") +
+  ggtitle('98% CR Median recall per condition / genomic mappability')
+
+perf %>%
+  dplyr::filter(conversion_rate == 0.98) %>%
+  group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(F1) %>%
+  ggplot(aes(mapper, col.median, fill=true_isoform)) +
+  geom_bar(stat="identity",position = position_dodge(width=-0.9),width=0.8) +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~ftype) +
+  ylab("") +
+  scale_fill_brewer(palette = "Set1") +
+  ggtitle('98% CR Median F1 per condition / genomic mappability')
+
+perf_Bs %>%
+  dplyr::filter(conversion_rate == 0.98) %>%
+  dplyr::mutate(bs_mappability = factor(bs_mappability, levels = c("high","medium","low"))) %>%
+  group_by(conversion_rate, mapper, bs_mappability, true_isoform, ftype) %>% calc_iqr(precision) %>%
+  ggplot(aes(mapper, col.median, fill=true_isoform)) +
+  geom_bar(stat="identity",position = position_dodge(width=-0.9),width=0.8) +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(bs_mappability~ftype) +
+  ylab("") +
+  scale_fill_brewer(palette = "Set1") +
+  ggtitle('98% CR Median precision per condition / bs mappability')
+
+perf_Bs %>%
+  dplyr::filter(conversion_rate == 0.98) %>%
+  dplyr::mutate(bs_mappability = factor(bs_mappability, levels = c("high","medium","low"))) %>%
+  group_by(conversion_rate, mapper, bs_mappability, true_isoform, ftype) %>% calc_iqr(recall) %>%
+  ggplot(aes(mapper, col.median, fill=true_isoform)) +
+  geom_bar(stat="identity",position = position_dodge(width=-0.9),width=0.8) +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(bs_mappability~ftype) +
+  ylab("") +
+  scale_fill_brewer(palette = "Set1") +
+  ggtitle('98% CR Median recall per condition / bs mappability')
+
+perf_Bs %>%
+  dplyr::filter(conversion_rate == 0.98) %>%
+  dplyr::mutate(bs_mappability = factor(bs_mappability, levels = c("high","medium","low"))) %>%
+  group_by(conversion_rate, mapper, bs_mappability, true_isoform, ftype) %>% calc_iqr(F1) %>%
+  ggplot(aes(mapper, col.median, fill=true_isoform)) +
+  geom_bar(stat="identity",position = position_dodge(width=-0.9),width=0.8) +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(bs_mappability~ftype) +
+  ylab("") +
+  scale_fill_brewer(palette = "Set1") +
+  ggtitle('98% CR Median F1 per condition / bs mappability')
+
+perf %>%
+  dplyr::filter(conversion_rate == 0.98) %>%
+  group_by(conversion_rate, mapper, convertibility, true_isoform, ftype) %>% calc_iqr(precision) %>%
+  ggplot(aes(mapper, col.median, fill=true_isoform)) +
+  geom_bar(stat="identity",position = position_dodge(width=-0.9),width=0.8) +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(convertibility~ftype) +
+  ylab("") +
+  scale_fill_brewer(palette = "Set1") +
+  ggtitle('98% CR Median precision per condition / convertibility')
+
+perf %>%
+  dplyr::filter(conversion_rate == 0.98) %>%
+  group_by(conversion_rate, mapper, convertibility, true_isoform, ftype) %>% calc_iqr(recall) %>%
+  ggplot(aes(mapper, col.median, fill=true_isoform)) +
+  geom_bar(stat="identity",position = position_dodge(width=-0.9),width=0.8) +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(convertibility~ftype) +
+  ylab("") +
+  scale_fill_brewer(palette = "Set1") +
+  ggtitle('98% CR Median recall per condition / convertibility')
+
+perf %>%
+  dplyr::filter(conversion_rate == 0.98) %>%
+  group_by(conversion_rate, mapper, convertibility, true_isoform, ftype) %>% calc_iqr(F1) %>%
+  ggplot(aes(mapper, col.median, fill=true_isoform)) +
+  geom_bar(stat="identity",position = position_dodge(width=-0.9),width=0.8) +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(convertibility~ftype) +
+  ylab("") +
+  scale_fill_brewer(palette = "Set1") +
+  ggtitle('98% CR Median F1 per condition / convertibility')
+
+perf_tx %>% filter(mappability=='high') %>% 
+  group_by(conversion_rate, mapper, true_isoform, num_exons) %>% calc_iqr(precision) %>% 
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_wrap(num_exons~.) +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5))+
+  ylab("Precision") +
+  ggtitle('Median precision per tx', 'by number of exons (high mappability only)') 
+
+perf_tx %>% filter(mappability=='high') %>% 
+  group_by(conversion_rate, mapper, true_isoform, num_exons) %>% calc_iqr(recall) %>% 
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_wrap(num_exons~.) +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5))+
+  ylab("Recall") +
+  ggtitle('Median recall per tx', 'by number of exons (high mappability only)')
+
+perf_tx %>% filter(mappability=='high') %>% 
+  group_by(conversion_rate, mapper, true_isoform, num_exons) %>% calc_iqr(F1) %>% 
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_wrap(num_exons~.) +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5))+
+  ylab("F1") +
+  ggtitle('Median F1 per tx', 'by number of exons (high mappability only)') 
+
+perf %>%
+  filter(mappability=='high') %>% 
+  dplyr::filter(conversion_rate == 0) %>%
+  group_by(conversion_rate, mapper, true_isoform, num_exons) %>% calc_iqr(precision) %>% 
+  ggplot(aes(mapper, col.median, fill=true_isoform)) +
+  geom_bar(stat="identity",position = position_dodge(width=-0.9),width=0.8) +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_wrap(num_exons~.) +
+  ylab("") +
+  scale_fill_brewer(palette = "Set1") +
+  ggtitle('CR 0%: Median precision per tx', 'by number of exons (high mappability only)') 
+
+perf %>%
+  filter(mappability=='high') %>% 
+  dplyr::filter(conversion_rate == 0) %>%
+  group_by(conversion_rate, mapper, true_isoform, num_exons) %>% calc_iqr(recall) %>% 
+  ggplot(aes(mapper, col.median, fill=true_isoform)) +
+  geom_bar(stat="identity",position = position_dodge(width=-0.9),width=0.8) +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_wrap(num_exons~.) +
+  ylab("") +
+  scale_fill_brewer(palette = "Set1") +
+  ggtitle('CR 0%: Median recall per tx', 'by number of exons (high mappability only)')
+
+perf %>%
+  filter(mappability=='high') %>% 
+  dplyr::filter(conversion_rate == 0) %>%
+  group_by(conversion_rate, mapper, true_isoform, num_exons) %>% calc_iqr(F1) %>% 
+  ggplot(aes(mapper, col.median, fill=true_isoform)) +
+  geom_bar(stat="identity",position = position_dodge(width=-0.9),width=0.8) +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_wrap(num_exons~.) +
+  ylab("") +
+  scale_fill_brewer(palette = "Set1") +
+  ggtitle('CR 0%: Median F1 per tx', 'by number of exons (high mappability only)')
+
+perf %>%
+  filter(mappability=='high') %>% 
+  dplyr::filter(conversion_rate == 0.98) %>%
+  group_by(conversion_rate, mapper, true_isoform, num_exons) %>% calc_iqr(precision) %>% 
+  ggplot(aes(mapper, col.median, fill=true_isoform)) +
+  geom_bar(stat="identity",position = position_dodge(width=-0.9),width=0.8) +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_wrap(num_exons~.) +
+  ylab("") +
+  scale_fill_brewer(palette = "Set1") +
+  ggtitle('CR 98%: Median precision per tx', 'by number of exons (high umap mappability only)')
+
+perf %>%
+  filter(mappability=='high') %>% 
+  dplyr::filter(conversion_rate == 0.98) %>%
+  group_by(conversion_rate, mapper, true_isoform, num_exons) %>% calc_iqr(recall) %>% 
+  ggplot(aes(mapper, col.median, fill=true_isoform)) +
+  geom_bar(stat="identity",position = position_dodge(width=-0.9),width=0.8) +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_wrap(num_exons~.) +
+  ylab("") +
+  scale_fill_brewer(palette = "Set1") +
+  ggtitle('CR 98%: Median recall per tx', 'by number of exons (high umap mappability only)')
+
+perf %>%
+  filter(mappability=='high') %>% 
+  dplyr::filter(conversion_rate == 0.98) %>%
+  group_by(conversion_rate, mapper, true_isoform, num_exons) %>% calc_iqr(F1) %>% 
+  ggplot(aes(mapper, col.median, fill=true_isoform)) +
+  geom_bar(stat="identity",position = position_dodge(width=-0.9),width=0.8) +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_wrap(num_exons~.) +
+  ylab("") +
+  scale_fill_brewer(palette = "Set1") +
+  ggtitle('CR 98%: Median F1 per tx', 'by number of exons (high umap mappability only)')
+
+perf_Bs %>%
+  filter(bs_mappability=='high') %>% 
+  dplyr::filter(conversion_rate == 0.98) %>%
+  group_by(conversion_rate, mapper, true_isoform, num_exons) %>% calc_iqr(precision) %>% 
+  ggplot(aes(mapper, col.median, fill=true_isoform)) +
+  geom_bar(stat="identity",position = position_dodge(width=-0.9),width=0.8) +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_wrap(num_exons~.) +
+  ylab("") +
+  scale_fill_brewer(palette = "Set1") +
+  ggtitle('CR 98%: Median precision per tx', 'by number of exons (high bismap mappability only)')
+
+perf_Bs %>%
+  filter(bs_mappability=='high') %>% 
+  dplyr::filter(conversion_rate == 0.98) %>%
+  group_by(conversion_rate, mapper, true_isoform, num_exons) %>% calc_iqr(recall) %>% 
+  ggplot(aes(mapper, col.median, fill=true_isoform)) +
+  geom_bar(stat="identity",position = position_dodge(width=-0.9),width=0.8) +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_wrap(num_exons~.) +
+  ylab("") +
+  scale_fill_brewer(palette = "Set1") +
+  ggtitle('CR 98%: Median recall per tx', 'by number of exons (high bismap mappability only)')
+
+perf_Bs %>%
+  filter(bs_mappability=='high') %>% 
+  dplyr::filter(conversion_rate == 0.98) %>%
+  group_by(conversion_rate, mapper, true_isoform, num_exons) %>% calc_iqr(F1) %>% 
+  ggplot(aes(mapper, col.median, fill=true_isoform)) +
+  geom_bar(stat="identity",position = position_dodge(width=-0.9),width=0.8) +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_wrap(num_exons~.) +
+  ylab("") +
+  scale_fill_brewer(palette = "Set1") +
+  ggtitle('CR 98%: Median F1 per tx', 'by number of exons (high bismap mappability only)')
+
+perf %>%
+  dplyr::filter(conversion_rate == 0.98) %>%
+  group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(F1) %>%
+  dplyr::select(conversion_rate, mapper, mappability, true_isoform, ftype, col.median) %>%
+  dplyr::rename(F1_umap = col.median) %>%
+  dplyr::inner_join(
+    perf_Bs %>%
+      dplyr::filter(conversion_rate == 0.98) %>%
+      dplyr::rename(mappability = bs_mappability) %>%
+      group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(F1) %>%
+      dplyr::select(conversion_rate, mapper, mappability, true_isoform, ftype, col.median) %>%
+      dplyr::rename(F1_bismap = col.median)
+  ) %>%
+  dplyr::mutate(F1_diff = F1_umap - F1_bismap) %>%
+  dplyr::mutate(mappability = factor(mappability, levels = c("high","medium","low"))) %>%
+  ggplot(aes(mapper, F1_diff, fill=true_isoform)) +
+  geom_bar(stat="identity",position = position_dodge(width=-0.9),width=0.8) +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~ftype) +
+  ylab("F1 umap - F1 bismap") +
+  xlab("") +
+  scale_fill_brewer(palette = "Set1") +
+  ggtitle('98% CR F1 umap - F1 bismap')
+
+perf %>%
+  group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(F1) %>%
+  dplyr::select(conversion_rate, mapper, mappability, true_isoform, ftype, col.median) %>%
+  dplyr::rename(F1_umap = col.median) %>%
+  dplyr::inner_join(
+    perf_Bs %>%
+      dplyr::rename(mappability = bs_mappability) %>%
+      group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(F1) %>%
+      dplyr::select(conversion_rate, mapper, mappability, true_isoform, ftype, col.median) %>%
+      dplyr::rename(F1_bismap = col.median)
+  ) %>%
+  dplyr::mutate(F1_diff = F1_umap - F1_bismap) %>%
+  dplyr::mutate(mappability = factor(mappability, levels = c("high","medium","low"))) %>%
+  ggplot(aes(conversion_rate, F1_diff, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~ftype, scales = 'free') +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5)) +
+  ylab("F1 umap - F1 bismap") +
+  ggtitle('F1 umap - F1 bismap') +
+  my_scales()
+
+pf1diff <- perf %>% dplyr::filter(mapper != "STAR") %>%
+  group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(F1) %>%
+  dplyr::select(conversion_rate, mapper, mappability, true_isoform, ftype, col.median) %>%
+  dplyr::rename(F1_umap = col.median) %>%
+  dplyr::inner_join(
+    perf_Bs %>%
+      dplyr::rename(mappability = bs_mappability) %>%
+      group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(F1) %>%
+      dplyr::select(conversion_rate, mapper, mappability, true_isoform, ftype, col.median) %>%
+      dplyr::rename(F1_bismap = col.median)
+  ) %>%
+  dplyr::mutate(F1_diff = F1_umap - F1_bismap) %>%
+  dplyr::mutate(mappability = factor(mappability, levels = c("high","medium","low"))) %>%
+  ggplot(aes(conversion_rate, F1_diff, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~ftype, scales = 'free') +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5)) +
+  ylab("F1 umap - F1 bismap") +
+  ggtitle('F1 umap - F1 bismap') +
+  my_scales()
+
+dev.off()
+```
+
+### MAP Correlation of F1 and genomic mappability
+
+```{r map_corr, include=T, echo=F, cache=T}
+pdf(paste0(params$out_dir, 'map_corr.pdf'), width=12, height=10)
+
+perf %>% 
+  filter(conversion_rate==0) %>% 
+  ggplot(aes(mean_map, F1, alpha=0.1)) +
+  stat_binhex(bins=50) + scale_fill_gradientn("", trans = "log", colours = rev(rainbow(5, end = 4/6))) +
+  geom_abline(intercept = 0, slope = 1, col="black",linetype="dotted")  +
+  facet_grid(true_isoform+mapper~ftype) +
+  ylab("F1") + xlab("mean genomic mappability") +
+  ggtitle('Mean mappability vs F1', 'cr=0%')
+
+perf %>% 
+  filter(conversion_rate==0.98) %>% 
+  ggplot(aes(mean_map, F1, alpha=0.1)) +
+  stat_binhex(bins=50) + scale_fill_gradientn("", trans = "log", colours = rev(rainbow(5, end = 4/6))) +
+  geom_abline(intercept = 0, slope = 1, col="black",linetype="dotted")  +
+  facet_grid(true_isoform+mapper~ftype) +
+  ylab("F1") + xlab("mean genomic mappability") +
+  ggtitle('Mean mappability vs F1', 'cr=98%')
+
+perf_Bs %>% 
+  filter(conversion_rate==0.98) %>% 
+  ggplot(aes(mean_bs_map, F1, alpha=0.1)) +
+  stat_binhex(bins=50) + scale_fill_gradientn("", trans = "log", colours = rev(rainbow(5, end = 4/6))) +
+  geom_abline(intercept = 0, slope = 1, col="black",linetype="dotted")  +
+  facet_grid(true_isoform+mapper~ftype) +
+  ylab("F1") + xlab("mean genomic mappability") +
+  ggtitle('Mean bs-mappability vs F1', 'cr=98%') 
+
+perf %>% 
+  filter(conversion_rate==0) %>% 
+  ggplot(aes(rnk, F1, alpha=0.1)) +
+  stat_binhex(bins=50) + scale_fill_gradientn("", colours = rev(rainbow(5, end = 4/6))) +
+  geom_abline(intercept = 0, slope = 1, col="black",linetype="dotted")  +
+  facet_grid(true_isoform+mapper~ftype) +
+  ylab("F1") + xlab("number of exons") +
+  ggtitle('Number of exons in tx vs F1', 'cr=0%') 
+
+perf %>% 
+  filter(conversion_rate==0.98) %>% 
+  ggplot(aes(rnk, F1, alpha=0.1)) +
+  stat_binhex(bins=50) + scale_fill_gradientn("", colours = rev(rainbow(5, end = 4/6))) +
+  geom_abline(intercept = 0, slope = 1, col="black",linetype="dotted")  +
+  facet_grid(true_isoform+mapper~ftype) +
+  ylab("F1") + xlab("number of exons") +
+  ggtitle('Number of exons in tx vs F1', 'cr=98%') 
+
+perf %>% 
+  filter(conversion_rate==0) %>% 
+  ggplot(aes(frac_convertible, F1, alpha=0.1)) +
+  stat_binhex(bins=50) + scale_fill_gradientn("", colours = rev(rainbow(5, end = 4/6))) +
+  geom_abline(intercept = 0, slope = 1, col="black",linetype="dotted")  +
+  facet_grid(true_isoform+mapper~ftype) +
+  ylab("F1") + xlab("frac_convertible") +
+  ggtitle('frac_convertible vs F1', 'cr=0%') 
+
+perf %>% 
+  filter(conversion_rate==0.98) %>% 
+  ggplot(aes(frac_convertible, F1, alpha=0.1)) +
+  stat_binhex(bins=50) + scale_fill_gradientn("", colours = rev(rainbow(5, end = 4/6))) +
+  geom_abline(intercept = 0, slope = 1, col="black",linetype="dotted")  +
+  facet_grid(true_isoform+mapper~ftype) +
+  ylab("F1") + xlab("frac_convertible") +
+  ggtitle('frac_convertible vs F1', 'cr=98%') 
+
+corTab = rbind(
+tibble(
+  mappability = "umap", mapper = "STAR", true_isoform = "mat", ftype = "tx", cor = cor(
+    perf %>% dplyr::filter(mapper == "STAR", true_isoform == "mat", ftype == "tx", conversion_rate == 0.98) %>% .$F1,
+    perf %>% dplyr::filter(mapper == "STAR", true_isoform == "mat", ftype == "tx", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "umap", mapper = "STAR", true_isoform = "pre", ftype = "tx", cor = cor(
+    perf %>% dplyr::filter(mapper == "STAR", true_isoform == "pre", ftype == "tx", conversion_rate == 0.98) %>% .$F1,
+    perf %>% dplyr::filter(mapper == "STAR", true_isoform == "pre", ftype == "tx", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "umap", mapper = "STAR", true_isoform = "mat", ftype = "exon", cor = cor(
+    perf %>% dplyr::filter(mapper == "STAR", true_isoform == "mat", ftype == "exon", conversion_rate == 0.98) %>% .$F1,
+    perf %>% dplyr::filter(mapper == "STAR", true_isoform == "mat", ftype == "exon", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "umap", mapper = "STAR", true_isoform = "pre", ftype = "exon", cor = cor(
+    perf %>% dplyr::filter(mapper == "STAR", true_isoform == "pre", ftype == "exon", conversion_rate == 0.98) %>% .$F1,
+    perf %>% dplyr::filter(mapper == "STAR", true_isoform == "pre", ftype == "exon", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "umap", mapper = "STAR", true_isoform = "mat", ftype = "intron", cor = cor(
+    perf %>% dplyr::filter(mapper == "STAR", true_isoform == "mat", ftype == "intron", conversion_rate == 0.98) %>% .$F1,
+    perf %>% dplyr::filter(mapper == "STAR", true_isoform == "mat", ftype == "intron", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "umap", mapper = "STAR", true_isoform = "pre", ftype = "intron", cor = cor(
+    perf %>% dplyr::filter(mapper == "STAR", true_isoform == "pre", ftype == "intron", conversion_rate == 0.98) %>% .$F1,
+    perf %>% dplyr::filter(mapper == "STAR", true_isoform == "pre", ftype == "intron", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "umap", mapper = "MERANGS", true_isoform = "mat", ftype = "tx", cor = cor(
+    perf %>% dplyr::filter(mapper == "MERANGS", true_isoform == "mat", ftype == "tx", conversion_rate == 0.98) %>% .$F1,
+    perf %>% dplyr::filter(mapper == "MERANGS", true_isoform == "mat", ftype == "tx", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "umap", mapper = "MERANGS", true_isoform = "pre", ftype = "tx", cor = cor(
+    perf %>% dplyr::filter(mapper == "MERANGS", true_isoform == "pre", ftype == "tx", conversion_rate == 0.98) %>% .$F1,
+    perf %>% dplyr::filter(mapper == "MERANGS", true_isoform == "pre", ftype == "tx", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "umap", mapper = "MERANGS", true_isoform = "mat", ftype = "exon", cor = cor(
+    perf %>% dplyr::filter(mapper == "MERANGS", true_isoform == "mat", ftype == "exon", conversion_rate == 0.98) %>% .$F1,
+    perf %>% dplyr::filter(mapper == "MERANGS", true_isoform == "mat", ftype == "exon", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "umap", mapper = "MERANGS", true_isoform = "pre", ftype = "exon", cor = cor(
+    perf %>% dplyr::filter(mapper == "MERANGS", true_isoform == "pre", ftype == "exon", conversion_rate == 0.98) %>% .$F1,
+    perf %>% dplyr::filter(mapper == "MERANGS", true_isoform == "pre", ftype == "exon", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "umap", mapper = "MERANGS", true_isoform = "mat", ftype = "intron", cor = cor(
+    perf %>% dplyr::filter(mapper == "MERANGS", true_isoform == "mat", ftype == "intron", conversion_rate == 0.98) %>% .$F1,
+    perf %>% dplyr::filter(mapper == "MERANGS", true_isoform == "mat", ftype == "intron", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "umap", mapper = "MERANGS", true_isoform = "pre", ftype = "intron", cor = cor(
+    perf %>% dplyr::filter(mapper == "MERANGS", true_isoform == "pre", ftype == "intron", conversion_rate == 0.98) %>% .$F1,
+    perf %>% dplyr::filter(mapper == "MERANGS", true_isoform == "pre", ftype == "intron", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "umap", mapper = "HISAT3N", true_isoform = "mat", ftype = "tx", cor = cor(
+    perf %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "mat", ftype == "tx", conversion_rate == 0.98) %>% .$F1,
+    perf %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "mat", ftype == "tx", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "umap", mapper = "HISAT3N", true_isoform = "pre", ftype = "tx", cor = cor(
+    perf %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "pre", ftype == "tx", conversion_rate == 0.98) %>% .$F1,
+    perf %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "pre", ftype == "tx", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "umap", mapper = "HISAT3N", true_isoform = "mat", ftype = "exon", cor = cor(
+    perf %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "mat", ftype == "exon", conversion_rate == 0.98) %>% .$F1,
+    perf %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "mat", ftype == "exon", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "umap", mapper = "HISAT3N", true_isoform = "pre", ftype = "exon", cor = cor(
+    perf %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "pre", ftype == "exon", conversion_rate == 0.98) %>% .$F1,
+    perf %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "pre", ftype == "exon", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "umap", mapper = "HISAT3N", true_isoform = "mat", ftype = "intron", cor = cor(
+    perf %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "mat", ftype == "intron", conversion_rate == 0.98) %>% .$F1,
+    perf %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "mat", ftype == "intron", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "umap", mapper = "HISAT3N", true_isoform = "pre", ftype = "intron", cor = cor(
+    perf %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "pre", ftype == "intron", conversion_rate == 0.98) %>% .$F1,
+    perf %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "pre", ftype == "intron", conversion_rate == 0.98) %>% .$mean_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "bsmap", mapper = "STAR", true_isoform = "mat", ftype = "tx", cor = cor(
+    perf_Bs %>% dplyr::filter(mapper == "STAR", true_isoform == "mat", ftype == "tx", conversion_rate == 0.98) %>% .$F1,
+    perf_Bs %>% dplyr::filter(mapper == "STAR", true_isoform == "mat", ftype == "tx", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "bsmap", mapper = "STAR", true_isoform = "pre", ftype = "tx", cor = cor(
+    perf_Bs %>% dplyr::filter(mapper == "STAR", true_isoform == "pre", ftype == "tx", conversion_rate == 0.98) %>% .$F1,
+    perf_Bs %>% dplyr::filter(mapper == "STAR", true_isoform == "pre", ftype == "tx", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "bsmap", mapper = "STAR", true_isoform = "mat", ftype = "exon", cor = cor(
+    perf_Bs %>% dplyr::filter(mapper == "STAR", true_isoform == "mat", ftype == "exon", conversion_rate == 0.98) %>% .$F1,
+    perf_Bs %>% dplyr::filter(mapper == "STAR", true_isoform == "mat", ftype == "exon", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "bsmap", mapper = "STAR", true_isoform = "pre", ftype = "exon", cor = cor(
+    perf_Bs %>% dplyr::filter(mapper == "STAR", true_isoform == "pre", ftype == "exon", conversion_rate == 0.98) %>% .$F1,
+    perf_Bs %>% dplyr::filter(mapper == "STAR", true_isoform == "pre", ftype == "exon", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "bsmap", mapper = "STAR", true_isoform = "mat", ftype = "intron", cor = cor(
+    perf_Bs %>% dplyr::filter(mapper == "STAR", true_isoform == "mat", ftype == "intron", conversion_rate == 0.98) %>% .$F1,
+    perf_Bs %>% dplyr::filter(mapper == "STAR", true_isoform == "mat", ftype == "intron", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "bsmap", mapper = "STAR", true_isoform = "pre", ftype = "intron", cor = cor(
+    perf_Bs %>% dplyr::filter(mapper == "STAR", true_isoform == "pre", ftype == "intron", conversion_rate == 0.98) %>% .$F1,
+    perf_Bs %>% dplyr::filter(mapper == "STAR", true_isoform == "pre", ftype == "intron", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "bsmap", mapper = "MERANGS", true_isoform = "mat", ftype = "tx", cor = cor(
+    perf_Bs %>% dplyr::filter(mapper == "MERANGS", true_isoform == "mat", ftype == "tx", conversion_rate == 0.98) %>% .$F1,
+    perf_Bs %>% dplyr::filter(mapper == "MERANGS", true_isoform == "mat", ftype == "tx", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "bsmap", mapper = "MERANGS", true_isoform = "pre", ftype = "tx", cor = cor(
+    perf_Bs %>% dplyr::filter(mapper == "MERANGS", true_isoform == "pre", ftype == "tx", conversion_rate == 0.98) %>% .$F1,
+    perf_Bs %>% dplyr::filter(mapper == "MERANGS", true_isoform == "pre", ftype == "tx", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "bsmap", mapper = "MERANGS", true_isoform = "mat", ftype = "exon", cor = cor(
+    perf_Bs %>% dplyr::filter(mapper == "MERANGS", true_isoform == "mat", ftype == "exon", conversion_rate == 0.98) %>% .$F1,
+    perf_Bs %>% dplyr::filter(mapper == "MERANGS", true_isoform == "mat", ftype == "exon", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "bsmap", mapper = "MERANGS", true_isoform = "pre", ftype = "exon", cor = cor(
+    perf_Bs %>% dplyr::filter(mapper == "MERANGS", true_isoform == "pre", ftype == "exon", conversion_rate == 0.98) %>% .$F1,
+    perf_Bs %>% dplyr::filter(mapper == "MERANGS", true_isoform == "pre", ftype == "exon", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "bsmap", mapper = "MERANGS", true_isoform = "mat", ftype = "intron", cor = cor(
+    perf_Bs %>% dplyr::filter(mapper == "MERANGS", true_isoform == "mat", ftype == "intron", conversion_rate == 0.98) %>% .$F1,
+    perf_Bs %>% dplyr::filter(mapper == "MERANGS", true_isoform == "mat", ftype == "intron", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "bsmap", mapper = "MERANGS", true_isoform = "pre", ftype = "intron", cor = cor(
+    perf_Bs %>% dplyr::filter(mapper == "MERANGS", true_isoform == "pre", ftype == "intron", conversion_rate == 0.98) %>% .$F1,
+    perf_Bs %>% dplyr::filter(mapper == "MERANGS", true_isoform == "pre", ftype == "intron", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "bsmap", mapper = "HISAT3N", true_isoform = "mat", ftype = "tx", cor = cor(
+    perf_Bs %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "mat", ftype == "tx", conversion_rate == 0.98) %>% .$F1,
+    perf_Bs %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "mat", ftype == "tx", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "bsmap", mapper = "HISAT3N", true_isoform = "pre", ftype = "tx", cor = cor(
+    perf_Bs %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "pre", ftype == "tx", conversion_rate == 0.98) %>% .$F1,
+    perf_Bs %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "pre", ftype == "tx", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "bsmap", mapper = "HISAT3N", true_isoform = "mat", ftype = "exon", cor = cor(
+    perf_Bs %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "mat", ftype == "exon", conversion_rate == 0.98) %>% .$F1,
+    perf_Bs %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "mat", ftype == "exon", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "bsmap", mapper = "HISAT3N", true_isoform = "pre", ftype = "exon", cor = cor(
+    perf_Bs %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "pre", ftype == "exon", conversion_rate == 0.98) %>% .$F1,
+    perf_Bs %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "pre", ftype == "exon", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "bsmap", mapper = "HISAT3N", true_isoform = "mat", ftype = "intron", cor = cor(
+    perf_Bs %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "mat", ftype == "intron", conversion_rate == 0.98) %>% .$F1,
+    perf_Bs %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "mat", ftype == "intron", conversion_rate == 0.98) %>% .$mean_bs_map
+    ,method="spearman"
+  )
+),
+tibble(
+  mappability = "bsmap", mapper = "HISAT3N", true_isoform = "pre", ftype = "intron", cor = cor(
+    perf_Bs %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "pre", ftype == "intron", conversion_rate == 0.98) %>% .$F1,
+    perf_Bs %>% dplyr::filter(mapper == "HISAT3N", true_isoform == "pre", ftype == "intron", conversion_rate == 0.98) %>% .$mean_bs_map
+  ,method="spearman")
+)
+)
+
+pF1Cor <- corTab %>%
+  dplyr::filter(mapper != "STAR") %>%
+  dplyr::mutate(mappability = case_when(
+    mappability == "umap" ~ mappability,
+    TRUE ~ "bismap"
+  )) %>%
+  dplyr::mutate(ftype = factor(ftype, levels = c("tx","exon","intron"))) %>%
+  ggplot(aes(x = ftype, y = cor, fill = mappability)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  facet_grid(true_isoform~mapper) +
+  scale_fill_brewer(palette = "Pastel1") +
+  xlab("") + ylab("Pearson's r") +
+  ggtitle("Correlation of mappability scores with F1")
+
+corTab %>%
+  dplyr::mutate(ftype = factor(ftype, levels = c("tx","exon","intron"))) %>%
+  ggplot(aes(x = ftype, y = cor, fill = mappability)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  facet_grid(true_isoform~mapper) +
+  scale_fill_brewer(palette = "Pastel1") +
+  xlab("") + ylab("Pearson's r") +
+  ggtitle("Correlation of mappability scores with F1")
+
+dev.off()
+
+```
+### MAP result tables
+
+
+```{r map_results, include=T, echo=F, cache=T}
+calc_map_table = function(tab) {
+  tab = tab %>% 
+  select(fid, ftype, mapper, conversion_rate, classification, count) %>% 
+  group_by(fid, ftype, mapper, conversion_rate, classification) %>% 
+  summarise(count=sum(count), .groups='drop') %>%
+  pivot_wider(names_from=classification, values_from=count) %>%
+  mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>% 
+  mutate(F1=ifelse(((2*TP+FP+FN)>0) & (TP+FN>0),2*TP/(2*TP+FP+FN),NA))
+  
+  # calc F1 from conversion_rate==0 only
+  noconv=tab %>% filter(conversion_rate==0) %>% select(fid, mapper, ftype, F1_0=F1)
+  # create final table
+  tab = tab %>% group_by(fid,ftype,mapper) %>% 
+    summarise(TP=sum(TP), FP=sum(FP), FN=sum(FN), .groups='drop') %>% 
+    mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>% 
+    mutate(F1=ifelse(((2*TP+FP+FN)>0) & (TP+FN>0),2*TP/(2*TP+FP+FN),NA)) %>% # set F1 to NA if no reads were simulated for tx (e.g., because too short)
+    left_join(noconv, by=c('fid', 'mapper', 'ftype')) %>% # add F1_0
+    pivot_wider(names_from=mapper, values_from=c(F1_0, F1), id_cols=c('fid', 'ftype'))
+  
+  return(tab)
+}
+
+
+# result tables
+results[['map_tx_tab']] = tx %>% calc_map_table() %>% rename(tid='fid') %>% 
+  mutate(best_mapper_no_conv = ifelse(F1_0_HISAT3N-F1_0_STAR>0.05, 'HISAT3N',
+                               ifelse(F1_0_HISAT3N-F1_0_STAR< -0.05,'STAR','BOTH')),
+         best_mapper_conv = ifelse(F1_HISAT3N-F1_STAR>0.05, 'HISAT3N',
+                            ifelse(F1_HISAT3N-F1_STAR< -0.05,'STAR','BOTH'))) %>% 
+  left_join(m[['tx']], by=c('tid', 'ftype')) %>% 
+  left_join(m[['ga']], by=c('tid')) 
+
+results[['map_ex_tab']] = fx %>% filter(ftype=='exon') %>% calc_map_table() %>% 
+  mutate(best_mapper_no_conv = ifelse(F1_0_HISAT3N-F1_0_STAR>0.05, 'HISAT3N',
+                               ifelse(F1_0_HISAT3N-F1_0_STAR< -0.05,'STAR','BOTH')),
+         best_mapper_conv = ifelse(F1_HISAT3N-F1_STAR>0.05, 'HISAT3N',
+                            ifelse(F1_HISAT3N-F1_STAR< -0.05,'STAR','BOTH'))) %>% 
+  left_join(m[['fx']], by=c('fid', 'ftype')) %>% 
+  left_join(m[['ga']], by=c('tid')) 
+
+results[['map_in_tab']] = fx %>% filter(ftype=='intron') %>% calc_map_table() %>% 
+  mutate(best_mapper_no_conv = ifelse(F1_0_HISAT3N-F1_0_STAR>0.05, 'HISAT3N',
+                               ifelse(F1_0_HISAT3N-F1_0_STAR< -0.05,'STAR','BOTH')),
+         best_mapper_conv = ifelse(F1_HISAT3N-F1_STAR>0.05, 'HISAT3N',
+                            ifelse(F1_HISAT3N-F1_STAR< -0.05,'STAR','BOTH'))) %>% 
+  left_join(m[['fx']], by=c('fid', 'ftype')) %>% 
+  left_join(m[['ga']], by=c('tid')) 
+
+```
+
+
+
+
+### MAP Write BED file of best mapper 
+```{r, include=F, echo=F, eval=F}
+# ==============================================
+# write BED file of best mapper
+# ==============================================
+results[['map_tx_tab']] %>%
+  mutate(score=round(pmax(F1_HISAT3N, F1_STAR)*1000),
+         best_mapper=best_mapper_conv,
+         rgb=ifelse(best_mapper=='HISAT3N','255,0,0','0,255,0'),
+         start1=start,
+         end1=end
+         ) %>% 
+  arrange(chromosome, start) %>% 
+      select(chromosome,start,end,best_mapper,score,strand,start1,end1,rgb) %>%
+      write_bed(paste0(params$out_dir,'/best_mapper_map.include_converted.bed'),
+                paste0("best_mapper_map.include_converted"))
+
+results[['map_tx_tab']] %>%
+  mutate(score=round(pmax(F1_0_HISAT3N, F1_0_STAR)*1000),
+         best_mapper=best_mapper_no_conv,
+         rgb=ifelse(best_mapper=='HISAT3N','255,0,0','0,255,0'),
+         start1=start,
+         end1=end
+         ) %>% 
+  arrange(chromosome, start) %>% 
+      select(chromosome,start,end,best_mapper,score,strand,start1,end1,rgb) %>%
+      write_bed(paste0(params$out_dir,'/best_mapper_map.unconverted_only.bed'),
+                paste0("best_mapper_map.unconverted_only"))
+```
+
+# _________
+# Special analyses
+
+## Performance of converted vs unconverted reads
+
+
+<div class = "blue">
+<b>Fraction of false positive/negative reads stratified by nucleotide mismatches.</b>
+We expected the fraction of FP/FN reads to increase with increasing mismatches to the reference sequence that can stem from simulated nucleotide conversions or sequencing errors. 
+
+The plots show an increased rate of false negative rate (FNR=FN/(FN+TP)) and false discovery rate (FDR=FP/(FP+TP))
+in HISAT3N vs STAR.
+
+HISAT3N should be less/not influenced by nucleotide conversions (as these are masked from the reference genome).
+</div>
+
+```{r}
+calc_fcr_cvsu = function(tab) {
+  tab %>% 
+    group_by( mapper, classification, ftype) %>% 
+    summarise(all=sum(count),
+              nc_0=sum(count[(cv1==0) & (cv2==0) & (se1+se2==0)]), # reads with no tc conv
+              nc_1=sum(count[(cv1==1) & (cv2==0) & (se1+se2==0)]), # reads with 1 tc conv
+              nc_2=sum(count[(cv2==1) & (se1+se2==0)]), # reads with 2+ tc conv
+              se_0=sum(count[(se1==0) & (se2==0) & (cv1+cv2==0)]), # reads with no seq err
+              se_1=sum(count[(se1==1) & (se2==0) & (cv1+cv2==0)]), # reads with 1 seq err
+              se_2=sum(count[(se2==1) & (cv1+cv2==0)]) # reads with 2+ seq err
+              ) %>% 
+    pivot_wider(names_from=classification, 
+                values_from=c(all, nc_0, nc_1, nc_2, se_0, se_1, se_2), 
+                names_sort=T) %>% 
+    mutate(across(where(is.numeric), ~ifelse(is.nan(.) | is.na(.), 0, .))) %>% 
+    mutate(
+      nc_0_FNR=ifelse(nc_0_TP+nc_0_FN>0,nc_0_FN/(nc_0_TP+nc_0_FN),NA),
+      nc_1_FNR=ifelse(nc_1_TP+nc_1_FN>0,nc_1_FN/(nc_1_TP+nc_1_FN),NA),
+      nc_2_FNR=ifelse(nc_2_TP+nc_2_FN>0,nc_2_FN/(nc_2_TP+nc_2_FN),NA),
+      se_0_FNR=ifelse(se_0_TP+se_0_FN>0,se_0_FN/(se_0_TP+se_0_FN),NA),
+      se_1_FNR=ifelse(se_1_TP+se_1_FN>0,se_1_FN/(se_1_TP+se_1_FN),NA),
+      se_2_FNR=ifelse(se_2_TP+se_2_FN>0,se_2_FN/(se_2_TP+se_2_FN),NA),
+      # FP rate
+      nc_0_FDR=ifelse(nc_0_TP+nc_0_FP_raw>0,nc_0_FP_raw/(nc_0_TP+nc_0_FP_raw),NA),
+      nc_1_FDR=ifelse(nc_1_TP+nc_1_FP_raw>0,nc_1_FP_raw/(nc_1_TP+nc_1_FP_raw),NA),
+      nc_2_FDR=ifelse(nc_2_TP+nc_2_FP_raw>0,nc_2_FP_raw/(nc_2_TP+nc_2_FP_raw),NA),
+      se_0_FDR=ifelse(se_0_TP+se_0_FP_raw>0,se_0_FP_raw/(se_0_TP+se_0_FP_raw),NA),
+      se_1_FDR=ifelse(se_1_TP+se_1_FP_raw>0,se_1_FP_raw/(se_1_TP+se_1_FP_raw),NA),
+      se_2_FDR=ifelse(se_2_TP+se_2_FP_raw>0,se_2_FP_raw/(se_2_TP+se_2_FP_raw),NA)
+  ) %>% 
+    group_by( mapper, ftype) %>% 
+#  filter_at(vars(tc_0_fn_frac, tc_1_fn_frac, tc_2_fn_frac), all_vars(!is.na(.))) %>% # values in all categories
+  pivot_longer(cols=ends_with('FDR') | ends_with('FNR')) %>%
+  select(mapper, ftype, name, value) %>% 
+  separate(name, into=c('cat','n_conv','class'), sep ='_')  %>% 
+  mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+  mutate(n_conv=factor(ifelse(n_conv==2, '2+', as.character(n_conv)), levels=c('0','1','2+'))) %>% 
+  group_by(mapper, ftype, cat, class) %>% mutate(value_norm=value/value[n_conv=='0'])
+}
+
+fcr_cvsu = calc_fcr_cvsu(
+  tx %>% select(mapper, mappability, classification, ftype, cv1,cv2,se1,se2,count) %>% 
+    bind_rows(
+      fx %>% select(mapper, mappability, classification, ftype, cv1,cv2,se1,se2,count) 
+    )
+)
+
+fcr_cvsu = calc_fcr_cvsu( tx %>% filter(conversion_rate!=0) )
+p1 = fcr_cvsu %>% 
+  filter(class=='FDR') %>% 
+  ggplot(aes(n_conv, value_norm, col=mapper, group=mapper)) +
+  geom_line() +
+  facet_grid(ftype~cat, scales = 'free') +
+  ggtitle('FDR') +
+  ylab("Normalized FDR") +
+  my_scales()
+p2= fcr_cvsu %>% 
+  filter(class=='FNR') %>% 
+  ggplot(aes(n_conv, value_norm, col=mapper, group=mapper)) +
+  geom_line() +
+  facet_grid(ftype~cat, scales = 'free') +
+  ggtitle('FNR') +
+  ylab("Normalized FNR") +
+  my_scales()
+my_plot_grid(list(p1,p2), nrow=1, 'FDR/FNR dependence on mismatches')
+
+ggsave(paste0(params$out_dir, 'special_conv_unconv_reads.pdf'), width=12, height=10)
+```
+
+## Decay analysis
+
+@see splice_sim_decay_analysis.Rmd
+
+## Sequencing strategy analysis
+
+@see splice_sim_sequencing_strategies.Rmd
+
+## Mismapped reads per chromosome
+
+TODO
+We know for every read where it originates from an where it maps to
+Example analysis: where do we see large clusters of sequence similar regions. Plot #FP/FN per chrom. Chrom13 should have a peak due to histone cluster
+
+```{r chrom_mismap, include=F, echo=F, eval=F}
+```
+
+
+## Mean mappability per genomic feature
+
+<div class = "blue">
+<b>Genomic mappability of genomic features.</b>
+A) Violin plots of mean mappability for genomic features from the mouse dataset starified by gene type category. 
+Mean mappability was calculated by averaging over a mm10 single-read umap mappability score created with kmer size 24.
+B) Mean mappability vs feature length  for protein coding genes only.
+</div>
+
+```{r, include=F, echo=F, eval=F}
+# top_gene_type_cat = m[['ga']] %>% count(gene_type) %>% arrange(desc(n)) %>% head(4) %>% pull(gene_type)
+top_gene_type_cat=c('protein_coding', 'lincRNA', 'processed_pseudogene', 'other')
+tab = m[['fx']] %>% select(tid, fid, ftype, mean_map, len) %>% 
+  bind_rows(
+    m[['tx']] %>% mutate(fid=tid) %>% select(tid, fid, ftype, mean_map, len)
+  ) %>% 
+  left_join(m[['ga']], by='tid') %>% 
+  mutate(gene_type_cat=case_when( gene_type %in% !!top_gene_type_cat ~ as.character(gene_type),
+                                  TRUE ~ 'other') ) %>% 
+  mutate(gene_type_cat=factor(gene_type_cat, levels=!!top_gene_type_cat)) 
+
+p1 = tab %>% 
+  ggplot(aes(gene_type_cat, mean_map)) +
+  geom_violin() +
+  geom_hline(yintercept = c(0.2,0.9),  col="black",linetype="dotted") +
+  facet_grid(ftype~.)
+
+p2 = tab %>%
+  filter(gene_type=='protein_coding')  %>% 
+  ggplot(aes( mean_map, len/1000 )) +
+  stat_binhex(bins=50) + scale_fill_gradientn("", trans = "log", colours =
+                                                rev(rainbow(5, end = 4/6))) +
+  geom_vline(xintercept = c(0.2,0.9),  col="black",linetype="dotted")  +
+  facet_grid(ftype~.) +
+  scale_y_log10() +
+  ylab("feature length [kb]")
+
+my_plot_grid(list(p1,p2), labels = T, 'mappability ')
+```
+
+
+# _________
+# Main Figures
+
+## Fig 1
+
+<div class = "blue">
+<b>Fig 1: NC mappability per annotation.</b>
+A) Median F1 measure per mapper for different genomic annotation (tx: whole transcript), stratified by originating isoform (pre: premature, mat: mature) and genomic mappability.
+
+B) Boxplot comparing F1 measure and genomic mappability per annotation, 
+
+C) Median F1 measure for transcripts with high genomic mappability, stratified by number of exons
+
+D) Number of annotations with high (>0.9), low (<0.2) and medium genomic mappability.
+</div>
+
+```{r}
+
+f1a = perf %>% group_by(conversion_rate, mapper, mappability, true_isoform, ftype) %>% calc_iqr(F1) %>% 
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_grid(mappability~ftype, scales = 'free_y') +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5)) +
+  ylab("F1") +
+  ggtitle('Median F1 per condition')  + my_scales()
+
+f1b = 
+  m[['tx']] %>% select(tid, ftype, map=mean_map) %>% mutate(cat='genomic_mappability') %>% 
+  bind_rows(
+   m[['fx']] %>% select(tid, ftype, mean_map) %>%
+     group_by(tid, ftype) %>% 
+     summarise(map=mean(mean_map)) %>% 
+     mutate(cat='genomic_mappability')
+  ) %>% 
+  bind_rows(
+    perf %>% 
+      filter(conversion_rate==0, true_isoform=='pre', ftype =='tx') %>% 
+      select(tid=fid, ftype, map=F1) %>% 
+      mutate(cat='F1_pre')
+  ) %>% 
+  bind_rows(
+    perf %>% 
+      filter(conversion_rate==0, true_isoform=='pre', ftype %in% c('exon', 'intron')) %>% 
+      left_join(m[['fx']] %>% select(tid, fid), by='fid') %>% 
+      select(tid, ftype, F1) %>% 
+      group_by(tid, ftype) %>% 
+      summarise(map=mean(F1)) %>% 
+      mutate(cat='F1_pre')
+  ) %>% 
+  bind_rows(
+    perf %>% 
+      filter(conversion_rate==0, true_isoform=='mat', ftype =='tx') %>% 
+      select(tid=fid, ftype, map=F1) %>% 
+      mutate(cat='F1_mat')
+  ) %>% 
+  bind_rows(
+    perf %>% 
+      filter(conversion_rate==0, true_isoform=='mat', ftype %in% c('exon', 'intron')) %>% 
+      left_join(m[['fx']] %>% select(tid, fid), by='fid') %>% 
+      select(tid, ftype, F1) %>% 
+      group_by(tid, ftype) %>% 
+      summarise(map=mean(F1)) %>% 
+      mutate(cat='F1_mat')
+  ) %>% 
+  mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+  ggplot(aes(ftype, map, fill=cat)) +
+  geom_boxplot() +
+  facet_zoom(ylim=c(0.6, 1.0)) + xlab("") + ylab("")
+
+f1c = perf_tx %>% filter(mappability=='high') %>% 
+  group_by(conversion_rate, mapper, true_isoform, num_exons) %>% calc_iqr(F1) %>% 
+  ggplot(aes(conversion_rate, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +
+  facet_wrap(num_exons~.) +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5))+
+  ylab("F1") +
+  ggtitle('Median F1 per tx', 'by number of exons (high mappability only)')  + my_scales()
+
+f1d = m[['tx']] %>% group_by(ftype) %>% count(mappability) %>% 
+  bind_rows(
+    m[['fx']] %>% group_by(ftype) %>% count(mappability)
+  ) %>% 
+  rename(genomic_mappability=mappability) %>% 
+  mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+  ggplot(aes(ftype, n, fill=genomic_mappability)) +
+  geom_col(position=position_dodge()) +
+  xlab("") + ylab("") + my_scales() + facet_wrap(.~ftype, scales = 'free') + 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+my_plot_grid(list(f1a, f1b, f1c, f1d), 'Fig1', labels = T)
+ggsave(paste0(params$out_dir, 'Fig1.pdf'), width=12, height=10)
+
+```
+
+
+## Fig Bismap
+
+<div class = "blue">
+<b>Fig Bismap: F1 score and correlation with bismap mappability.</b>
+A) Median F1 measure per mapper for different genomic annotation (tx: whole transcript), stratified by originating isoform (pre: premature, mat: mature) and genomic mappability.
+
+B) Correlation of umap and bismap mappability scores per transcript. 
+
+C) Correlation of bsmap and umap mappability scores with F1 performance
+
+D) Delta of F1 umap vs bismap scores across features and mappability classes.
+</div>
+
+```{r}
+
+my_plot_grid(list(pf1, pBismapCor, pF1Cor, pf1diff), '', labels = T)
+ggsave(paste0(params$out_dir, 'Fig_biseq_overview.pdf'), width=12, height=10)
+
+```

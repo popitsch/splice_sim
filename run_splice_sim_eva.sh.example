@@ -1,0 +1,16 @@
+#!/usr/bin/bash
+ml purge &> /dev/null
+ml load java/1.8.0_212
+ml load nextflow/21.04.1
+
+export NXF_WORK="/scratch/nextflow/"$USER"/nxf_work"
+export NXF_TEMP="/scratch/nextflow/"$USER"/nxf_temp"
+export NXF_ANSI_LOG=false
+export NXF_OPTS="-Xms50m -Xmx500m"
+mkdir -p logs
+profile="standard"
+if [ -n "$1" ]; then
+  profile=$1
+fi
+echo "Starting splice_sim pipeline with profile $profile" 
+nextflow -log logs/nextflow.log run splice_sim/splice_sim_eva.nf -params-file splice_sim.config.json -resume -profile $profile

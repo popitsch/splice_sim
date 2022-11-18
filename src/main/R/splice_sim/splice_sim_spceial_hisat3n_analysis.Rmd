@@ -1,0 +1,236 @@
+---
+title: "splice_sim_special_hisat3n_analysis.Rmd"
+author: "niko.popitsch@imba.oeaw.ac.at"
+documentclass: article
+fontsize: 10pt
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    fig_width: 14
+    fig_height: 10
+    fig_caption: true
+    df_print: paged
+  pdf_document:
+    fig_width: 12
+    fig_height: 10
+    fig_caption: true
+params:
+    bam_stats:
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/splice_sim_paper/replicate_data_kss/bamstats.rds"
+    special_hisat3n_stats:
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/splice_sim_paper/replicate_data_kss/special_hisat3n_stats.rds"
+    out_dir:
+       value: "/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/splice_sim_paper/analysis_kss/"
+---
+<style type="text/css">
+body, td {
+   font-size: 10px;
+}
+code.r{
+  font-size: 10px;
+}
+pre {
+  font-size: 10px
+}
+div.blue pre { background-color:lightblue; }
+div.blue pre.r { background-color:blue; }
+</style>
+
+<!--
+rmarkdown::render('splice_sim_paper.Rmd', 'html_document')
+-->
+
+# INIT
+
+```{r setup, include=FALSE}
+require(data.table)
+require(goseq)
+require(AnnotationDbi)
+require(BiocGenerics)
+require(parallel)
+require(tidyr)
+require(dplyr)
+require(dtplyr)
+require(ggplot2)
+require(scales)
+require(rjson)
+require(stringr)
+require(VGAM)
+require(cowplot)
+require(arrow)
+require(tictoc)
+require(ggpubr)
+require(minpack.lm)
+require(readr)
+require(testthat)
+require(RColorBrewer)
+require(skimr)
+require(ggforce)
+require(writexl)
+require(xfun)
+require(forcats)
+require(glue)
+
+rename=dplyr::rename
+select=dplyr::select
+arrange=dplyr::arrange
+
+# NB install arrow with snappy on Rstudio server
+# Sys.setenv(ARROW_WITH_SNAPPY = "ON")
+# Sys.setenv(NOT_CRAN="true")
+# Sys.setenv(LIBARROW_BINARY="FALSE")
+# install.packages("arrow", repos = "https://arrow-r-nightly.s3.amazonaws.com")
+
+# to ensure stripping '\0' (nul) from character vector
+options(arrow.skip_nul = TRUE)
+
+# global theme
+ggplot2::theme_set(theme_light())
+
+# enable tidylog (has overhead!)
+#require(tidylog)
+options("tidylog.display" = list()) # turn tidylog off
+options(scipen=10000) # to avoid scientific notation y axis 
+
+# load resources/functions
+source('splice_sim_resources.R')
+```
+
+
+# data
+
+```{r data, include=F, echo=F, cache=T, eval=F}
+
+# create result dir?
+if (!dir.exists(params$out_dir)) {
+  dir.create(params$out_dir)
+} 
+if (!dir.exists(paste0(params$out_dir,'/cache/'))) {
+  dir.create(paste0(params$out_dir,'/cache/'))
+} 
+
+# bam stats
+bam_stats=read_rds(params$bam_stats) %>% 
+  mutate(conversion_rate=as.numeric(cr)*100) %>% 
+  group_by(rep, mapper, conversion_rate, ftype) %>% 
+  summarise(
+    n_reads=sum(n_reads),
+    n_softclipped_reads=sum(n_softclipped_reads),
+    mean_span_reads=mean(mean_span_reads, na.rm=TRUE),
+    mean_len_spliced_reads=mean(len_spliced_reads, na.rm=TRUE),
+    n_unmapped=sum(n_unmapped),
+    n_spliced_reads=sum(n_spliced_reads),
+  ) %>% 
+  mutate(conversion_rate=factor(conversion_rate), 
+         frac_spliced=n_spliced_reads/n_reads,
+         frac_softclipped=n_softclipped_reads/n_reads,
+         cat='bam_stats') %>% 
+  rename(mapped=n_reads, unmapped=n_unmapped) 
+
+# ===========================================================
+# special hisat3n bam stats
+# ===========================================================
+hisat3n_stats=read_rds(params$special_hisat3n_stats) %>% 
+  mutate(conversion_rate=as.numeric(cr)*100) %>% 
+  mutate(conversion_rate=factor(conversion_rate)) %>% 
+  group_by(rep, mapper, conversion_rate, matching_strand) %>% 
+  summarise(n_reads=sum(n_reads), n_sc=sum(n_softclipped_reads)) %>% 
+  mutate(frac_sc=n_sc/n_reads) %>% 
+  mutate(matching_strand=case_when(
+    matching_strand==1 ~ 'yes',
+    matching_strand==0 ~ 'no',
+    TRUE ~ NA_character_
+  )) %>% 
+  mutate(matching_strand=factor(matching_strand, levels = c("no", "yes"))) %>% 
+  ungroup() %>% 
+  rename(mapped=n_reads)
+
+```
+
+
+# _________
+## QC
+
+### BAM stats
+```{r bam_stats, include=T, echo=F, cache=T}
+
+# compare with count stats. 
+# NOTE: when you run splice_sim_eva with a chromosom param then there are slightly more reads in 
+# bam_stats than in count tables due to missed reads on non-canonical chrom .
+# count_stats = d[['tx']] %>% 
+#   group_by(mapper, conversion_rate, classification) %>% 
+#   summarise(c=sum(count)) %>% 
+#   pivot_wider(names_from = classification, values_from = c) %>% 
+#   mutate(n_reads=FN+TP) %>% 
+#   select(mapper, conversion_rate, value=n_reads) %>% 
+#   mutate(name='n_reads', cat='counts')
+
+
+p1 = bam_stats %>% 
+  pivot_longer(c(mapped, unmapped)) %>% 
+  mutate(name=factor(name, levels=c('unmapped', 'mapped'))) %>% 
+  ggplot(aes(conversion_rate, value/1e6, fill=name)) +
+  facet_wrap(mapper~rep) +
+  geom_col() +
+  ylab("# reads [Mio]") + xlab("conversion rate [%]") + 
+  guides(fill=guide_legend(title="Read status"))
+
+
+p2a = hisat3n_stats %>% 
+  group_by(conversion_rate, matching_strand) %>% 
+  calc_iqr(frac_sc*100) %>% 
+  ggplot(aes(conversion_rate, col.median, col=matching_strand, group=matching_strand)) +
+  geom_line() + 
+  geom_ribbon(aes(ymin=col.lower, ymax=col.upper, fill=matching_strand), linetype=0, alpha=0.2) +
+  ylab("Percentage\nsoftclipped reads") +
+  xlab("Conversion rate [%]") + expand_limits(x = 0, y = 0) +
+  ggtitle("HISAT3N soft clipping") 
+
+p2b = hisat3n_stats %>% 
+  select(rep, conversion_rate, matching_strand, mapped) %>% 
+  group_by(rep, conversion_rate) %>% 
+  pivot_wider(names_from = 'matching_strand', values_from = 'mapped') %>% 
+  mutate(frac_wrong_strand = no/(no+yes)) %>% 
+  group_by(conversion_rate) %>% 
+  calc_iqr(frac_wrong_strand*100) %>% 
+  ungroup() %>% 
+  ggplot(aes(conversion_rate, col.median, group = 1)) +
+  geom_line() + 
+  geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=0, alpha=0.2) +
+  ylab("Percentage of reads\nmapped to wrong strand") +
+  xlab("Conversion rate [%]") + expand_limits(x = 0, y = 0) +
+  ggtitle("HISAT3N wrong strand reads") 
+p2=plot_grid(p2a,p2b,ncol=1,labels=c('C','D'))
+  
+
+p3 = bam_stats %>%
+  pivot_longer(c('frac_spliced','frac_softclipped', 'mean_span_reads', 'mean_len_spliced_reads')) %>% 
+  ggplot(aes(conversion_rate,value, fill=mapper)) +
+  geom_col(position = 'dodge') +
+  facet_grid(name~rep, scales = 'free') +
+  my_scales() + 
+  ylab("Fraction of reads / # bases ") + xlab("Conversion rate [%]")
+
+
+left=plot_grid(p1,p2,labels=c('A',''), ncol = 1)
+right=plot_grid(p3,labels=c('B'), ncol = 1)
+plot_grid(left,right)
+ggsave(paste0(params$out_dir, 'bam_stats.pdf'), width=12, height=9)
+
+
+# Example for HISAT3N soft-clipping at read ends
+# ENSMUST00000162558.7_+_pre_4-228_1_161035355_100=_0_4_1 (in rep3/big4_slamseq_nf.cr0.1.HISAT3N.final.bam): 1S99M
+# equivalent to
+# ENSMUST00000162558.7_+_pre_4-228_1_161035355_100=_0_0_1 (in rep3/big4_slamseq_nf.cr0.HISAT3N.final.bam): 100M
+
+
+# mean_span_reads: mean(r.reference_end-r.reference_start+1)
+# len_spliced_reads: mean(max_N-block_per_read)
+
+# count per mapper (~7Bio)
+# bam_stats %>% 
+#   group_by( mapper ) %>% 
+#   summarise(r=sum(n_reads)+sum(n_unmapped))
+
+```

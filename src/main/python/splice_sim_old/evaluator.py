@@ -152,6 +152,7 @@ def evaluate_bam(bam_file, bam_out, is_converted, m, mapper, condition, out_read
         else:
             aits = [BlockLocationIterator(PyrangeIterator(df, dict_chr2idx, 'transcript_id'))]
             rit = ReadIterator(bam_file, dict_chr2idx, reference=c, start=1, end=c_len, max_span=None, flag_filter=0) # max_span=m.max_ilen
+            # fixme: AnnotationOverlapIterator output fmt change, needs fixing (see evaluator2)
             it = AnnotationOverlapIterator(rit, aits)
             for loc, (read, annos) in it:
                 n_reads+=1

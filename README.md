@@ -107,3 +107,21 @@ Here's an example config :
 
 ### Output Structure
 ---
+
+#### Metadata tables
+
+These tables contain various metadata for the genomic intervals under investigation stratified at transcript level (`tx`), exon / intron feature level (`fx`) or splice-junction level (`sj`) in the `meta/*.metadata.tsv.gz` files.
+
+| Column          | Description                                                                                                                                               | Notes    |
+|-----------------|---------------------------------------------------------------------------------------------------------------------------------------------------------|------------|
+| mapper          | Name of the respective mapper                                                                                                                             |          |
+| conversion_rate | Conversion rate between 0 and 1.0                                                                                                                         |          |
+| fid             | feature/transcript id                                                                                                                                     |          |
+| true_isoform    | name of the isoform (as configured) the read originates from                                                                                               |          |
+| cv1             | 1 if read contains at least one NC or 0 otherwise                                                                                                         |          |
+| cv2             | 1 if read contains at least two NC or 0 otherwise                                                                                                         |          |
+| se1             | 1 if read contains at least one simulated sequencing error or 0 otherwise                                                                                 |          |
+| se2             | 1 if read contains at least two simulated sequencing errors or 0 otherwise                                                                                 |          |
+| classification  | Read classification: TP: true positive, FN: false negative: FP_raw: false-positive/not  <br /> normalised, FP: false-positive/normalised |          |
+| count           | read count. FP classified rows may include fractions                                                                                                       |          |
+| class_type      | read type: acc: acceptor spanning, don: donor spanning, spl: spliced read                                                                                 |  SJ only |

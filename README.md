@@ -30,6 +30,9 @@ conda env create -f environment.yml
 
 One additional python package called `genomic_iterators` has to be installed manually into the environment:
 
+> **Warning**
+> `genomic_iterators` is not yet public, so you will have to first contact [Niko Popitsch](mailto:niko.popitsch@univie.ac.at) to obtain permissions to the repository!
+
 ```bash
 source activate splice_sim
 pip install git+https://github.com/popitsch/genomic_iterators.git

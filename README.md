@@ -22,6 +22,31 @@ Contents
 ### Installation
 ---
 
+`splice_sim` itself is a python package with several dependencies that are best simply installed in a [conda environment](https://conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html):
+
+```bash
+conda env create -f environment.yml
+```
+
+One additional python package called `genomic_iterators` has to be installed manually into the environment:
+
+```bash
+source activate splice_sim
+pip install git+https://github.com/popitsch/genomic_iterators.git
+```
+
+Then clone the `splice_sim` repository and now you are able to call it via the `main.py`:
+
+```bash
+git clone https://github.com/popitsch/splice_sim.git
+cd splice_sim
+python main.py
+```
+
+
+
+
+
 ### Usage
 ---
 

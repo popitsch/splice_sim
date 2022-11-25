@@ -130,6 +130,62 @@ optional arguments:
                         output dir
 ```
 
+##### evaluate
+
+The `evaluate` command runs the `splice_sim` evaluation routine on a given mapper bam file produced for a condition of the `splice_sim` simulation run.
+
+```bash
+python splice_sim/main.py evaluate --help
+usage: main.py [-h] -b bam_file -c config_file -m model_file [-f filter_bed] [-t THREADS] -o outdir
+
+  Copyright (C) 2021 XXX.  All rights reserved.
+
+  Distributed on an "AS IS" basis without warranties
+  or conditions of any kind, either express or implied.
+
+USAGE
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -b bam_file, --bam_file bam_file
+                        input bam file
+  -c config_file, --config config_file
+                        JSON config file
+  -m model_file, --model model_file
+                        model file
+  -f filter_bed, --filter_bed filter_bed
+                        Filter regions BED file
+  -t THREADS, --threads THREADS
+                        used threads
+  -o outdir, --outdir outdir
+                        output dir
+```
+
+##### extract_feature_metadata
+
+The `extract_feature_metadata` extracts comprehensive metadata that lists various characteristics of the genomic features under evaluation.
+
+```bash
+python splice_sim/main.py extract_feature_metadata --help
+usage: main.py [-h] -c config_file -m model_file -o outdir
+
+  Copyright (C) 2021 XXX.  All rights reserved.
+
+  Distributed on an "AS IS" basis without warranties
+  or conditions of any kind, either express or implied.
+
+USAGE
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -c config_file, --config config_file
+                        JSON config file
+  -m model_file, --model model_file
+                        model file
+  -o outdir, --outdir outdir
+                        output dir
+```
+
 #### Nextflow workflow
 ----
 

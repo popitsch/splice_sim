@@ -105,6 +105,31 @@ optional arguments:
                         output directory (default is current dir)
 ```
 
+##### postfilter_bam
+
+The `postfilter_bam` command filters secondary and supplementary reads and highlights isoforms.
+
+```bash
+python splice_sim/main.py postfilter_bam --help
+usage: main.py [-h] -c config_file -b bam_file -o outdir
+
+  Copyright (C) 2021 XXX.  All rights reserved.
+
+  Distributed on an "AS IS" basis without warranties
+  or conditions of any kind, either express or implied.
+
+USAGE
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -c config_file, --config config_file
+                        JSON config file
+  -b bam_file, --bam bam_file
+                        input bam file
+  -o outdir, --outdir outdir
+                        output dir
+```
+
 #### Nextflow workflow
 ----
 

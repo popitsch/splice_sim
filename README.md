@@ -112,16 +112,49 @@ Here's an example config :
 
 These tables contain various metadata for the genomic intervals under investigation stratified at transcript level (`tx`), exon / intron feature level (`fx`) or splice-junction level (`sj`) in the `meta/*.metadata.tsv.gz` files.
 
-| Column          | Description                                                                                                                                               | Notes    |
-|-----------------|---------------------------------------------------------------------------------------------------------------------------------------------------------|------------|
-| mapper          | Name of the respective mapper                                                                                                                             |          |
-| conversion_rate | Conversion rate between 0 and 1.0                                                                                                                         |          |
-| fid             | feature/transcript id                                                                                                                                     |          |
-| true_isoform    | name of the isoform (as configured) the read originates from                                                                                               |          |
-| cv1             | 1 if read contains at least one NC or 0 otherwise                                                                                                         |          |
-| cv2             | 1 if read contains at least two NC or 0 otherwise                                                                                                         |          |
-| se1             | 1 if read contains at least one simulated sequencing error or 0 otherwise                                                                                 |          |
-| se2             | 1 if read contains at least two simulated sequencing errors or 0 otherwise                                                                                 |          |
-| classification  | Read classification: TP: true positive, FN: false negative: FP_raw: false-positive/not  <br /> normalised, FP: false-positive/normalised |          |
-| count           | read count. FP classified rows may include fractions                                                                                                       |          |
-| class_type      | read type: acc: acceptor spanning, don: donor spanning, spl: spliced read                                                                                 |  SJ only |
+| Column            | Description                                                                                                                                               | Notes    |
+|-------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------|------------|
+| `mapper`          | Name of the respective mapper                                                                                                                             |          |
+| `conversion_rate` | Conversion rate between 0 and 1.0                                                                                                                         |          |
+| `fid`             | feature/transcript id                                                                                                                                     |          |
+| `true_isoform`    | name of the isoform (as configured) the read originates from                                                                                               |          |
+| `cv1`             | 1 if read contains at least one NC or 0 otherwise                                                                                                         |          |
+| `cv2`             | 1 if read contains at least two NC or 0 otherwise                                                                                                         |          |
+| `se1`             | 1 if read contains at least one simulated sequencing error or 0 otherwise                                                                                 |          |
+| `se2`             | 1 if read contains at least two simulated sequencing errors or 0 otherwise                                                                                 |          |
+| `classification`  | Read classification: TP: true positive, FN: false negative: FP_raw: false-positive/not  <br /> normalised, FP: false-positive/normalised |          |
+| `count`           | read count. FP classified rows may include fractions                                                                                                       |          |
+| `class_type`      | read type: acc: acceptor spanning, don: donor spanning, spl: spliced read                                                                                 |  SJ only |
+
+
+#### Metadata tables
+
+These tables contain various metadata for the genomic intervals under investigation stratified at transcript level (`tx`), exon / intron feature level (`fx`) or splice-junction level (`sj`) in the `meta/*.metadata.tsv.gz` files.
+
+| Column                 | Description                                                                                                                                  | Notes       |
+|------------------------|---------------------------------------------------------------------------------------------------------------------------------------------|-------------|
+| `tid`                  | Transcript ID                                                                                                                                |             |
+| `fid`                  | Feature ID (intron or exon ID)                                                                                                              | FX+SJ  only |
+| `ftype`                | Feature type: `tx`, `fx`, `don`, `acc` or `spl`                                                                                              |             |
+| `rnk`                  | Rank. For transcripts this is the  number exons, for introns/exons it is the rank from the transcript 5'-end                                |             |
+| `chromosome`           | Chromosome of the annotate feature                                                                                                          |             |
+| `start` / `end`        | Genomic start/end position of the annotated feature                                                                                          |             |
+| `strand`               | Strand of the annotation                                                                                                                    |             |
+| `A`/`C`/`T`/`G`        | Number of A/C/T/G bases in the annotated sequence                                                                                            |             |
+| `mean_map`             | Mean mappability for the annotated feature. Calculated from the configured mappability bedgraph file                                        |             |
+| `tx_rnk`               | Rank in the transcript                                                                                                                      | FX+SJ only  |
+| `num_exons`            | Number of exons in tx; 1,2,3,4,5,>5                                                                                                          |             |
+| `tx_mappability`       | Transcript mappability, factor with levels: low, medium, high                                                                                |  FX+SJ only |
+| `len`                  | Length of annotated feature                                                                                                                  |             |
+| `mappability`          | Annotation mappability, factor with levels: low, medium, high                                                                                |             |
+| `GC`                   | Fraction of G/C for annotated feature                                                                                                        |             |
+| `frac_convertible`     | Fraction of convertible bases for annotation                                                                                                |  SJ only    |
+| `convertibility`       | Convertibility, factor with levels: low, medium, high                                                                                        |             |
+| `don_ex_A`/`C`/`T`/`G` | Number of A/C/T/G bases in exonic part of donor window <br /> (genomic window centred on splice donor site with size: 2xreadlen+1) |  SJ only    |
+| `don_in_A`/`C`/`T`/`G` | Number of A/C/T/G bases in intronic part of donor window                                                                                    |  SJ only    |
+| `don_win_map`          | Mean mappability of donor window                                                                                                            |  SJ only   |
+| `don_mappability`      | Donor window mappability, factor w levels: low, medium, high                                                                                |  SJ only     |
+| `don_ex_fc`            | Fraction of convertible bases in the exonic part of the donor window                                                                        |  SJ only    |
+| `don_in_fc`            | Fraction of convertible bases in the intronic part of the donor window                                                                      |  SJ only    |
+| `ac_*`                 | Analogous to the splice donor columns above, but for splice acceptor site                                                                    |  SJ only    |
+

@@ -108,9 +108,9 @@ Here's an example config :
 ### Output Structure
 ---
 
-#### Metadata tables
+#### Mapper count tables
 
-These tables contain various metadata for the genomic intervals under investigation stratified at transcript level (`tx`), exon / intron feature level (`fx`) or splice-junction level (`sj`) in the `meta/*.metadata.tsv.gz` files.
+These tables contain the performance metrics for a given mapper in the `count/*.counts.tsv.gz` files.
 
 | Column            | Description                                                                                                                                               | Notes    |
 |-------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------|------------|

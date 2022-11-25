@@ -186,6 +186,19 @@ optional arguments:
                         output dir
 ```
 
+#### Processing results into R objects (RDS)
+----
+
+We provide a Rscript that takes all `splice_sim` evaluation outputs and processes them into readily usable RDS objects to be imported in R. The script is located in `splice_sim/src/main/R/splice_sim/preprocess_results.R` and all dependencies are again wrapped into our `splice_sim` [R Docker container](https://hub.docker.com/repository/docker/tobneu/splice_sim_r) `tobneu/splice_sim_r:latest`.
+
+```bash
+Rscript --vanilla splice_sim/src/main/R/splice_sim/preprocess_results.R
+
+Error: usage: preprocess_results.R <splice_sim_config> [<outdir>]
+Execution halted
+
+```
+
 #### Nextflow workflow
 ----
 

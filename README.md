@@ -56,6 +56,29 @@ To run our full blown all-on-one Nextflow based workflow, you simply need to ins
 #### `splice_sim` engine
 ----
 
+##### build_model
+
+The `build_model` command takes the reference and configuration provided by the user and creates the transcript model and sequence files needed that contains the composition of the transcriptome and serves and input to the read simulation step of `splice_sim`.
+
+```shell
+ python splice_sim/main.py build_model --help
+usage: main.py [-h] -c config_file [-o outdir]
+
+  Copyright (C) 2021 XXX.  All rights reserved.
+
+  Distributed on an "AS IS" basis without warranties
+  or conditions of any kind, either express or implied.
+
+USAGE
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -c config_file, --config config_file
+                        JSON config file
+  -o outdir, --outdir outdir
+                        output directory (default is current dir)
+```
+
 #### Nextflow workflow
 ----
 

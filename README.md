@@ -78,6 +78,32 @@ optional arguments:
   -o outdir, --outdir outdir
                         output directory (default is current dir)
 ```
+##### create_genome_bam
+
+The `create_genome_bam` command takes the simulated read set with your short-read simulator of choice (we use [ART](https://www.niehs.nih.gov/research/resources/software/biostatistics/art/index.cfm)) and calculates the truth alignments that serve as the reference benchmark in `splice_sim`.
+
+```shell
+python splice_sim/main.py create_genome_bam --help
+usage: main.py [-h] -m model_file -a config_file [-t threads] [-o outdir]
+
+  Copyright (C) 2021 XXX.  All rights reserved.
+
+  Distributed on an "AS IS" basis without warranties
+  or conditions of any kind, either express or implied.
+
+USAGE
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -m model_file, --model model_file
+                        model file
+  -a config_file, --art_sam config_file
+                        ART sam file
+  -t threads, --threads threads
+                        threads
+  -o outdir, --outdir outdir
+                        output directory (default is current dir)
+```
 
 #### Nextflow workflow
 ----

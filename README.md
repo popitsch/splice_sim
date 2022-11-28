@@ -11,7 +11,8 @@ Contents
  * [Configuration](#configuration)
  * [Output Structure](#output-structure)
 
-### Features
+Features
+========
 
 + Realistic Illumina short-read simulation using [ART](https://doi.org/10.1093/bioinformatics/btr708)
 + Simulation of customizable nucleotide-conversions at configurable rates
@@ -19,8 +20,8 @@ Contents
 + Mapping accuracies and performance metrics at different scopes of genomic annotation
 + Elaborate output tracks for visual inspection stratified by performance metric
 
-### Installation
----
+Installation
+============
 
 `splice_sim` itself is a python package with several dependencies that are best simply installed in a [conda environment](https://conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html):
 
@@ -48,15 +49,14 @@ python main.py
 
 To run our full blown all-on-one Nextflow based workflow, you simply need to install [Nextflow](https://www.nextflow.io/) and [Docker](https://docs.docker.com/get-docker/) to have all depenencies available and be ready to go. To run `splice_sim` on HPC environments, most administrators prefer [Singularity](https://docs.sylabs.io/guides/3.5/user-guide/introduction.html) containers which can be seamlessly created from our [Docker container](https://hub.docker.com/repository/docker/tobneu/splice_sim).
 
-### Usage
----
+Usage
+=====
 
 `splice_sim` itself is the Python package and includes the simulation engine to both simulate and evaluate datasets. `splice_sim` provides dedicate commands for the individual logical steps starting from creating transcript models, simulating reads from those transcripts and finally evaluating the performance of a given mapper via the produced bam file. The relevant steps for such a process are described [below](#splice_sim-engine). We have also wrapped a ready-to-use out of the box workflow that executes all step from start to end into our Nextflow workflow with a description provided in the [adjacent section](#nextflow-workflow).
 
-#### `splice_sim` engine
-----
+## `splice_sim` engine
 
-##### build_model
+### build_model
 
 The `build_model` command takes the reference and configuration provided by the user and creates the transcript model and sequence files needed that contains the composition of the transcriptome and serves and input to the read simulation step of `splice_sim`.
 
@@ -78,7 +78,7 @@ optional arguments:
   -o outdir, --outdir outdir
                         output directory (default is current dir)
 ```
-##### create_genome_bam
+### create_genome_bam
 
 The `create_genome_bam` command takes the simulated read set with your short-read simulator of choice (we use [ART](https://www.niehs.nih.gov/research/resources/software/biostatistics/art/index.cfm)) and calculates the truth alignments that serve as the reference benchmark in `splice_sim`.
 
@@ -105,7 +105,7 @@ optional arguments:
                         output directory (default is current dir)
 ```
 
-##### postfilter_bam
+### postfilter_bam
 
 The `postfilter_bam` command filters secondary and supplementary reads and highlights isoforms.
 
@@ -130,7 +130,7 @@ optional arguments:
                         output dir
 ```
 
-##### evaluate
+### evaluate
 
 The `evaluate` command runs the `splice_sim` evaluation routine on a given mapper bam file produced for a condition of the `splice_sim` simulation run.
 
@@ -161,7 +161,7 @@ optional arguments:
                         output dir
 ```
 
-##### extract_feature_metadata
+### extract_feature_metadata
 
 The `extract_feature_metadata` extracts comprehensive metadata that lists various characteristics of the genomic features under evaluation.
 
@@ -186,8 +186,7 @@ optional arguments:
                         output dir
 ```
 
-#### Processing results into R objects (RDS)
-----
+# Processing results into R objects (RDS)
 
 We provide a Rscript that takes all `splice_sim` evaluation outputs and processes them into readily usable RDS objects to be imported in R. The script is located in `splice_sim/src/main/R/splice_sim/preprocess_results.R` and all dependencies are again wrapped into our `splice_sim` [R Docker container](https://hub.docker.com/repository/docker/tobneu/splice_sim_r) `tobneu/splice_sim_r:latest`.
 
@@ -199,11 +198,11 @@ Execution halted
 
 ```
 
-#### Nextflow workflow
-----
+# Nextflow workflow
 
-### Configuration
----
+Configuration
+=============
+
 Here's an example config :
 
 ```json
@@ -256,10 +255,10 @@ Here's an example config :
 }
 ```
 
-### Output Structure
----
+Output Structure
+===============
 
-#### Mapper count tables
+## Mapper count tables
 
 These tables contain the performance metrics for a given mapper in the `count/*.counts.tsv.gz` files.
 
@@ -278,7 +277,7 @@ These tables contain the performance metrics for a given mapper in the `count/*.
 | `class_type`      | read type: acc: acceptor spanning, don: donor spanning, spl: spliced read                                                                                 |  SJ only |
 
 
-#### Metadata tables
+## Metadata tables
 
 These tables contain various metadata for the genomic intervals under investigation stratified at transcript level (`tx`), exon / intron feature level (`fx`) or splice-junction level (`sj`) in the `meta/*.metadata.tsv.gz` files.
 

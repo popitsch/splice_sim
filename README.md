@@ -54,7 +54,7 @@ To run our full blown all-on-one Nextflow based workflow, you simply need to ins
 Usage
 =====
 
-`splice_sim` itself is the Python package and includes the simulation engine to both simulate and evaluate datasets. `splice_sim` provides dedicate commands for the individual logical steps starting from creating transcript models, simulating reads from those transcripts and finally evaluating the performance of a given mapper via the produced bam file. The relevant steps for such a process are described [below](#splice_sim-engine). We have also wrapped a ready-to-use out of the box workflow that executes all step from start to end into our Nextflow workflow with a description provided in the [adjacent section](#nextflow-workflow).
+`splice_sim` itself is the Python package and includes the simulation engine to both simulate and evaluate datasets. `splice_sim` provides dedicate commands for the individual logical steps starting from creating transcript models, simulating reads from those transcripts and finally evaluating the performance of a given mapper via the produced bam file. The relevant steps for such a process are described [below](#splice_sim-engine). We have also wrapped a ready-to-use out of the box workflow that executes all step from start to end into our Nextflow workflow with a description provided in the [adjacent section](#nextflow-workflow). To avoid supplying an extensive set of parameters to theindividual steps via the command line, we designed `splice_sim` to be driven by a **[configuration file](#configuration)** in [json format](https://www.json.org/json-en.html) that contains all necessary inputs and parameters needed for any of `splice_sim` steps.
 
 ## `splice_sim` engine
 

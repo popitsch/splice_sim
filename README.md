@@ -58,6 +58,9 @@ Usage
 
 ## `splice_sim` engine
 
+The core `splice_sim` python engine covers separate steps of the simulation process as indicated below. The most important commands along the way a documented in this section. <br/> <br/>
+<img src="img/splice_sim-block_diagram.png" width="80%" class="center">
+
 ### build_model
 
 The `build_model` command takes the reference and configuration provided by the user and creates the transcript model and sequence files needed that contains the composition of the transcriptome and serves and input to the read simulation step of `splice_sim`.

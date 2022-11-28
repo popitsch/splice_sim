@@ -14,6 +14,8 @@ Contents
 Features
 ========
 
+<img src="img/splice_sim-graphical_abstract.png" width="60%" class="center">
+
 + Realistic Illumina short-read simulation using [ART](https://doi.org/10.1093/bioinformatics/btr708)
 + Simulation of customizable nucleotide-conversions at configurable rates
 + Simulation of isoforms at configurable splicing states per transcript

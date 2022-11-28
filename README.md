@@ -60,9 +60,25 @@ Usage
 
 ## Nextflow workflow
 
+All you need to get started with our workflows is [Nextflow](https://www.nextflow.io/) and [Docker](https://docs.docker.com/get-docker/). Typically one would also need to tweak the resource requirements for each of the processes that are executed. We did that already for you for the small (typically expressed genes size) and large (full transcriptome) datasets simulated in our study in the provided `nextflow.config.example` ready to use. Both workflows need as only input the [configuration file](#configuration) file provided by the user.
+
 ### Simulation workflow `splice_sim.nf`
 
+This workflow executes the following steps to obtain the simulated truth alignments and mapped read alignments of the mappers under investigation in BAM format as final output:
+
+* Build a transcript model with `splice_sim build_model`
+* Simulate reads with [ART](https://doi.org/10.1093/bioinformatics/btr708) for all conditions
+* Calculate and encode truth alignments for all conditions
+* Map simulated reads with mappers under investigation for all conditions
+* Postprocess BAM files with `splice_sim postfilter_bam`
+
 ### Evaluation workflow `splice_sim_eva.nf`
+
+This workflow executes the following steps to obtain the evaluation metrics and output files from the simulated truth alignments and mapped read alignments of the mappers under investigation as final output:
+
+* Evaluate a given read alignment of a mapper with `splice_sim evaluate`
+* Extract associated metadata of the annotated features under investigation with `splice_sim extract_feature_metadata`
+* Bundle, package and compress the produced output tables into RDS files to futher process in R with [`preprocess_results.R`](#processing-results-into-r-objects-rds)
 
 ## `splice_sim` engine
 

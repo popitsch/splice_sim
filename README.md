@@ -54,12 +54,19 @@ To run our full blown all-on-one Nextflow based workflow, you simply need to ins
 Usage
 =====
 
-`splice_sim` itself is the Python package and includes the simulation engine to both simulate and evaluate datasets. `splice_sim` provides dedicate commands for the individual logical steps starting from creating transcript models, simulating reads from those transcripts and finally evaluating the performance of a given mapper via the produced bam file. The relevant steps for such a process are described [below](#splice_sim-engine). We have also wrapped a ready-to-use out of the box workflow that executes all step from start to end into our Nextflow workflow with a description provided in the [adjacent section](#nextflow-workflow). To avoid supplying an extensive set of parameters to theindividual steps via the command line, we designed `splice_sim` to be driven by a **[configuration file](#configuration)** in [json format](https://www.json.org/json-en.html) that contains all necessary inputs and parameters needed for any of `splice_sim` steps.
+`splice_sim` itself is the Python package and includes the simulation engine to both simulate and evaluate datasets. `splice_sim` provides dedicate commands for the individual logical steps outlined below, starting from creating transcript models, simulating reads from those transcripts and finally evaluating the performance of a given mapper via the produced bam file. The parameters for the highlighted relevant steps for such a process are described [in the `splice_sim` engine](#splice_sim-engine).  <br /><br /> We have also wrapped a ready-to-use out of the box workflow that executes all step from start to end into our Nextflow workflow with a description provided in the [adjacent section](#nextflow-workflow). We provide two separate workflows: **(i)** `splice_sim.nf` that handles the entire logic contained in the **Simulation Pipeline** block and **(ii)** `splice_sim_eva.nf` that handles everything related to the **Evaluation Pipeline** block in the diagram below. To avoid supplying an extensive set of parameters to theindividual steps via the command line, we designed `splice_sim` to be driven by a **[configuration file](#configuration)** in [json format](https://www.json.org/json-en.html) that contains all necessary inputs and parameters needed for any of `splice_sim` steps. <br /><br />
+
+<img src="img/splice_sim-block_diagram.png" width="80%" class="center">
+
+## Nextflow workflow
+
+### Simulation workflow `splice_sim.nf`
+
+### Evaluation workflow `splice_sim_eva.nf`
 
 ## `splice_sim` engine
 
-The core `splice_sim` python engine covers separate steps of the simulation process as indicated below. The most important commands along the way a documented in this section. <br/> <br/>
-<img src="img/splice_sim-block_diagram.png" width="80%" class="center">
+The core `splice_sim` python engine covers isolated steps of the simulation and evaluation process process as highlighted in the previous block diagram. The most important commands along the way a documented in this section.
 
 ### build_model
 
@@ -202,8 +209,6 @@ Error: usage: preprocess_results.R <splice_sim_config> [<outdir>]
 Execution halted
 
 ```
-
-# Nextflow workflow
 
 Configuration
 =============

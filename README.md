@@ -208,7 +208,32 @@ Execution halted
 Configuration
 =============
 
-Here's an example config :
+We made the deliberate decision to have a central configuration file in [json format](https://www.json.org/json-en.html) that encapsulate and document all input files and parameters that are driving all `splice_sim` related processes. Here we document all required and optional parameters:
+
+| Parameter            | Description    | Required  |
+|----------------------|----------------|:---------:|
+| `dataset_name`       | Name of the simulation run        | &#9989;   |
+| `splice_sim_cmd`       | Path to `main.py` in the clone splice_sim repository        | &#9989;  |
+| `splice_eva_preprocess_cmd` | Path to `main.py` in the cloned `splice_sim` repository        | &#10060;  |
+| `gene_gff` | Path to the transcriptome annotation in [gff3-format](https://www.ensembl.org/info/website/upload/gff3.html) (obtained e.g. from [Gencode](https://www.gencodegenes.org/)        | &#10060;  |
+| `intron_gff` |Annotated introns from the transcriptome annotation in [gff3-format](https://www.ensembl.org/info/website/upload/gff3.html)        | &#10060;  |
+| `genome_fa` | Reference genome sequence in fasta format        | &#10060;  |
+| `genome_chromosome_sizes` | Chromosome lengths file with chromosome name and chromosome lengths separated by a tab as produced by `samtools faidx`      | &#10060;  |
+| `genome_conservation` | Genome conservation score in [bigwig format](https://genome.ucsc.edu/goldenPath/help/bigWig.html) (obtained e.g. from [UCSC](https://hgdownload.cse.ucsc.edu/goldenpath/hg38/))     | &#10060;  |
+| `genome_mappability` | Genome mappability score in [bigwig format](https://genome.ucsc.edu/goldenPath/help/bigWig.html) (obtained e.g. from the [Hoffman lab]([https://hgdownload.cse.ucsc.edu/goldenpath/hg38/](https://bismap.hoffmanlab.org/)))     | &#10060;  |
+| `transcript_data` | Transcript state configuration file      | &#10060;  |
+| `transcript_ids` | Subset of transcript IDs from the reference annotation used in this simulation      | &#10060;  |
+| `isoform_mode` | Fraction of unspliced to mature spliced transcripts      | &#10060;  |
+| `frac_old_mature` | Fraction of pre-existing fully-spliced transcripts before labelling onset      | &#10060;  |
+| `condition`       | Dictionary of the conditions in this simulation defining the base conversion type (`ref` and `alt` base), `conversion_rates` (list of doubles between 0 and 1) and the `base_coverage` (integer)  | &#10060;  |
+| `mappers`       | Dictionary of dictionary of the mappers employed and evaluated in this simulation defining the name of the mapper, the command how to call it, the mapping index and known splice sites file  | &#10060;  |
+| `create_tdf`       | Boolean whether [TDF files](https://github.com/igvteam/igv/wiki/TDF-Format) for track visualization in [IGV](https://software.broadinstitute.org/software/igv/) should be produced | &#10060;  |
+| `splice_eva_preprocess_cmd` | Path to `preprocess_results.R` in the cloned `splice_sim` repository        | &#10060;  |
+| `condition`       | Dictionary of the conditions in this simulation defining the base conversion type (`ref` and `alt` base), `conversion_rates` (list of doubles between 0 and 1) and the `base_coverage` (integer)  | &#10060;  |
+| `condition`       | Dictionary of the conditions in this simulation defining the base conversion type (`ref` and `alt` base), `conversion_rates` (list of doubles between 0 and 1) and the `base_coverage` (integer)  | &#10060;  |
+
+
+Find below an example config json:
 
 ```json
 {

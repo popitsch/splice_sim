@@ -124,9 +124,9 @@ hist = hist %>% left_join(sample_sheet, by='bam') %>%
 p1 = hist %>% ggplot(aes(xc, yc)) +
   geom_abline(intercept = 0, slope = 1, col='red', linetype='dotted') +
   geom_tile(aes(fill = count)) +
-  facet_grid(mapper~cr, scales = 'free_y') + 
-  scale_fill_gradient( trans = 'log' ) +
-  xlab("Simultated T/C conversions") +
+  facet_grid(mapper~cr) + 
+  scale_fill_gradient2( trans = 'log' ) +
+  xlab("Simulated T/C conversions") +
   ylab("Observed T/C conversions") +
   ggtitle("Simulated vs observed T/C conversions for FP reads") +
   guides(fill=guide_legend(title="Counts"))

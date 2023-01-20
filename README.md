@@ -49,7 +49,7 @@ cd splice_sim
 python main.py
 ```
 
-To run our full blown all-on-one Nextflow based workflow, you simply need to install [Nextflow](https://www.nextflow.io/) and [Docker](https://docs.docker.com/get-docker/) to have all depenencies available and be ready to go. To run `splice_sim` on HPC environments, most administrators prefer [Singularity](https://docs.sylabs.io/guides/3.5/user-guide/introduction.html) containers which can be seamlessly created from our [Docker container](https://hub.docker.com/repository/docker/tobneu/splice_sim).
+To run our full blown all-on-one Nextflow based workflow, you simply need to install [Nextflow](https://www.nextflow.io/) and [Docker](https://docs.docker.com/get-docker/) to have all dependencies available and be ready to go. To run `splice_sim` on HPC environments, most administrators prefer [Singularity](https://docs.sylabs.io/guides/3.5/user-guide/introduction.html) containers which can be seamlessly created from our [Docker container](https://hub.docker.com/repository/docker/tobneu/splice_sim).
 
 Usage
 =====
@@ -253,9 +253,11 @@ We made the deliberate decision to have a central configuration file in [json fo
 | `min_abundance`       | Integer defining the minimum abundance value fo a transcript to be considered | &#9989;  |
 | `random_seed`       | Integer seed to keep simulation deterministic | &#9989;  |
 | `readlen`       | Integer defining the short read length | &#9989;  |
-| `write_reads`       | Boolean value defining whether reads should be output to disk or not | &#9989; |
-| `write_intron_bam`       | Boolean value defining whether intronic reads should be written to BAM file not | &#9989;  |
-| `pre_exist`       | Directory of pre-existing runs to restart the simulation in case a run crashes | &#9989;  |
+| `write_reads`       | Boolean value defining whether reads should be output to disk or not |  &#10060; |
+| `write_intron_bam`       | Boolean value defining whether intronic reads should be written to BAM file not | &#10060;  |
+| `pre_exist`       | Directory of pre-existing runs to restart the simulation in case a run crashes |  &#10060; |
+| `snp_file`       | Optional VCF file containing SNVs to be injected into the simulated data. The VCF file may contain the following (optional) properties in the INFO section: **prob**: conversion probability [0; 1] (optional, default:1), **strand**: strand specificity [NA, +, -] (optional, default:NA), **enable_nc**: [yes, no] (optional, default: yes) if yes, configured NC are possible at the same position if no SNV was injected |  &#10060; |
+
 
 Find below an example config json:
 
@@ -304,8 +306,7 @@ Find below an example config json:
     "random_seed": 1234,
     "readlen": 100,
     "write_reads": false,
-    "write_intron_bam": false,
-    "#pre_exist
+    "write_intron_bam": false
 }
 ```
 

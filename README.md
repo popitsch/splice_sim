@@ -214,6 +214,16 @@ optional arguments:
                         output dir
 ```
 
+## Running `splice_sim` with Docker
+
+All the above commands of the `splice_sim` engine can be run without installing any dependencies out of the box of our Docker container. Simply precede the individual `splice_sim` calls like illustrated below:
+
+```bash
+
+docker run --cpus <number of CPUS> -m <GB memory>g -v $(pwd):$(pwd) -w $(pwd) tobneu/splice_sim:release python <path to splice_sim repository>/main.py
+
+```
+
 # Processing results into R objects (RDS)
 
 We provide a Rscript that takes all `splice_sim` evaluation outputs and processes them into readily usable RDS objects to be imported in R. The script is located in `splice_sim/src/main/R/splice_sim/preprocess_results.R` and all dependencies are again wrapped into our `splice_sim` [R Docker container](https://hub.docker.com/repository/docker/tobneu/splice_sim_r) `tobneu/splice_sim_r:latest`.

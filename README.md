@@ -373,3 +373,20 @@ These tables contain various metadata for the genomic intervals under investigat
 | `don_in_fc`            | Fraction of convertible bases in the intronic part of the donor window                                                                      |  SJ only    |
 | `ac_*`                 | Analogous to the splice donor columns above, but for splice acceptor site                                                                    |  SJ only    |
 
+
+
+# Customization
+
+## NC simulation
+
+`Splice_sim` simulates nucleotide conversions in reads based on Bernoulli processes with given (configured) conversion probabilities.
+While we believe this to be appropriate for simulating BS-seq or SLAM-seq data (see our paper), it might not be suitable for other use-cases where, e.g.,  conversion prob abilities are affected by local sequence context (e.g., RNA-editing) or the like.
+
+For customization of the NC simulation process, users may alter/extend the `splice_sim.simulator.modify_bases` method that has access to
+- the sequence of the simulated read (w/o NC)
+- genomic coordinates and orientation (strand) of the simulated read
+- configured NC reference and alternate bases
+- the configured conversion_rate
+- a list of convertible positions in the read
+- a list of SNPs that affect this read (if configured)
+

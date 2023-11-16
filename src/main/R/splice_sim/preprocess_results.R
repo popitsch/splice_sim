@@ -66,9 +66,7 @@ summarise_data = function(tab) {
 }
 
 # args
-#args = commandArgs(trailingOnly=TRUE)
-args=c("/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/tests/small_pipeline_test/splice_sim.config.json", 
-            "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/tests/small_pipeline_test/")
+args = commandArgs(trailingOnly=TRUE)
 if (length(args)<1 | length(args)>2) {
   stop("usage: preprocess_results.R <splice_sim_config> [<outdir>]", call.=FALSE)
 } 

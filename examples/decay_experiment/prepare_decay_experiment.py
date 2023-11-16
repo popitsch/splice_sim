@@ -11,7 +11,7 @@ from argparse import ArgumentParser, RawDescriptionHelpFormatter
 
 # idea
 # 0) select 3x100 genes with rnk>1 and high/medium/low mappability
-# 1) create splice_sim config files that set frac_old_mature according to a exponential decay curve: 1 - exp(t * -k)
+# 1) create splice_sim config files that set frac_old_mature according to an exponential decay curve: 1 - exp(t * -k)
 # 2) simulate data with cr = 0.05 and calculate frac_tc for truth and mapper alignments
 # 3) fit half-lives and compare +/- correction
 

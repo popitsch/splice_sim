@@ -1,11 +1,12 @@
-from argparse import ArgumentParser, RawDescriptionHelpFormatter
-import os, sys
-import gzip
-import pandas as pd
+"""
+    @author: niko.popitsch@univie.ac.at
 
-#
-# Extract Ensembl canonical tids.tsv from Gencode gff3
-#
+    Helper: Extract Ensembl canonical tids.tsv from Gencode gff3
+"""
+import gzip
+import sys
+from argparse import ArgumentParser, RawDescriptionHelpFormatter
+
 usage = '''                           
 
   Copyright (C) 2021 XXX.  All rights reserved.

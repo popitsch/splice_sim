@@ -31,17 +31,7 @@ Installation
 conda env create -f environment.yml
 ```
 
-One additional python package called `genomic_iterators` has to be installed manually into the environment:
-
-> **Warning**
-> `genomic_iterators` is not yet public, so you will have to first contact [Niko Popitsch](mailto:niko.popitsch@univie.ac.at) to obtain permissions to the repository!
-
-```bash
-source activate splice_sim
-pip install git+https://github.com/popitsch/genomic_iterators.git
-```
-
-Then clone the `splice_sim` repository and now you are able to call it via the `main.py`:
+Then clone the `splice_sim` repository and call its main method:
 
 ```bash
 git clone https://github.com/popitsch/splice_sim.git
@@ -49,7 +39,7 @@ cd splice_sim
 python main.py
 ```
 
-To run our full blown all-on-one Nextflow based workflow, you simply need to install [Nextflow](https://www.nextflow.io/) and [Docker](https://docs.docker.com/get-docker/) to have all dependencies available and be ready to go. To run `splice_sim` on HPC environments, most administrators prefer [Singularity](https://docs.sylabs.io/guides/3.5/user-guide/introduction.html) containers which can be seamlessly created from our [Docker container](https://hub.docker.com/repository/docker/tobneu/splice_sim).
+To run our full-blown all-on-one Nextflow based workflow, you simply need to install [Nextflow](https://www.nextflow.io/) and [Docker](https://docs.docker.com/get-docker/) to have all dependencies available and be ready to go. To run `splice_sim` on HPC environments, most administrators prefer [Singularity](https://docs.sylabs.io/guides/3.5/user-guide/introduction.html) (apptainer) containers which can be seamlessly created from our [Docker container](https://hub.docker.com/repository/docker/tobneu/splice_sim).
 
 Usage
 =====

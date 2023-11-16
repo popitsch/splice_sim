@@ -1,6 +1,6 @@
 manifest {
     name = "splice_sim"
-    author = "Niko Popitsch"
+    author = "Niko Popitsch, Tobias Neumann"
     version = "0.1"
     description = "splice-aware RNA simulator"
 }
@@ -11,19 +11,20 @@ timeline {
 }
 
 profiles {
-  //LOCAL
+  // Local profile
   standard {
     process.executor = 'local'
     process.memory = '8 GB'
     process.cpus = 1
   }
+  // Local profile with more memory (e.g., for STAR)
   local_big {
     process.executor = 'local'
     process.memory = '62 GB'
     process.cpus = 8
   }
 
-  //SLURM (cbe) - SMALL configuration
+  // Slurm profile for running on the CLIP/CBE cluster - SMALL configuration
   cbe_small {
     process {
       container = 'tobneu/splice_sim:latest'
@@ -122,7 +123,7 @@ profiles {
       cacheDir = '/resources/containers'
     }
   }
-  //SLURM (cbe) - BIG configuration
+  // Slurm profile for running on the CLIP/CBE cluster - BIG configuration
   cbe_big {
     process {
       container = 'tobneu/splice_sim:latest'

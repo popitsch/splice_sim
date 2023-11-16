@@ -252,7 +252,6 @@ for (mq in c('','.mq20')) {
   
   d[['fx']] = all_data %>% 
     filter(class_type=='fx') %>% 
-    select(-class_type) %>%
     left_join(m[['fx']], by='fid')
 
   d[['sj']] = all_data %>% 

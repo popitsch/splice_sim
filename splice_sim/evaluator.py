@@ -166,6 +166,7 @@ def classify_read(found_read, found_overlapping_raw, tid2feat, performance, dict
 
 def classify_region(target_region, config, bam_file, chrom2feat, tid2feat, filter_regions, out_file_prefix):
     """ Classify all reads in the passed target region as TP/FP/FN """
+    print("Classify region", target_region)
     if target_region == 'unmapped':
         filter_tree = None
     else:
@@ -276,12 +277,11 @@ def evaluate(config, m, bam_file, filter_regions_bed, threads, out_dir):
     else:
         target_regions = [Location(dict_chr2idx[c], 1, c_len) for c, c_len in dict_chr2len.items() if
                           c in chromosomes] + ['unmapped']  # unmapped reads
-    print("Target regions: ", target_regions)
+    print("Considered target regions: ", target_regions)
     # run parallel
     performance = Counter()
     dict_samout = None
     wr, fr = 0, 0
-    print("Start")
     with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
         future_param = {executor.submit(classify_region, reg, config, bam_file, chrom2feat, tid2feat, filter_regions,
                                         out_file_prefix): (reg) for reg in target_regions}

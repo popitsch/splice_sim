@@ -66,6 +66,8 @@ class Location():
         return (self.chr_idx == other.chr_idx) and (self.strand == other.strand)
 
     def __eq__(self, other):
+        if type(other) != type(self):
+            return False
         if not self.cs_match(other):
             return False
         return (self.start == other.start) and (self.end == other.end)

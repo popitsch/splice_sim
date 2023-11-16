@@ -66,7 +66,9 @@ summarise_data = function(tab) {
 }
 
 # args
-args = commandArgs(trailingOnly=TRUE)
+#args = commandArgs(trailingOnly=TRUE)
+args=c("/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/tests/small_pipeline_test/splice_sim.config.json", 
+            "/Volumes/groups/ameres/Niko/projects/Ameres/splicing/splice_sim/testruns/tests/small_pipeline_test/")
 if (length(args)<1 | length(args)>2) {
   stop("usage: preprocess_results.R <splice_sim_config> [<outdir>]", call.=FALSE)
 } 
@@ -129,7 +131,8 @@ m[['tx']] = m[['tx']] %>%
     convertibility=case_when(frac_convertible<=!!frac_conv_quant[[1]] ~ 'low',
                              frac_convertible>=!!frac_conv_quant[[2]] ~ 'high',
                              TRUE ~ 'medium')
-  ) %>% mutate(convertibility=factor(convertibility, levels=c('high', 'medium', 'low')))
+  ) %>% mutate(convertibility=factor(convertibility, levels=c('high', 'medium', 'low'))) %>% 
+  ungroup() %>% as_tibble()
 
 
 # ===================================================================
@@ -156,7 +159,7 @@ m[['fx']] = m[['fx']] %>%
     mappability=factor(mappability, levels=c('high', 'medium', 'low')),
     convertibility=factor(convertibility, levels=c('high', 'medium', 'low'))
   ) %>% mutate(across(where(is.numeric), ~ifelse(is.nan(.), NA, .))) %>% 
-  ungroup()
+  ungroup() %>% as_tibble()
 
 # ===================================================================
 # sj metadata
@@ -198,8 +201,7 @@ m[['sj']] = m[['sj']] %>%
     acc_ex_fc=factor(acc_ex_fc, levels=c('high', 'medium', 'low')),
     acc_in_fc=factor(acc_in_fc, levels=c('high', 'medium', 'low'))
   ) %>% mutate(across(where(is.numeric), ~ifelse(is.nan(.), NA, .))) %>%
-  ungroup() %>%
-  as_tibble()
+  ungroup() %>% as_tibble()
 
 # ===================================================================
 # ga metadata, see https://www.gencodegenes.org/pages/data_format.html
@@ -216,8 +218,7 @@ m[['ga']] = m[['ga']] %>%
   mutate(gencode_level=factor(gencode_level),
          gene_type=factor(gene_type)) %>%
   mutate(across(where(is.numeric), ~ifelse(is.nan(.), NA, .))) %>%
-  ungroup() %>%
-  as_tibble()
+  ungroup() %>% as_tibble()
 
 meta_file=paste0(outdir,'/meta.rds')
 saveRDS(m, meta_file, compress = FALSE)
@@ -232,17 +233,17 @@ tic("preprocess count tables")
 for (mq in c('','.mq20')) {
   
   all_data=tibble()
-  for ( m in names(conf$mappers) ) {
+  for ( mapper in names(conf$mappers) ) {
     for (cr in c(0, conf$condition$conversion_rates)) {
       all_data = all_data %>% bind_rows(
-        load_table(paste0(home_dir, 'eva/counts/',conf$dataset_name,'.cr',cr,'.',m,'.counts',mq,'.tsv.gz'))
+        load_table(paste0(home_dir, 'eva/counts/',conf$dataset_name,'.cr',cr,'.',mapper,'.counts',mq,'.tsv.gz'))
       ) %>% as_tibble()
     }
   }
   
   all_data = all_data %>%
     select(-mq_fil) %>%
-    group_by(rep, mapper, conversion_rate, class_type,fid,true_isoform,classification)
+    group_by(mapper, conversion_rate, class_type,fid,true_isoform,classification) %>% 
     summarise_data()
   
   d=list()

@@ -5,6 +5,7 @@
 """
 import concurrent.futures
 import statistics
+from collections import Counter
 
 import pyBigWig
 
@@ -426,12 +427,10 @@ def extract_feature_metadata(config, m, out_dir):
                         ]]), file=out_fx)
                         # SJ
                         # note that win can be shorter than readlen if we run out of sequence!
-                        don_win_genomic = [intron['start'] - readlen, intron['start'] + readlen] if intron[
-                                                                                                        'strand'] == "+" else [
-                            intron['end'] - readlen, intron['end'] + readlen]
-                        acc_win_genomic = [intron['start'] - readlen, intron['start'] + readlen] if intron[
-                                                                                                        'strand'] == "-" else [
-                            intron['end'] - readlen, intron['end'] + readlen]
+                        don_win_genomic = [intron['start'] - readlen, intron['start'] + readlen] \
+                            if intron['strand'] == "+" else [intron['end'] - readlen, intron['end'] + readlen]
+                        acc_win_genomic = [intron['start'] - readlen, intron['start'] + readlen] \
+                            if intron['strand'] == "-" else [intron['end'] - readlen, intron['end'] + readlen]
                         don_win_map = calc_mappability(genomeMappability, t.chromosome, don_win_genomic[0],
                                                        don_win_genomic[1])
                         acc_win_map = calc_mappability(genomeMappability, t.chromosome, acc_win_genomic[0],
@@ -440,34 +439,18 @@ def extract_feature_metadata(config, m, out_dir):
                                                          don_win_genomic[1])
                         acc_win_cons = calc_conservation(genomeConservation, t.chromosome, acc_win_genomic[0],
                                                          acc_win_genomic[1])
-                        don_seq_rna_ex = rna_seq[
-                                         max(0, t.end - intron['end'] - readlen):min(t.end - intron['end'], l)] if \
-                        intron['strand'] == "-" else rna_seq[max(0, intron['start'] - readlen - t.start):min(l, intron[
-                            'start'] - t.start)]
-                        don_seq_rna_in = rna_seq[
-                                         max(0, t.end - intron['end']):min(t.end - intron['end'] + readlen, l)] if \
-                        intron['strand'] == "-" else rna_seq[max(0, intron['start'] - t.start):min(l, intron[
-                            'start'] + readlen - t.start)]
-                        acc_seq_rna_in = rna_seq[
-                                         max(0, t.end - intron['start'] - readlen + 1):min(t.end - intron['start'] + 1,
-                                                                                           l)] if intron[
-                                                                                                      'strand'] == "-" else rna_seq[
-                                                                                                                            max(0,
-                                                                                                                                intron[
-                                                                                                                                    'end'] - readlen - t.start + 1):min(
-                                                                                                                                l,
-                                                                                                                                intron[
-                                                                                                                                    'end'] - t.start + 1)]
-                        acc_seq_rna_ex = rna_seq[
-                                         max(0, t.end - intron['start'] + 1):min(t.end - intron['start'] + readlen + 1,
-                                                                                 l)] if intron[
-                                                                                            'strand'] == "-" else rna_seq[
-                                                                                                                  max(0,
-                                                                                                                      intron[
-                                                                                                                          'end'] - t.start + 1):min(
-                                                                                                                      l,
-                                                                                                                      intron[
-                                                                                                                          'end'] + readlen - t.start + 1)]
+                        don_seq_rna_ex = rna_seq[max(0, t.end - intron['end'] - readlen):min(t.end - intron['end'], l)] \
+                            if intron['strand'] == "-" else \
+                                rna_seq[max(0, intron['start'] - readlen - t.start):min(l, intron['start'] - t.start)]
+                        don_seq_rna_in = rna_seq[max(0, t.end - intron['end']):min(t.end - intron['end'] + readlen, l)] \
+                            if intron['strand'] == "-" else \
+                            rna_seq[max(0, intron['start'] - t.start):min(l, intron['start'] + readlen - t.start)]
+                        acc_seq_rna_in = rna_seq[max(0, t.end - intron['start'] - readlen + 1):min(t.end - intron['start'] + 1,l)] \
+                            if intron['strand'] == "-" else \
+                            rna_seq[max(0,intron['end'] - readlen - t.start + 1):min(l,intron['end'] - t.start + 1)]
+                        acc_seq_rna_ex = rna_seq[max(0, t.end - intron['start'] + 1):min(t.end - intron['start'] + readlen + 1,l)] \
+                            if intron['strand'] == "-" else \
+                            rna_seq[max(0,intron['end'] - t.start + 1):min(l,intron['end'] + readlen - t.start + 1)]
                         print("\t".join([str(x) for x in [
                             tid,
                             fid,

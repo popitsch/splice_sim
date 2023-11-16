@@ -32,3 +32,4 @@ dependencies:
   - genmap
   - vcfpy
   - guppy3
+  - bioconda::segemehl=0.3.4

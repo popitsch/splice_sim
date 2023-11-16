@@ -166,8 +166,10 @@ def classify_read(found_read, found_overlapping_raw, tid2feat, performance, dict
 
 def classify_region(target_region, config, bam_file, chrom2feat, tid2feat, filter_regions, out_file_prefix):
     """ Classify all reads in the passed target region as TP/FP/FN """
-    filter_tree = filter_regions[target_region.chr_idx] if (target_region != 'unmapped') and (
-                filter_regions is not None) and (target_region.chr_idx in filter_regions) else None
+    if target_region == 'unmapped':
+        filter_tree = None
+    else:
+        filter_tree = filter_regions[target_region.chr_idx] if ((filter_regions is not None) and (target_region.chr_idx in filter_regions)) else None
 
     min_mapq = config['min_mapq'] if 'min_mapq' in config else 20
     write_bam = config['write_bam'] if 'write_bam' in config else True

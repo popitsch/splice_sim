@@ -325,6 +325,8 @@ def evaluate(config, m, bam_file, filter_regions_bed, threads, out_dir):
 
 def calc_mappability(genomeMappability, chrom, start, end):
     """ Calculate genomic mappability for given window """
+    if genomeMappability is None:
+        return np.nan
     try:
         map = flatten([[float(x[3])] * (min(end + 1, int(x[2])) - max(start, int(x[1]))) for x in
                        genomeMappability.fetch('chr' + chrom, start, end, parser=pysam.asTuple())])
@@ -338,6 +340,8 @@ def calc_mappability(genomeMappability, chrom, start, end):
 
 def calc_conservation(genomeConservation, chrom, start, end):
     """ Calculate genomic conservation for given window """
+    if genomeConservation is None:
+        return np.nan
     try:
         cons = genomeConservation.stats('chr' + chrom, start, end + 1).pop()
     except RuntimeError as re:
@@ -349,8 +353,8 @@ def calc_conservation(genomeConservation, chrom, start, end):
 # extract_feature_metadata
 def extract_feature_metadata(config, m, out_dir):
     """ extract metadata fox tx/fx/sj """
-    genomeMappability = pysam.TabixFile(config['genome_mappability'], mode="r")
-    genomeConservation = pyBigWig.open(config['genome_conservation'])
+    genomeMappability = pysam.TabixFile(config['genome_mappability'], mode="r") if 'genome_mappability' in config else None
+    genomeConservation = pyBigWig.open(config['genome_conservation']) if 'genome_conservation' in config else None
     readlen = config['readlen']
     # calculate transcript overlap
     tid2info = {}

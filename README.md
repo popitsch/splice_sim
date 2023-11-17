@@ -264,43 +264,42 @@ Find below an example config json:
 ```json
 {
     "dataset_name": "test_simulation",
-    "splice_sim_cmd": "python /software/splice_sim/main.py",
-    "splice_eva_preprocess_cmd": "Rscript --vanilla /software/splice_sim/src/main/R/splice_sim/preprocess_results.R",
-    "gene_gff": "/references/gencode.vM21.gff3.gz",
-    "intron_gff": "/references/gencode.vM21.introns.sorted.gff3.gz",
+    "splice_sim_cmd": "python /software/splice_sim/main.py", # should point to your local splice_sim clone
+    "splice_eva_preprocess_cmd": "Rscript --vanilla /software/splice_sim/src/main/R/splice_sim/preprocess_results.R", # should point to your local splice_sim clone
+    "gene_gff": "/references/gencode.vM21.gff3.gz", # gene annotation GFF3 file
     "genome_fa": "/references/Mus_musculus.GRCm38.dna.primary_assembly.fa",
     "genome_chromosome_sizes": "/references/Mus_musculus.GRCm38.dna.primary_assembly.fa.chrom.sizes",
-    "genome_conservation": "/references/mm10.60way.phastCons60wayEuarchontoGlire.bw",
-    "genome_mappability": "/references/mm10.k24.umap.bedgraph.gz",
-    "transcript_data": "data.config.json",
-    "transcript_ids": "tids.tsv",
-    "isoform_mode": "1:1",
-    "frac_old_mature": 0,
+    "genome_conservation": "/references/mm10.60way.phastCons60wayEuarchontoGlire.bw", # optional
+    "genome_mappability": "/references/mm10.k24.umap.bedgraph.gz", # optional
+    "transcript_data": "data.config.json", # if this file exists, 
+    "transcript_ids": "tids.tsv", # optional (TSV file with one column 'transcript_id' containing all considered transcript ids)
+    "isoform_mode": "1:1", # mode for creating isoform data; '1:1': mat and pre form as in paper (default), 'from_file': data will be loaded from 'transcript_id','abundance','frac_mature','frac_old_mature' columns in the configured transcript_ids file
+    "frac_old_mature": 0, # fraction of OLD RNA that was not exposed to a nucleotide analog 
     "condition": {
-        "ref": "T",
-        "alt": "C",
-        "conversion_rates": [ 0.02, 0.04 ],
-        "base_coverage": 10
+        "ref": "T", # reference base
+        "alt": "C", # alternat base
+        "conversion_rates": [ 0.02, 0.04 ], # list of conversion rates
+        "base_coverage": 10 # used to calculate simulated coverage per tx; 
     },
     "mappers": {
         "STAR": {
             "star_cmd": "STAR-2.7.1a",
             "star_genome_idx": "star_2.7.1",
-            "star_splice_gtf": "/indices/gencode.vM21.gtf"
+            "star_splice_gtf": "/indices/gencode.vM21.gtf" # GTF file with known splice sites
             },
         "HISAT3N": {
             "hisat3n_cmd": "hisat-3n",
             "hisat3n_idx": "/indices/Mus_musculus.GRCm38.dna.primary_assembly",
-            "hisat3n_kss": "/indices/gencode.vM21.gtf.hisat2_splice_sites.txt"
+            "hisat3n_kss": "/indices/gencode.vM21.gtf.hisat2_splice_sites.txt" # TXT file with known splice sites
             },
         "MERANGS": {
             "merangs_cmd": "meRanGs",
             "star_cmd": "STAR",
             "merangs_genome_idx": "/indices/meRanTK-1.2.1b/BSgenomeIDX",
-            "merangs_splice_gtf": "/indices/gencode.vM21.gtf"
+            "merangs_splice_gtf": "/indices/gencode.vM21.gtf" # GTF file with known splice sites
             }
         },
-    "create_tdf": true,
+    "create_tdf": true, 
     "max_ilen": 100000,
     "min_abundance": 1,
     "random_seed": 1234,

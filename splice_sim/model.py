@@ -33,7 +33,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def calculate_transcript_data(config, tid_meta, tid_file):
     """ Calculate a data config file """
-    mode = config['isoform_mode']
+    mode = config['isoform_mode'] if 'isoform_mode' in config else '1:1'
     logging.info("Calculating transcript configuration with mode %s" % mode)
     tdata = OrderedDict()
     # ------------------------------------------------------------------------------------

@@ -1,0 +1,339 @@
+---
+title: "splice_sim_use_cases"
+author: "niko.popitsch@univie.ac.at"
+documentclass: article
+fontsize: 10pt
+output:
+  html_document:
+    df_print: paged
+  pdf_document:
+    fig_caption: yes
+    fig_height: 10
+    fig_width: 10
+geometry: margin=1in
+classoption: a4paper
+
+---
+<style type="text/css">
+body, td {
+   font-size: 10px;
+}
+code.r{
+  font-size: 10px;
+}
+pre {
+  font-size: 10px
+}
+</style>
+
+# Introduction
+
+This Rmd script demonstrates some use-cases and how to analyse splice_sim evaluation data.
+
+
+```{r setup, include=FALSE}
+require(data.table)
+require(tidyr)
+require(readr)
+require(dtplyr)
+require(tibble)
+require(dplyr)
+require(ggplot2)
+require(minpack.lm)
+require(RColorBrewer)
+require(glue)
+require(cowplot)
+require(scales)
+
+# load data from TSV
+load_table = function(dataF, append="", header=T, nrows=Inf) {
+  dataF = as.character(paste0(dataF, append))
+  print(paste("Loading", dataF))
+  if ( endsWith(dataF, ".gz") ) {
+    return(fread(cmd=paste('gunzip -c', dataF), header=header, sep="\t", na.strings=c("na","NA",".", "None"), nrows=nrows))
+  } else {
+    return(fread(dataF, header=header, sep="\t", na.strings=c("na","NA",".", "None"), nrows=nrows))
+  }
+}
+
+# write a tibble to a BED file
+write_bed = function(dat, bed_file, title, header=F) {
+  sink(bed_file)
+  cat(paste0("track name=",title," description=\"",title,"\" useScore=1 itemRgb=\"On\"\n"))
+  sink()
+  dat %>% write_tsv( bed_file, col_names = F, append = T ) 
+}
+
+# global theme
+ggplot2::theme_set(theme_light())
+
+# resources/functions
+# usage p + my_scales()
+# all_factors=c("None", "Both", "STAR","HISAT3N","simulated","truth","fast","moderate","slow" )
+# pal=brewer.pal(name="Dark2",n=8)
+# my_colors=setNames(colorRampPalette(pal)(length(all_factors)), all_factors)
+my_colors=c(
+  "None"="grey21",
+  "Both"="goldenrod4",
+  "STAR"="green4",
+  "HISAT3N"="darkorange2",
+  "simulated"="#551A8B",
+  "truth"="black",
+  "fast"="#551A8B",
+  "moderate"="sienna4",
+  "slow"="violetred4",
+  "high"="red",
+  "medium"="blue4",
+  "low"="darkolivegreen",
+  "outlier"="red",
+  "No Outlier"="grey21",
+  "Outlier in both"="goldenrod4",
+  "Outlier in STAR"="darkolivegreen",
+  "Outlier in HISAT3N"="darkorange4",
+  "MERANGS"="violetred4",
+  "SEGEMEHL"="blue3",
+  "MOSAIC"="blue4",
+  "TP" = '#00BA38',
+  "FP" = 'violetred4',
+  "FN" = '#F8766D',
+  "NA" = 'grey'
+)
+# show_col(my_colors)
+my_scales=function() {
+  return(list(
+    scale_color_manual(values = my_colors, limits = force),
+    scale_fill_manual(values = my_colors, limits = force)
+  )
+  )
+}
+
+# calculate interquartile range (iqr), a measure of dispersion
+# call with mtcars %>% calc_iqr(mpg) or mtcars %>% group_by(cyl) %>% calc_iqr(mpg)
+# plot with  ... %>% ggplot(aes(x=cyl, y=col.median)) + geom_line() + geom_ribbon(aes(ymin=col.lower, ymax=col.upper), alpha=0.1 ...)
+calc_iqr = function(d, col, min_lower_ci=NA, max_upper_ci=NA) {
+  d %>% summarise(
+    col.median = median({{col}}, na.rm = TRUE),
+    #col.mean = mean({{col}}, na.rm = TRUE),
+    col.upper = quantile({{col}}, .75, na.rm = TRUE),
+    col.lower = quantile({{col}}, .25, na.rm = TRUE),
+    col.n = n(),
+    .groups = 'drop') %>%
+    mutate(col.lower = pmax(min_lower_ci, col.lower, na.rm=T),
+           col.upper = pmin(max_upper_ci, col.upper, na.rm=T))
+}
+
+```
+
+
+use cases
+- impact of nucleotide conversion rates and read lengths on NC read accuracies
+- selection of the best read mapper (configuration) 
+- selection of best sequencing strategy (whole transcriptome vs 3'end sequencing)
+- data cleaning: removal of data stemming from transcripts/exons/introns with low (spliced) mapping accuracies
+- moasic approach: choosing data derived from different read mapper configuration based on best (simulated) mapping accuracy
+- generation of NC test data sets for method development
+
+
+# Basic access / QC
+
+To make this work, please point 'input_path' to a splice_sim directory
+```{r}
+input_path='<your_splice_sim_dir>/'
+m=readRDS(paste0(input_path, 'eva/results/meta.rds')) # metadata
+d=readRDS(paste0(input_path, 'eva/results/data.rds')) # evaluation results
+
+glue::glue("Number of input transcripts: {length(m$all_tids)}")
+
+# combine tx and exon/intron data 
+# plot overall mapping accuracy vs mean mappability and stratify by feature type (tx, exon, intron) and conversion_rate
+bind_rows(
+  d$tx %>% select(mapper, conversion_rate, ftype, fid, all_F1, mean_map),
+  d$fx %>% select(mapper, conversion_rate, ftype, fid, all_F1, mean_map)
+) %>% ggplot(aes(all_F1, mean_map, fill=ftype)) + 
+  geom_hex() +
+  facet_grid(conversion_rate~ftype) 
+```
+
+
+
+# Select tx with low mapping accuracies
+
+Here we select transcripts with low maximum mapping accuracy from our simulation experiments 
+and plot their mappabilty categories.
+
+
+```{r}
+d$tx %>% 
+  filter(conversion_rate==0) %>% 
+  select(fid,mapper, mappability, all_F1, conversion_rate,true_isoform) %>%
+  group_by(fid,mapper, mappability, conversion_rate,true_isoform) %>% 
+  pivot_wider(names_from = mapper,values_from = all_F1) %>% 
+  mutate(max_score=pmax(STAR,HISAT3N)) %>%
+  filter(max_score<0.8) %>% 
+  count(mappability) %>% 
+  ggplot(aes(mappability, n)) + geom_col() + ggtitle("Mappability categories of tx with low mapping accuracy (F1<0.8)")
+```
+
+# Create BED file highlighting the best mappers for transcripts with NC 
+
+Here we create a BED file containing GRCm38/gencode.vM21 transcript intervals that are coloured and named by the mapper with the highest F1 score for simulated NC reads.
+If both considered mappers (STAR and HISAT-3N) resulted in values close (<0.05) to the simulated data, both mappers were considered.
+The BED score is calculated from the maximum F1 score, i.e., transcripts with low mapping accuracy have lighter colours.
+
+To make this work, please point 'input_path' to a valid output directory
+
+```{r}
+out_dir='<your_output_dir>' # your output path
+
+d$tx %>% 
+  filter(conversion_rate==0) %>% 
+  select(fid,chromosome,start,end,strand,mapper, mappability, all_F1, conversion_rate,true_isoform) %>%
+  pivot_wider(names_from = mapper,values_from = all_F1) %>% 
+  mutate(start1=start, end1=end) %>% # add copies fo  start/end coordinates fro BED file creation
+  mutate(max_score=pmax(STAR, HISAT3N, na.rm = T)) %>% #select max F1
+  mutate(best_mapper=case_when( # select best mapper 
+           max_score<0.1 ~ 'None',
+           abs(HISAT3N-STAR)<0.05 ~ 'Both', # similar score, choose both
+           HISAT3N>STAR ~ 'HISAT3N',
+           STAR>HISAT3N ~ 'STAR',
+           TRUE ~ 'NA')
+         ) %>% 
+  mutate(score_conv=round(max_score*1000)) %>%  # calculate maximum score and scale to BED score range
+  select(chromosome,start,end,best_mapper,score_conv,strand,start1,end1) %>% # select in BED field order
+  mutate(rgb=ifelse(best_mapper=='HISAT3N','238,118,0',ifelse(best_mapper=='STAR','0,139,0', '139,105,20'))) %>% # create RGB color per mapper
+  filter(best_mapper != 'Both') %>% # 
+  arrange(chromosome, start, end) %>% # sort by genomic coordinates
+  write_bed(paste0(out_dir,'/best_mapper_map.include_converted.bed'),
+                paste0("best_mapper_map.include_converted"))
+
+```
+# Show details for a selected gene
+Here look at the gene Dnajc19 in more detail to better understand why STAR is the better mapper in this case
+
+```{r}
+d$tx %>% 
+  left_join(m$ga %>% select(fid=tid, gene_name), by='fid') %>% 
+  filter(gene_name=='Dnajc19', conversion_rate==0, true_isoform=='mat') %>% 
+  select(mapper, all_FN, all_FP, all_TP) %>% 
+  pivot_longer(-c(mapper)) %>% 
+  ggplot(aes(name, value, fill=mapper))  + geom_col(position = 'dodge') + my_scales() +
+  ggtitle("Number of TP, FP, FN for Dnajc19") + xlab("") + ylab("n")
+  
+```
+
+# MOSAIC approach
+
+- Here we create a table of transcript ids associated with the name of mapper with the highest F1 score in our simulation experiments with NC reads.
+- We then plot the number of transcript stratified by best chosen mapper (similar to Fig S26 in our paper)
+- For demonstrating how to apply this to your own dataset, we create a MOCK dataset containing accuracy scores for mapping reads with at least 2 NC with STAR and HISAT3N.
+- We then select the score based on the best performing mapper from our simulation experiments. Transcripts with low reliablity (low maximum mapping accuracies) are filtered
+
+
+```{r}
+best_mapper_tab = d$tx %>% 
+  filter(conversion_rate==0) %>% 
+  select(fid,chromosome,start,end,strand,mapper, mappability, all_F1, conversion_rate,true_isoform) %>%
+  pivot_wider(names_from = mapper,values_from = all_F1) %>% 
+  mutate(start1=start, end1=end) %>% # add copies fo  start/end coordinates fro BED file creation
+  mutate(max_score=pmax(STAR, HISAT3N, na.rm = T)) %>% #select max F1
+  mutate(best_mapper=case_when( # select best mapper 
+           max_score<0.1 ~ 'None',
+           abs(HISAT3N-STAR)<0.05 ~ 'Both', # similar score, choose both
+           HISAT3N>STAR ~ 'HISAT3N',
+           STAR>HISAT3N ~ 'STAR',
+           TRUE ~ 'NA')
+         )
+
+# plot best mapper counts
+best_mapper_tab %>% 
+  count(best_mapper) %>% 
+  ggplot(aes(best_mapper, n, fill=best_mapper)) + geom_col() + ggtitle("Best mappers") + my_scales()
+
+
+# filter you own data table. For demonstration purposes we create a mock data table that contains the tc2 F1 values for both mappers
+my_mock_data = d$tx %>% 
+  filter(conversion_rate==0.1, true_isoform=='mat') %>% 
+  select(fid, mapper, tc2_F1) %>% 
+  group_by(fid) %>% 
+  pivot_wider(names_from = mapper, values_from = tc2_F1) %>% 
+  ungroup()
+
+# now we apply the mosaic approach
+my_mock_data = my_mock_data %>% 
+  left_join(best_mapper_tab %>% select(fid, best_mapper), by='fid') %>% 
+  mutate(mosaic_score=case_when(
+    best_mapper=='HISAT3N' ~ HISAT3N, # select your data as derived from HISAT3N alignments
+    best_mapper=='STAR' ~ STAR,      # select your data as derived from STAR alignments
+    best_mapper=='Both' ~ STAR,      # select STAR data by default 
+    TRUE ~ NA_real_ # drop tx as score not reliable
+  ))
+
+# now plot the score distributions per best_mapper
+# the mosaic score selects the best score per mapper where possible; unreliable data is dropped.
+my_mock_data %>% 
+  pivot_longer(-c(fid, best_mapper)) %>% 
+  ggplot(aes(name, value, fill=best_mapper)) + geom_boxplot() + 
+  xlab("score") + ylab("my_data") +
+  ggtitle("F1 values per best found mapper for STAR, HISAT3N and MOSAIC approach")
+
+```
+
+# Compare two splice_sim datasets
+
+Here we compare the results of two splice_sim runs with different parameters.
+We simulated two mouse SLAM-seq datasets with different read lengths (named 'm_small' (SR100) and 'm_small_150' (SR150) in the paper), 
+preprocessed the data with the preprocess_results.R script and analyse the created RDS files.
+Compare Supplemental plot S29 of our paper.
+
+To make this work, please fix the respective input paths
+```{r}
+
+# load preprocessed data from small mouse experiments with different read lengths
+m_100 = readRDS("<your_splice_sim_SR100_dir>/eva/results/data.rds" )
+m_150 = readRDS("<your_splice_sim_SR150_dir>/eva/results/data.rds" )
+
+# combine tx and exon/intron statistics
+tx = list(
+  "100" = m_100$tx,
+  "150" = m_150$tx
+) %>% bind_rows(.id='read_len')
+fx = list(
+  "100" = m_100$fx,
+  "150" = m_150$fx
+) %>% bind_rows(.id='read_len')
+txfx = bind_rows(
+  tx, 
+  fx 
+) %>% mutate(panel=factor(paste0(ftype, '/', read_len),
+                          levels=c("tx/100","tx/150","exon/100","exon/150","intron/100","intron/150")))
+
+# labels
+star_text = txfx %>% filter(panel=='tx/100', ftype=='tx', mappability=='high', mapper=='STAR') %>% slice_head(n=1) %>% 
+  mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+  mutate(conversion_rate = 0.01, col.median=0.990)
+hisat_text = txfx %>% filter(panel=='tx/100', ftype=='tx', mappability=='high', mapper=='HISAT3N') %>% slice_head(n=1) %>% 
+  mutate(ftype=factor(ftype, levels=c('tx', 'exon', 'intron'))) %>% 
+  mutate(conversion_rate = 0.01, col.median=0.994)
+
+# plot median f1 per condition and simulated read length
+txfx %>% 
+  filter(!(ftype=='intron' & true_isoform=='mat')) %>% # always 0 as mature isoforms contain no introns
+  group_by(conversion_rate, mapper, mappability, true_isoform, ftype, read_len, panel) %>% calc_iqr(all_F1) %>% 
+  ggplot(aes(as.numeric(as.character(conversion_rate))*100, col.median, col=mapper, group=paste0(mapper,true_isoform), linetype=true_isoform)) +
+  geom_line() +
+  #geom_ribbon(aes(ymin=col.lower, ymax=col.upper), linetype=2, alpha=0.2) +  # uncomment to incluse IQR
+  facet_grid(mappability~panel, scales = 'free_y') +
+  scale_y_continuous(sec.axis = sec_axis(~ . , name = "genomic mappability", breaks = NULL, labels = NULL)) +
+  theme(axis.title.y.right = element_text(angle=-90, vjust = 1.5)) +
+  ylab(expression(F[1])) +
+  xlab("Conversion rate [%]") + 
+  ggtitle(expression(paste("Median ",F[1]," per condition and simulated read length")))  + 
+  my_scales() + # nicer colors
+  scale_x_continuous(labels = label_number(accuracy = 1)) + # nicer x-axis labels
+  guides(linetype=guide_legend(title="Originating Isoform"), col='none') +
+  theme(legend.position="bottom", legend.margin=margin(0,0,0,0), legend.box.margin=margin(-5,-5,-5,-5)) + 
+  geom_text(data = star_text, label="STAR", hjust=0) + 
+  geom_text(data = hisat_text, label="HISAT-3N", hjust=0)      
+
+```
+

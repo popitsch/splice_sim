@@ -70,6 +70,13 @@ profiles {
         time='1.h'
       	queue='c'
       }
+      withName: 'map_segemehl' {
+        clusterOptions = '--qos=short'
+        memory='80 GB'
+        cpus=12
+        time='8.h'
+        queue='c'
+      }
       withName: 'postprocess_bams' {
         clusterOptions = '--qos=short'
         memory='100 MB'
@@ -168,6 +175,13 @@ profiles {
         cpus=4
         time='2.d'
       	queue='c'
+      }
+      withName: 'map_segemehl' {
+        clusterOptions = '--qos=medium'
+        memory='80 GB'
+        cpus=4
+        time='2.d'
+        queue='c'
       }
       withName: 'postprocess_bams' {
         clusterOptions = '--qos=short'

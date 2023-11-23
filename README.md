@@ -297,6 +297,11 @@ Find below an example config json:
             "star_cmd": "STAR",
             "merangs_genome_idx": "/indices/meRanTK-1.2.1b/BSgenomeIDX",
             "merangs_splice_gtf": "/indices/gencode.vM21.gtf" # GTF file with known splice sites
+            },
+        "SEGEMEHL": {
+            "segemehl_cmd": "segemehl.x",
+            "segemehl_ctidx": "/indices/segemehl/Mus_musculus.GRCm38.dna.primary_assembly.ctidx",
+            "segemehl_gaidx": "/indices/segemehl/Mus_musculus.GRCm38.dna.primary_assembly.gaidx"
             }
         },
     "create_tdf": true, 

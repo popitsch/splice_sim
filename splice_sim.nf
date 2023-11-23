@@ -156,7 +156,7 @@ process map_hisat_3n {
 		   sambamba view -S -f bam -t ${task.cpus}  ${fq.getBaseName(3)}.sam -o ${fq.getBaseName(3)}.pre.bam
 		   sambamba sort -t ${task.cpus}  -o ${fq.getBaseName(3)}.HISAT3N.bam ${fq.getBaseName(3)}.pre.bam
 	    """
-	}
+}
 
 
 /*
@@ -198,6 +198,38 @@ process map_merangs {
 	    """
 	}
 
+/*
+ * SEGEMEHL
+ */
+process map_segemehl {
+    tag "$fq"
+    module 'python/3.7.2-gcccore-8.2.0:sambamba/0.6.6'
+    publishDir "sim/bams_segemehl", mode: 'copy'
+
+	when:
+    	params.mappers.SEGEMEHL && params.create_bams
+    input:
+    	file(fq) from fq4.flatten()
+    output:
+    	file("${fq.getBaseName(3)}.SEGEMEHL.bam") into bams_segemehl
+    	file("${fq.getBaseName(3)}.SEGEMEHL.bam.bai") into bais_segemehl
+    script:
+	    """
+	       gunzip -c ${fq} > ${fq.getBaseName(3)}.fq
+	       # map with SEGEMEHL
+		   ${params.mappers.SEGEMEHL.segemehl_cmd} \
+		   		-i ${params.mappers.SEGEMEHL.segemehl_ctidx} \
+				-j ${params.mappers.SEGEMEHL.segemehl_gaidx} \
+				-d ${params.genome_fa} \
+				-q ${fq.getBaseName(3)}.fq \
+				-t ${task.cpus} \
+				-o ${fq.getBaseName(3)}.sam \
+				-F 2
+
+		   sambamba view -S -f bam -t ${task.cpus}  ${fq.getBaseName(3)}.sam -o ${fq.getBaseName(3)}.pre.bam
+		   sambamba sort -t ${task.cpus}  -o ${fq.getBaseName(3)}.SEGEMEHL.bam ${fq.getBaseName(3)}.pre.bam
+	    """
+}
 
 /*
  * Postprocessing
@@ -209,8 +241,8 @@ process postprocess_bams {
 	when:
 		params.create_bams
 	input:
-		file(bam) from bams_star.mix(bams_hisat3n, bams_merangs).ifEmpty([])
-		file(bai) from bais_star.mix(bais_hisat3n, bais_merangs).ifEmpty([])
+		file(bam) from bams_star.mix(bams_hisat3n, bams_merangs, bams_segemehl).ifEmpty([])
+		file(bai) from bais_star.mix(bais_hisat3n, bais_merangs, bais_segemehl).ifEmpty([])
 	output:
 		file("*.bam") into postprocessed_bams
 		file("*.bai") into postprocessed_bais

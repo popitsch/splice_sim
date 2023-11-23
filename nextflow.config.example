@@ -27,7 +27,7 @@ profiles {
   // Slurm profile for running on the CLIP/CBE cluster - SMALL configuration
   cbe_small {
     process {
-      container = 'tobneu/splice_sim:latest'
+      container = 'tobneu/splice_sim:1.0.0'
       executor = 'slurm'
       memory='64 GB'
       queue = { task.memory <= 120.GB ? 'c' : 'm' }
@@ -120,7 +120,7 @@ profiles {
         queue='m'
       }
       withName: 'preprocess_results' {
-        container = 'tobneu/splice_sim_r:latest'
+        container = 'tobneu/splice_sim_r:1.0.0'
       }
      beforeScript = 'hostname; module purge; ml list; export DISPLAY=""; export R_LIBS_USER=""; export R_LIBS=""; export PYTHONPATH=""; export PERL5LIB="";'
     }
@@ -133,7 +133,7 @@ profiles {
   // Slurm profile for running on the CLIP/CBE cluster - BIG configuration
   cbe_big {
     process {
-      container = 'tobneu/splice_sim:latest'
+      container = 'tobneu/splice_sim:1.0.0'
       executor = 'slurm'
       memory='64 GB'
       queue = { task.memory <= 120.GB ? 'c' : 'm' }
@@ -226,7 +226,7 @@ profiles {
         queue='m'
       }
       withName: 'preprocess_results' {
-        container = 'tobneu/splice_sim_r:latest'
+        container = 'tobneu/splice_sim_r:1.0.0'
       }
      beforeScript = 'hostname; module purge; ml list; export DISPLAY=""; export R_LIBS_USER=""; export R_LIBS=""; export PYTHONPATH=""; export PERL5LIB="";'
     }
